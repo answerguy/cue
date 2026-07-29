@@ -10,6 +10,8 @@
   $('#logo-btn').innerHTML = icon('logo', { size: 18 });
   $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
   $('#stop-btn').innerHTML = icon('stop-square', { size: 15 });
+  $('#history-btn').innerHTML = icon('message-circle', { size: 15 });
+  $('#quit-btn').innerHTML = icon('x', { size: 15 });
   document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('sparkles', { size: 16 });
   document.querySelector('.act[data-mode="say"] .ic').innerHTML = icon('wand-sparkles', { size: 16 });
   document.querySelector('.act[data-mode="followup"] .ic').innerHTML = icon('message-circle', { size: 16 });
@@ -87,7 +89,15 @@
     aiEl = null; caretEl = null;
   }
 
-  function setBusy(v) { busy = v; $('#send-btn').classList.toggle('busy', v); }
+  let busyFailsafe = null;
+  function setBusy(v) {
+    busy = v;
+    $('#send-btn').classList.toggle('busy', v);
+    clearTimeout(busyFailsafe);
+    // Failsafe: main now has a stream watchdog that always sends llm:done/error, but a stuck busy
+    // freezes the whole UI, so self-clear after a generous window if a terminal event never arrives.
+    if (v) busyFailsafe = setTimeout(() => { busy = false; $('#send-btn').classList.toggle('busy', false); }, 40000);
+  }
 
   // ---- actions -----------------------------------------------------------
   function runMode(mode, text) {
@@ -135,11 +145,14 @@
   });
 
   // Hide / collapse
-  $('#hide-btn').addEventListener('click', () => {
+  function toggleHide() {
     const collapsed = $('#panel').classList.toggle('collapsed');
     $('#hide-btn').classList.toggle('collapsed', collapsed);
     $('#live-dot').style.display = collapsed ? 'none' : '';
-  });
+  }
+  $('#hide-btn').addEventListener('click', toggleHide);
+  cue.on('hide:toggle', toggleHide);
+  $('#quit-btn').addEventListener('click', () => cue.quit());
 
   // Stop = start/stop listening. Kick off system-audio capture straight from the click so
   // the user-gesture is fresh for getDisplayMedia (loopback capture needs it).
@@ -174,9 +187,14 @@
   }
 
   // ---- capture: system/meeting audio (getDisplayMedia loopback, in cue's process) ----
-  let sysStream = null, sysCtx = null, sysNode = null, sysProc = null;
+  let sysStream = null, sysCtx = null, sysNode = null, sysProc = null, sysStarting = false;
   async function startSystemAudio() {
-    if (sysStream) return;
+    // Called both from the stop-btn click (to keep the user-gesture fresh for getDisplayMedia)
+    // and from the capture:state handler once the toggle round-trips through main. getDisplayMedia
+    // is async, so without this lock a second call can race in before `sysStream` is set and open
+    // a duplicate loopback stream — the earlier one then gets orphaned and never stops.
+    if (sysStream || sysStarting) return;
+    sysStarting = true;
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       stream.getVideoTracks().forEach((t) => t.stop()); // we only want the audio
@@ -193,6 +211,8 @@
       cue.log('system audio: capturing loopback');
     } catch (err) {
       cue.log('system audio error: ' + (err && err.message));
+    } finally {
+      sysStarting = false;
     }
   }
   function stopSystemAudio() {
@@ -236,6 +256,65 @@
   }
   cue.on('status', ({ message }) => { cue.log('[status] ' + message); showStatus(message); });
 
+  // ---- conversation history (persisted across restarts) -------------------
+  const historyScrim = $('#history-scrim');
+  const historyList = $('#history-list');
+  let historyOpen = false;
+
+  function formatTs(ts) {
+    try { return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    catch (_) { return ''; }
+  }
+
+  function renderHistoryTurns(turns) {
+    if (!turns.length) { historyList.innerHTML = '<div class="h-empty">No conversations captured yet.</div>'; return; }
+    historyList.innerHTML = '';
+    turns.forEach((t) => appendHistoryTurn(t));
+    historyList.scrollTop = historyList.scrollHeight;
+  }
+
+  function appendHistoryTurn(t) {
+    const empty = historyList.querySelector('.h-empty');
+    if (empty) empty.remove();
+    const row = document.createElement('div');
+    row.className = 'h-turn ' + (t.channel === 'them' ? 'h-them' : 'h-you');
+    const who = document.createElement('span'); who.className = 'h-who'; who.textContent = t.channel === 'them' ? 'Them' : 'You';
+    const text = document.createElement('span'); text.className = 'h-text'; text.textContent = t.text;
+    const ts = document.createElement('span'); ts.className = 'h-ts'; ts.textContent = formatTs(t.ts);
+    row.appendChild(who); row.appendChild(text); row.appendChild(ts);
+    historyList.appendChild(row);
+  }
+
+  async function openHistory() {
+    historyOpen = true;
+    historyScrim.classList.remove('hidden');
+    const turns = await cue.getTranscriptHistory();
+    renderHistoryTurns(turns);
+    historyList.scrollTop = historyList.scrollHeight;
+  }
+  function closeHistory() { historyOpen = false; historyScrim.classList.add('hidden'); }
+
+  $('#history-btn').addEventListener('click', openHistory);
+  $('#history-close').addEventListener('click', closeHistory);
+  historyScrim.addEventListener('click', (e) => { if (e.target === historyScrim) closeHistory(); });
+  $('#history-clear').addEventListener('click', async () => {
+    await cue.clearTranscriptHistory();
+    renderHistoryTurns([]);
+  });
+  // New finalized turns append live while the panel is open (reuses the same
+  // 'transcript' event the live-caption bar listens to, just further down).
+  cue.on('transcript', (turn) => { if (historyOpen) appendHistoryTurn(turn); });
+
+  // ---- live captions (streaming STT partials) -----------------------------
+  const capYou = $('#cap-you');
+  const capThem = $('#cap-them');
+  cue.on('transcript:partial', ({ channel, text }) => {
+    (channel === 'you' ? capYou : capThem).textContent = text || '';
+  });
+  cue.on('transcript', ({ channel }) => {
+    (channel === 'you' ? capYou : capThem).textContent = '';
+  });
+
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
   function openSettings() { fillSettings(); scrim.classList.remove('hidden'); }
@@ -250,16 +329,36 @@
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
     $('#key-gemini').value = settings.apiKeys.gemini || '';
     $('#key-nvidia').value = settings.apiKeys.nvidia || '';
+    $('#key-deepgram').value = settings.apiKeys.deepgram || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
+    $('#resume-filename').textContent = (settings.profile && settings.profile.resumeFileName) || 'Not set';
+    $('#jd-filename').textContent = (settings.profile && settings.profile.jdFileName) || 'Not set';
     $('#s-status').textContent = statusText();
   }
   function statusText() {
     const k = settings.apiKeys;
     const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.nvidia && 'Nvidia'].filter(Boolean);
-    const stt = k.openai ? 'Whisper' : (k.gemini ? 'Gemini' : 'none');
+    const stt = k.deepgram ? 'Deepgram (live)' : (k.openai ? 'Whisper' : (k.gemini ? 'Gemini' : 'none'));
     return 'Active: ' + settings.provider + ' · keys: ' + (has.join(', ') || 'none set') + ' · transcription: ' + stt;
   }
+
+  $('#upload-resume-btn').addEventListener('click', async () => {
+    const res = await cue.pickResume();
+    if (res.canceled) return;
+    if (res.error) { showStatus('Resume upload failed: ' + res.error); return; }
+    settings = await cue.settingsGet();
+    $('#resume-filename').textContent = res.fileName;
+    $('#s-status').textContent = statusText();
+  });
+  $('#upload-jd-btn').addEventListener('click', async () => {
+    const res = await cue.pickJobDescription();
+    if (res.canceled) return;
+    if (res.error) { showStatus('Job description upload failed: ' + res.error); return; }
+    settings = await cue.settingsGet();
+    $('#jd-filename').textContent = res.fileName;
+    $('#s-status').textContent = statusText();
+  });
   document.querySelectorAll('#provider-seg button').forEach((b) => b.addEventListener('click', () => {
     settings.provider = b.dataset.provider;
     document.querySelectorAll('#provider-seg button').forEach((x) => x.classList.toggle('on', x === b));
@@ -272,6 +371,7 @@
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
     settings.apiKeys.nvidia = $('#key-nvidia').value.trim();
+    settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
@@ -291,6 +391,7 @@
   // ---- global keys -------------------------------------------------------
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !scrim.classList.contains('hidden')) closeSettings();
+    if (e.key === 'Escape' && !historyScrim.classList.contains('hidden')) closeHistory();
     if (isCmdOrCtrl(e)) {
       if (e.key === ',') { e.preventDefault(); openSettings(); }
     }
@@ -310,7 +411,7 @@
   function setIgnore(v) { if (v !== ignoring) { ignoring = v; cue.setIgnoreMouse(v); } }
   document.addEventListener('mousemove', (e) => {
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim'));
+    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #history-scrim'));
     setIgnore(!overUI);
   });
   setIgnore(true); // start fully click-through; hovering the panel re-enables it

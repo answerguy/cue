@@ -15,6 +15,10 @@
       <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
       <div class="tb-divider"></div>
       <button class="tb-stop" id="stop-btn" title="Start / stop listening"></button>
+      <div class="tb-divider"></div>
+      <button class="tb-history" id="history-btn" title="Conversation history"></button>
+      <div class="tb-divider"></div>
+      <button class="tb-quit" id="quit-btn" title="Quit cue"></button>
     </div>
 
     <!-- Main assistant panel -->
@@ -31,6 +35,11 @@
           <button class="act" data-mode="followup"><span class="ic"></span><span>Follow-up questions</span></button>
           <span class="sep">•</span>
           <button class="act" data-mode="recap"><span class="ic"></span><span>Recap</span></button>
+        </div>
+
+        <div id="live-captions">
+          <div class="cap cap-you" id="cap-you"></div>
+          <div class="cap cap-them" id="cap-them"></div>
         </div>
 
         <div id="composer">
@@ -72,13 +81,40 @@
         <div class="s-field"><span>Anthropic</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off" /></div>
         <div class="s-field"><span>Gemini</span><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="off" /></div>
         <div class="s-field"><span>Nvidia</span><input id="key-nvidia" type="password" placeholder="nvapi-..." autocomplete="off" /></div>
+        <div class="s-field"><span>Deepgram</span><input id="key-deepgram" type="password" placeholder="Optional — live captions" autocomplete="off" /></div>
 
         <label class="s-label">Models <span class="s-hint">fast = Smart off · smart = Smart on</span></label>
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
 
+        <label class="s-label">Your background <span class="s-hint">tailors answers to you — stored locally</span></label>
+        <div class="s-field s-upload">
+          <span>Resume</span>
+          <span class="s-filename" id="resume-filename">Not set</span>
+          <button class="s-upload-btn" id="upload-resume-btn">Upload PDF/DOCX</button>
+        </div>
+        <div class="s-field s-upload">
+          <span>Job description</span>
+          <span class="s-filename" id="jd-filename">Not set</span>
+          <button class="s-upload-btn" id="upload-jd-btn">Upload PDF/DOCX</button>
+        </div>
+
         <div class="s-status" id="s-status"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Conversation history (persisted across restarts) -->
+  <div id="history-scrim" class="hidden">
+    <div id="history-panel" class="glass">
+      <div class="s-head">
+        <div class="s-title">Conversation history</div>
+        <div class="h-head-actions">
+          <button id="history-clear" class="s-upload-btn">Clear</button>
+          <button id="history-close" class="s-close">Done</button>
+        </div>
+      </div>
+      <div id="history-list"></div>
     </div>
   </div>
 

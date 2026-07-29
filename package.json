@@ -56,8 +56,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@deepgram/sdk": "^3.11.2",
     "@google/genai": "^0.3.0",
     "lucide-static": "^0.468.0",
-    "openai": "^4.73.0"
+    "mammoth": "^1.8.0",
+    "openai": "^4.73.0",
+    "pdf-parse": "^1.1.1"
   }
 }

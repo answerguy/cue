@@ -6,6 +6,19 @@ function formatTranscript(turns, limit) {
   return recent.map((t) => (t.channel === 'them' ? 'Them: ' : 'You: ') + t.text).join('\n');
 }
 
+// Resume/job-description context, prepended to every mode's prompt when set.
+const PROFILE_INSTRUCTION = 'When candidate background and/or a job description are given below, ' +
+  'answer as that specific candidate — use their real experience and the target role, not generic filler.';
+
+function formatProfile(profile) {
+  if (!profile) return '';
+  const parts = [];
+  if (profile.resumeText) parts.push('Candidate background (resume):\n' + profile.resumeText);
+  if (profile.jdText) parts.push('Job description:\n' + profile.jdText);
+  if (!parts.length) return '';
+  return parts.join('\n\n') + '\n\n---\n\n';
+}
+
 const MODES = {
   // One-shot "do the smart thing". Uses screen + recent transcript.
   assist: {
@@ -17,10 +30,10 @@ const MODES = {
       'Look at the screenshot and the recent conversation, decide what the user needs RIGHT NOW, and deliver it directly with no preamble. ' +
       'If the screen shows a coding/LeetCode problem: give a short approach, then a correct solution in a fenced code block, then time and space complexity. ' +
       'If it is a conversation: answer the current question or say exactly what the user should say next, in the first person. ' +
-      'Be concise and confident. Never say "I can see" or describe the screenshot.',
+      'Be concise and confident. Never say "I can see" or describe the screenshot. ' + PROFILE_INSTRUCTION,
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 12);
-      return 'Recent conversation:\n' + (t || '(none)') + '\n\nRespond with what I need right now.';
+      return formatProfile(ctx.profile) + 'Recent conversation:\n' + (t || '(none)') + '\n\nRespond with what I need right now.';
     }
   },
 
@@ -32,10 +45,11 @@ const MODES = {
     system:
       'You are cue, whispering suggested replies to the user during a live conversation. ' +
       '"Them" is the other person; "You" is the user. Based on what Them just said and what You already said, ' +
-      'draft ONE short, natural, confident reply the user can say out loud, in the first person. No quotes, no preamble, 1–3 sentences.',
+      'draft ONE short, natural, confident reply the user can say out loud, in the first person. No quotes, no preamble, 1–3 sentences. ' +
+      PROFILE_INSTRUCTION,
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 14);
-      return 'Conversation so far:\n' + (t || '(nothing heard yet — the user opened cue without audio)') +
+      return formatProfile(ctx.profile) + 'Conversation so far:\n' + (t || '(nothing heard yet — the user opened cue without audio)') +
         '\n\nWhat should I say next?';
     }
   },
@@ -47,10 +61,10 @@ const MODES = {
     small: true,
     system:
       'You are cue. Given the conversation, suggest 2–4 sharp, relevant follow-up questions the user could ask next ' +
-      'to sound engaged and drive the discussion. Return them as a short bullet list, nothing else.',
+      'to sound engaged and drive the discussion. Return them as a short bullet list, nothing else. ' + PROFILE_INSTRUCTION,
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 20);
-      return 'Conversation so far:\n' + (t || '(none)') + '\n\nSuggest follow-up questions.';
+      return formatProfile(ctx.profile) + 'Conversation so far:\n' + (t || '(none)') + '\n\nSuggest follow-up questions.';
     }
   },
 
@@ -61,10 +75,10 @@ const MODES = {
     small: true,
     system:
       'You are cue. Summarize the conversation so far for someone who joined late: ' +
-      'a few key points, any decisions, and action items. Use short bullets under bold headers. Be brief.',
+      'a few key points, any decisions, and action items. Use short bullets under bold headers. Be brief. ' + PROFILE_INSTRUCTION,
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 0);
-      return 'Full transcript:\n' + (t || '(nothing captured yet)') + '\n\nRecap this.';
+      return formatProfile(ctx.profile) + 'Full transcript:\n' + (t || '(nothing captured yet)') + '\n\nRecap this.';
     }
   },
 
@@ -75,10 +89,11 @@ const MODES = {
     small: false,
     system:
       'You are cue, a real-time copilot with access to the user\'s screen and live conversation. ' +
-      'Answer the user\'s question directly and concisely, grounded in what is on screen and what was said. No preamble.',
+      'Answer the user\'s question directly and concisely, grounded in what is on screen and what was said. No preamble. ' +
+      PROFILE_INSTRUCTION,
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 12);
-      return (t ? 'Recent conversation:\n' + t + '\n\n' : '') + 'Question: ' + ctx.userText;
+      return formatProfile(ctx.profile) + (t ? 'Recent conversation:\n' + t + '\n\n' : '') + 'Question: ' + ctx.userText;
     }
   },
 
@@ -90,9 +105,9 @@ const MODES = {
     system:
       'You are an expert competitive programmer. The screenshot contains a coding problem. ' +
       'Respond with: (1) a one-line restatement, (2) a short approach, (3) a clean, correct, idiomatic solution in a fenced code block ' +
-      '(use the language shown on screen, else Python), (4) time and space complexity.',
-    build() { return 'Solve the coding problem shown in the screenshot.'; }
+      '(use the language shown on screen, else Python), (4) time and space complexity. ' + PROFILE_INSTRUCTION,
+    build(ctx) { return formatProfile(ctx.profile) + 'Solve the coding problem shown in the screenshot.'; }
   }
 };
 
-module.exports = { MODES, formatTranscript };
+module.exports = { MODES, formatTranscript, formatProfile };

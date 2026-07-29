@@ -13,9 +13,14 @@ contextBridge.exposeInMainWorld('cue', {
   systemPcm: (arrayBuffer) => ipcRenderer.send('system:pcm', arrayBuffer),
   setIgnoreMouse: (v) => ipcRenderer.send('mouse:ignore', v),
   openPane: (url) => ipcRenderer.send('open-pane', url),
+  quit: () => ipcRenderer.send('app:quit'),
   log: (msg) => ipcRenderer.send('log', msg),
+  pickResume: () => ipcRenderer.invoke('profile:pickResume'),
+  pickJobDescription: () => ipcRenderer.invoke('profile:pickJobDescription'),
+  getTranscriptHistory: () => ipcRenderer.invoke('transcript:getAll'),
+  clearTranscriptHistory: () => ipcRenderer.invoke('transcript:clear'),
   on: (channel, cb) => {
-    const allowed = ['capture:state', 'llm:start', 'llm:token', 'llm:done', 'llm:error', 'status', 'transcript'];
+    const allowed = ['capture:state', 'llm:start', 'llm:token', 'llm:done', 'llm:error', 'status', 'transcript', 'transcript:partial', 'hide:toggle'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

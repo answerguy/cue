@@ -14,7 +14,8 @@ const DEFAULTS = {
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
     gemini: { fast: 'gemini-2.5-flash', smart: 'gemini-2.5-pro' },
     nvidia: { fast: 'meta/llama-3.2-11b-vision-instruct', smart: 'meta/llama-3.2-90b-vision-instruct' }
-  }
+  },
+  profile: { resumeText: '', resumeFileName: '', jdText: '', jdFileName: '' }
 };
 
 let data = null;

@@ -1,12 +1,15 @@
 const DEBUG = false; // Set to false to disable debug logging
-const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog } = require('electron');
 const path = require('path');
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
+const { createStreamingSTT } = require('./src/stt-stream');
 const { createLLM } = require('./src/llm');
 const { MODES } = require('./src/prompts');
 const { rms16 } = require('./src/wav');
+const { parseDocumentFile } = require('./src/resume');
+const transcriptStore = require('./src/transcript-store');
 
 let win = null;
 
@@ -18,7 +21,15 @@ const transcript = []; // { channel, text, ts }
 const FLUSH_MS = 3500;
 const MIN_BYTES = Math.floor(16000 * 2 * 0.6); // ~0.6s
 const RMS_GATE = 240;
+const STREAM_INACTIVITY_MS = 25000; // abort a stalled LLM stream so busy can't wedge forever
 let flushTimer = null;
+
+// -------- streaming STT (Deepgram) state --------
+// When a Deepgram key is set, mic:pcm/system:pcm go straight to a live WS connection
+// instead of the batch buffers above. Falls back to the batch path automatically.
+let streamingSTT = null;
+let lastAutoTrigger = 0;
+const AUTO_TRIGGER_COOLDOWN_MS = 8000;
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
 
@@ -66,11 +77,13 @@ function createWindow() {
 async function flushChannel(channel) {
   if (state.transcribing[channel]) return;
   const chunks = buffers[channel];
-  if (!chunks.length) return;
+  if (!chunks.length) { console.log('[stt-batch]', channel, 'flush: buffer empty (no PCM arrived from renderer this cycle)'); return; }
   const pcm = Buffer.concat(chunks);
   buffers[channel] = [];
-  if (pcm.length < MIN_BYTES) return;
-  if (rms16(pcm) < RMS_GATE) return; // silence gate
+  if (pcm.length < MIN_BYTES) { console.log('[stt-batch]', channel, 'flush: too short —', pcm.length, 'bytes, need', MIN_BYTES); return; }
+  const loudness = rms16(pcm);
+  if (loudness < RMS_GATE) { console.log('[stt-batch]', channel, 'flush: too quiet — rms', loudness.toFixed(1), 'below gate', RMS_GATE); return; } // silence gate
+  console.log('[stt-batch]', channel, 'flush: sending', pcm.length, 'bytes to STT (rms', loudness.toFixed(1) + ')');
 
   state.transcribing[channel] = true;
   try {
@@ -82,14 +95,18 @@ async function flushChannel(channel) {
     }
     const res = await stt.transcribe(pcm);
     if (res.error) {
+      console.log('[stt-batch]', channel, 'STT call failed:', res.error);
       handleSttError(res.error, settings);
       return;
     }
     if (res.text && res.text.trim()) {
       const turn = { channel, text: res.text.trim(), ts: Date.now() };
       transcript.push(turn);
-      if (DEBUG) console.log(`[TRANSCRIPT] ${channel === 'you' ? 'You' : 'Them'}:`, turn.text);
+      transcriptStore.append(turn);
+      console.log(`[stt-batch] ${channel} transcribed:`, turn.text);
       send('transcript', turn);
+    } else {
+      console.log('[stt-batch]', channel, 'STT returned empty text (provider:', res.provider + ')');
     }
   } catch (e) {
     console.log('[stt] error', e && e.message);
@@ -116,6 +133,51 @@ function startFlushLoop() {
 }
 function stopFlushLoop() { if (flushTimer) { clearInterval(flushTimer); flushTimer = null; } }
 
+// -------- streaming STT callbacks --------
+function handleStreamingPartial(channel, text) { send('transcript:partial', { channel, text }); }
+
+async function handleStreamingFinal(channel, text) {
+  const turn = { channel, text, ts: Date.now() };
+  transcript.push(turn);
+  transcriptStore.append(turn);
+  if (DEBUG) console.log(`[TRANSCRIPT] ${channel === 'you' ? 'You' : 'Them'}:`, text);
+  send('transcript', turn);
+  if (channel === 'them') maybeAutoTrigger(text);
+}
+
+function handleStreamingError(channel, err) {
+  console.log('[stt-stream] error', channel, err && err.message);
+}
+
+// If Them just said something that sounds like a question, fire "What should I say?"
+// automatically — gated by a cooldown so back-and-forth doesn't spam LLM calls.
+async function maybeAutoTrigger(text) {
+  if (state.busy) return;
+  const now = Date.now();
+  if (now - lastAutoTrigger < AUTO_TRIGGER_COOLDOWN_MS) return;
+  const settings = store.getSettings();
+  const llm = createLLM(settings);
+  if (!llm.ready) return;
+  let isQuestion = false;
+  try {
+    const full = await llm.stream({
+      system: 'Reply with exactly one word, YES or NO. YES if the following line — said by the other ' +
+        'person in a live conversation — is a question or request that deserves a spoken answer. ' +
+        'NO for small talk, filler, or statements needing no reply.',
+      turns: [{ role: 'user', text }],
+      maxTokens: 3,
+      onToken: () => {}
+    });
+    isQuestion = /yes/i.test(full);
+  } catch (e) {
+    return; // classifier failure just skips auto-trigger, no user-facing error
+  }
+  if (isQuestion && !state.busy) {
+    lastAutoTrigger = now;
+    runFeature('say', '');
+  }
+}
+
 // -------- capture toggle --------
 // Mic + system audio are both captured in the RENDERER (getUserMedia for the mic,
 // getDisplayMedia loopback for system audio) so they run inside cue's own process
@@ -123,9 +185,16 @@ function stopFlushLoop() { if (flushTimer) { clearInterval(flushTimer); flushTim
 function setCapturing(active) {
   state.capturing = active;
   if (active) {
-    startFlushLoop();
+    const settings = store.getSettings();
+    streamingSTT = createStreamingSTT(settings, {
+      onPartial: handleStreamingPartial,
+      onFinal: handleStreamingFinal,
+      onError: handleStreamingError
+    });
+    if (!streamingSTT.available) startFlushLoop(); // no Deepgram key — batch pipeline instead
   } else {
     stopFlushLoop();
+    if (streamingSTT) { streamingSTT.close(); streamingSTT = null; }
     buffers.you = []; buffers.them = [];
   }
   send('capture:state', { active });
@@ -142,6 +211,7 @@ async function runFeature(mode, userText) {
     return;
   }
   state.busy = true;
+  let streamSettled = false; // drop stray tokens from a stream we've already aborted
   try {
     const settings = store.getSettings();
     const llm = createLLM(settings);
@@ -168,19 +238,39 @@ async function runFeature(mode, userText) {
       }
     }
 
-    const built = def.build({ transcript, userText: userText || '' });
+    const built = def.build({ transcript, userText: userText || '', profile: settings.profile });
     if (DEBUG) console.log('[DEBUG MAIN] Built prompt. Starting LLM stream...');
-    const fullText = await llm.stream({
-      system: def.system,
-      turns: [{ role: 'user', text: built }],
-      imageDataUrl,
-      onToken: (t) => send('llm:token', { text: t })
+
+    // Watchdog: if the provider stalls (no token for STREAM_INACTIVITY_MS) the awaited stream
+    // can hang forever, which used to leave state.busy=true permanently and freeze every later
+    // question until an app restart. Re-arm the timer on each token; if it fires, reject the race
+    // so we fall into catch → finally, which releases the lock and lets the next question run.
+    let watchdog = null;
+    let rearm = () => {};
+    const stalled = new Promise((_res, reject) => {
+      rearm = () => {
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => reject(new Error('the model stopped responding (timed out). Please try again.')), STREAM_INACTIVITY_MS);
+      };
+      rearm(); // start the clock before the first token arrives
     });
+
+    const fullText = await Promise.race([
+      llm.stream({
+        system: def.system,
+        turns: [{ role: 'user', text: built }],
+        imageDataUrl,
+        onToken: (t) => { if (streamSettled) return; rearm(); send('llm:token', { text: t }); }
+      }),
+      stalled
+    ]);
+    streamSettled = true; clearTimeout(watchdog);
     if (DEBUG) console.log('[DEBUG MAIN] Full LLM Output:\n', fullText);
     send('llm:done', {});
   } catch (e) {
     send('llm:error', { message: 'Error: ' + (e && e.message ? e.message : String(e)) });
   } finally {
+    streamSettled = true;
     state.busy = false;
   }
 }
@@ -191,16 +281,66 @@ ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return stor
 ipcMain.handle('capture:toggle', () => setCapturing(!state.capturing));
 ipcMain.handle('capture:state', () => ({ active: state.capturing }));
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
-ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
-ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
+ipcMain.on('mic:pcm', (_e, arrayBuffer) => {
+  if (!state.capturing) return;
+  const buf = Buffer.from(arrayBuffer);
+  if (streamingSTT && streamingSTT.available) streamingSTT.send('you', buf);
+  else buffers.you.push(buf);
+});
+ipcMain.on('system:pcm', (_e, arrayBuffer) => {
+  if (!state.capturing) return;
+  const buf = Buffer.from(arrayBuffer);
+  if (streamingSTT && streamingSTT.available) streamingSTT.send('them', buf);
+  else buffers.them.push(buf);
+});
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
+ipcMain.on('app:quit', () => app.quit());
 ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
+
+// -------- resume / job-description upload --------
+async function pickAndParseDocument() {
+  const res = await dialog.showOpenDialog(win, {
+    properties: ['openFile'],
+    filters: [{ name: 'Resume / Job description', extensions: ['pdf', 'docx'] }]
+  });
+  if (res.canceled || !res.filePaths.length) return null;
+  const filePath = res.filePaths[0];
+  const text = await parseDocumentFile(filePath);
+  return { fileName: path.basename(filePath), text };
+}
+
+ipcMain.handle('profile:pickResume', async () => {
+  try {
+    const picked = await pickAndParseDocument();
+    if (!picked) return { canceled: true };
+    store.setSettings({ profile: { resumeText: picked.text, resumeFileName: picked.fileName } });
+    return { canceled: false, fileName: picked.fileName };
+  } catch (e) {
+    return { canceled: false, error: (e && e.message) || String(e) };
+  }
+});
+ipcMain.handle('profile:pickJobDescription', async () => {
+  try {
+    const picked = await pickAndParseDocument();
+    if (!picked) return { canceled: true };
+    store.setSettings({ profile: { jdText: picked.text, jdFileName: picked.fileName } });
+    return { canceled: false, fileName: picked.fileName };
+  } catch (e) {
+    return { canceled: false, error: (e && e.message) || String(e) };
+  }
+});
+
+// -------- persisted conversation history (separate from the in-memory `transcript` --------
+// used for live LLM context — this one survives restarts and only feeds the History panel).
+ipcMain.handle('transcript:getAll', () => transcriptStore.getAll());
+ipcMain.handle('transcript:clear', () => { transcriptStore.clear(); return true; });
 
 // -------- shortcuts --------
 function registerShortcuts() {
   globalShortcut.register('CommandOrControl+Return', () => runFeature('assist', ''));
   globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
+  globalShortcut.register('CommandOrControl+/', () => send('hide:toggle', {}));
   globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
 }
 
@@ -227,5 +367,5 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); if (streamingSTT) streamingSTT.close(); });
 app.on('window-all-closed', () => app.quit());

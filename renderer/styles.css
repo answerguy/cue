@@ -54,7 +54,7 @@ html, body {
   padding-top: 14px;
   pointer-events: none;                  /* only the actual UI blocks; gaps pass through */
 }
-#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim { pointer-events: auto; }
+#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #history-scrim { pointer-events: auto; }
 #toolbar { -webkit-app-region: drag; }   /* the pill is the window's drag handle */
 .no-drag, button, input, textarea { -webkit-app-region: no-drag; }
 
@@ -82,6 +82,10 @@ html, body {
 .tb-stop { width: 28px; height: 28px; border-radius: var(--r-8); color: #fff; }
 .tb-stop:hover { background: rgba(255,255,255,0.08); }
 .tb-stop.active { color: #ff6b6b; }
+.tb-history { width: 28px; height: 28px; border-radius: var(--r-8); color: #fff; }
+.tb-history:hover { background: rgba(255,255,255,0.08); }
+.tb-quit { width: 28px; height: 28px; border-radius: var(--r-8); color: #fff; }
+.tb-quit:hover { background: rgba(255,80,80,0.16); color: #ff6b6b; }
 
 /* ============================ Panel ============================ */
 #panel-wrap { position: relative; margin-top: 12px; width: min(624px, 94vw); }
@@ -165,6 +169,16 @@ button:focus { outline: none; }
 .act:active { transform: translateY(0.5px); }
 .act:disabled { opacity: 0.5; cursor: default; }
 .sep { color: rgba(255,255,255,0.35); font-size: 14px; margin: 0 2px; }
+
+/* ============================ Live captions ============================ */
+#live-captions { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+.cap {
+  font-size: 12.5px; line-height: 1.4; color: var(--tx-mut);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cap:empty { display: none; }
+.cap-you::before { content: "You: "; font-weight: 600; color: rgba(255,255,255,0.55); }
+.cap-them::before { content: "Them: "; font-weight: 600; color: #7FB0F9; }
 
 /* ============================ Composer ============================ */
 #composer {
@@ -253,6 +267,28 @@ button:focus { outline: none; }
 .s-field input { flex: 1; padding: 8px 10px; border-radius: var(--r-8); border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
 .s-field input:focus { border-color: var(--accent); }
 .s-status { color: var(--tx-mut); font-size: 12px; margin-top: 10px; min-height: 16px; }
+.s-upload .s-filename { flex: 1; color: var(--tx-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-upload-btn { padding: 7px 12px; border-radius: var(--r-8); border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); color: var(--tx-2); font-size: 12px; font-weight: 500; cursor: pointer; transition: all 140ms ease; white-space: nowrap; }
+.s-upload-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
+
+/* ============================ Conversation history ============================ */
+#history-scrim {
+  position: fixed; inset: 0; z-index: 20;
+  display: grid; place-items: center;
+  background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);
+}
+#history-scrim.hidden { display: none; }
+#history-panel { width: min(480px, 92vw); max-height: 70vh; padding: 18px 20px; display: flex; flex-direction: column; -webkit-app-region: no-drag; }
+.h-head-actions { display: flex; gap: 8px; align-items: center; }
+#history-list { flex: 1; overflow-y: auto; margin-top: 6px; -webkit-user-select: text; user-select: text; }
+.h-turn { padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 13.5px; line-height: 1.5; }
+.h-turn:last-child { border-bottom: none; }
+.h-turn .h-who { font-weight: 600; margin-right: 6px; }
+.h-turn.h-you .h-who { color: rgba(255,255,255,0.65); }
+.h-turn.h-them .h-who { color: #7FB0F9; }
+.h-turn .h-text { color: var(--tx-2); }
+.h-turn .h-ts { color: var(--tx-mut); font-size: 10.5px; margin-left: 6px; }
+.h-empty { color: var(--tx-mut); font-size: 13px; text-align: center; padding: 30px 0; }
 
 /* ============================ Onboarding / tutorial ============================ */
 #onboard-scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(0,0,0,0.45); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
