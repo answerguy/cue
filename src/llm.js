@@ -1,6 +1,13 @@
 const DEBUG = false; // Set to false to disable debug logging
-// LLM factory — OpenAI / Anthropic / Gemini behind one streaming interface.
+// LLM factory — OpenAI / Anthropic / Gemini / MiniMax behind one streaming interface.
 // stream({ system, turns:[{role,text}], imageDataUrl, maxTokens, onToken }) -> Promise<fullText>
+
+// MiniMax is OpenAI-compatible and exposes two regional gateways. MiniMax-M3
+// accepts image input, so it reuses the OpenAI screenshot path via baseURL.
+const MINIMAX_BASE_URLS = {
+  global_en: 'https://api.minimax.io/v1',
+  cn_zh: 'https://api.minimaxi.com/v1'
+};
 
 function stripDataUrl(dataUrl) {
   const m = /^data:(.+?);base64,(.*)$/s.exec(dataUrl || '');
@@ -110,7 +117,8 @@ function createLLM(settings) {
   const apiKey = keys[provider];
   const tier = settings.smart ? 'smart' : 'fast';
   const model = (settings.models[provider] || {})[tier];
-  
+  const minimaxRegion = settings.minimaxRegion || 'global_en';
+
   // Set to 4096 (effectively unlimited for a single response) 
   // since some SDKs like Anthropic require a maxTokens value.
   const maxTokens = 4096;
@@ -125,6 +133,7 @@ function createLLM(settings) {
       const args = { apiKey, model, maxTokens, ...params };
       if (provider === 'openai') return streamOpenAI(args);
       if (provider === 'nvidia') return streamOpenAI({ ...args, baseURL: 'https://integrate.api.nvidia.com/v1' });
+      if (provider === 'minimax') return streamOpenAI({ ...args, baseURL: MINIMAX_BASE_URLS[minimaxRegion] || MINIMAX_BASE_URLS.global_en });
       if (provider === 'anthropic') return streamAnthropic(args);
       if (provider === 'gemini') return streamGemini(args);
       throw new Error('unknown provider: ' + provider);
