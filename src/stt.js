@@ -16,7 +16,7 @@ async function transcribeGemini(apiKey, wav) {
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
   const res = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.0-flash',
     contents: [{ role: 'user', parts: [
       { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
       { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } }
@@ -30,20 +30,33 @@ function createSTT(settings) {
   const chain = [];
   if (keys.openai) chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, settings.sttModel) });
   if (keys.gemini) chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
+  if (keys.openai && chain.length > 1) chain.unshift(chain.splice(chain.findIndex((c) => c.p === 'openai'), 1)[0]);
+
+  let disabledUntil = 0;
+  let lastProvider = null;
 
   return {
     available: chain.length > 0,
     providers: chain.map((c) => c.p),
     async transcribe(pcm) {
       if (!chain.length || !pcm || pcm.length < 3200) return { text: '' };
+      const now = Date.now();
+      if (disabledUntil && now < disabledUntil) return { text: '', error: { provider: lastProvider, message: 'Temporary Gemini quota exhaustion; waiting before retrying.' } };
       const wav = pcmToWav(pcm, 16000, 1);
       let lastErr = null;
       for (const c of chain) {
         try {
           const text = await c.fn(wav);
+          disabledUntil = 0;
+          lastProvider = c.p;
           return { text, provider: c.p };
         } catch (e) {
           lastErr = { status: e && e.status, code: e && e.code, message: (e && e.message) || String(e), provider: c.p };
+          if ((e && e.status === 429) || (e && e.code === 'RESOURCE_EXHAUSTED')) {
+            lastProvider = c.p;
+            disabledUntil = now + 30000;
+            break;
+          }
         }
       }
       return { text: '', error: lastErr };

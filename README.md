@@ -14,10 +14,6 @@ A free, self-hosted alternative to Cluely. Bring your own AI key (OpenAI · Anth
 
 > [!IMPORTANT]
 > **Please read this first.** cue tries to stay out of screen recordings/shares, but this is **best-effort, not guaranteed** — on macOS 15.4+ Apple can let modern capture tools see it anyway, and a phone camera always can. Using a hidden assistant during a **proctored exam, job interview, or recorded meeting** may break that platform's rules and, in some places, consent laws. cue is built for legitimate uses — your own notes, studying, accessibility, and practice. **You are responsible for how you use it.**
->
-> On Zoom specifically, whether cue is hidden depends on one setting — **Settings → Share Screen → Screen capture mode → "Advanced capture with window filtering."**
->
-> <img src="docs/zoom-capture-mode.png" width="560" alt="Zoom Settings → Share Screen → Screen capture mode set to Advanced capture with window filtering" />
 
 ---
 
@@ -27,7 +23,7 @@ cue floats a small glass panel on top of everything. It takes **three separate i
 
 | Feature | How to trigger | What it uses |
 |---|---|---|
-| **Assist** | `⌘` `↵` by default (configurable) or the *Assist* button | your screen + recent conversation |
+| **Assist** | `⌘` `↵` or the *Assist* button | your screen + recent conversation |
 | **What should I say?** | button | meeting audio + your mic |
 | **Follow-up questions** | button | the whole conversation |
 | **Recap** | button | the whole conversation |
@@ -45,17 +41,13 @@ There are two ways to install cue. **If you're not a developer, use Option A.**
 
 ### Option A — Download the app (easiest)
 
-1. Go to the [**Releases**](../../releases) page and download the **`cue-…-arm64-mac.zip`** file.
-2. Double-click the zip to unzip it. You'll get **`cue.app`**.
-3. Drag **`cue.app`** into your **Applications** folder.
-4. Double-click it. That's it — no warnings, no Terminal. ✅
-
-cue is signed with an Apple Developer ID and notarized by Apple, so it opens
-on the first double-click like any other app.
+1. Go to the [**Releases**](../../releases) page and download the build for your platform.
+2. Extract the archive and run the app from the extracted folder.
+3. On macOS, you may need to right-click the app and choose **Open** the first time if Gatekeeper blocks it.
 
 ### Option B — Run from source (developers)
 
-You need [Node.js](https://nodejs.org) 18+ installed. No Xcode required.
+You need [Node.js](https://nodejs.org) 18+ installed.
 
 ```bash
 git clone https://github.com/Blueturboguy07/cue.git
@@ -64,11 +56,13 @@ npm install
 npm start
 ```
 
-To build your own `cue.app`:
+To build a packaged app:
 ```bash
-npm run pack      # creates dist/mac-arm64/cue.app
+npm run dist:mac    # macOS build
+npm run dist:win    # Windows build
 ```
-> Note: the packaged app is **ad-hoc signed** (no paid Apple certificate). macOS ties permission grants to the exact build, so **rebuilding resets the mic/screen permissions** — you'll grant them again. For everyday use, build once and keep it.
+
+> Note: permission grants can reset after a rebuild, so you may need to re-enable microphone/screen access after packaging a fresh build.
 
 ---
 
@@ -76,12 +70,12 @@ npm run pack      # creates dist/mac-arm64/cue.app
 
 When cue opens the first time, a **built-in tutorial** walks you through everything below. You can reopen it anytime by clicking the **cue logo** (top-left of the pill). Here's the same thing in writing.
 
-### Step 1 — Grant two macOS permissions
+### Step 1 — Grant the needed permissions
 
-cue can't help until macOS lets it see and hear. When you first use a feature, macOS will prompt you — click **Allow**. If a prompt doesn't appear, add cue manually:
+cue can't help until your OS lets it see and hear. When you first use a feature, your system may prompt you — click **Allow**. If a prompt doesn't appear, add cue manually:
 
-- **Microphone:** System Settings → **Privacy & Security** → **Microphone** → turn on **cue**.
-- **Screen Recording:** System Settings → **Privacy & Security** → **Screen Recording** → turn on **cue**. (This one grant covers both screenshots *and* meeting audio.) macOS may ask you to **quit & reopen** cue — let it.
+- **Windows:** Settings → **Privacy & security** → **Microphone** → allow **cue**; also enable **Screen recording** for screen capture and meeting-audio capture.
+- **macOS:** System Settings → **Privacy & Security** → **Microphone** and **Screen Recording** → turn on **cue**. macOS may ask you to **quit & reopen** cue — let it.
 
 ### Step 2 — Add your AI key (bring your own)
 
@@ -109,7 +103,7 @@ cue is hidden from most screen-share tools automatically — **Google Meet, Micr
 
 ## How to use it
 
-- **`⌘` `↵` — Assist.** The do-the-smart-thing key. On a coding problem it solves it; in a conversation it tells you what to say. Works from anywhere. Change this shortcut under **Settings → Keyboard shortcuts**.
+- **`⌘` `↵` — Assist.** The do-the-smart-thing key. On a coding problem it solves it; in a conversation it tells you what to say. Works from anywhere.
 - **`⌘` `H` — Solve what's on screen.** Screenshots a coding problem and returns the approach, code, and time/space complexity.
 - **The `▢` button** (top bar) — start/stop **listening** to a meeting. The green dot means it's live.
 - **Type a question** in the box and press `↵` to ask about your screen or conversation.
@@ -157,11 +151,8 @@ Check Settings shows a transcription-capable key (OpenAI with Whisper, or Gemini
 **cue shows up in my Zoom share.**
 Set Zoom's **Screen capture mode** to *"Advanced capture with window filtering"* (see Step 3). And remember: on macOS 15.4+ this can still fail — it's best-effort.
 
-**"cue is damaged" / "unidentified developer."**
-You're on a build from before cue was notarized (anything released prior to
-2026-07-28). Download the current release and it will open normally — don't
-run `xattr` on it, since that strips the very signature that makes the new
-build trustworthy.
+**"cue is damaged and can't be opened."**
+Run `xattr -cr /Applications/cue.app` in Terminal once (see Install → Option A).
 
 ---
 
@@ -174,15 +165,6 @@ build trustworthy.
 ## Contributing
 
 Issues and PRs welcome. cue is intentionally small and readable — `main.js` (app + capture + AI), `renderer/` (the UI), `src/` (providers). No build step for the source (plain HTML/CSS/JS).
-
-### Platform Support
-- [x] **macOS** (Fully Supported)
-- [x] **Windows** (Fully Supported)
-- [ ] **Linux** (Untested)
-
-### Features Open for Contribution
-- [ ] Upgrade audio capture pipeline for zero-latency streaming
-- [ ] Add optional Deepgram support for ultra-fast transcription
 
 ## Credits & license
 

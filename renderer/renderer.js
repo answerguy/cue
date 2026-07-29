@@ -3,9 +3,8 @@
   const { icon } = window.ICONS;
   const cue = window.cue; // exposed by preload
   const $ = (s) => document.querySelector(s);
-  const cmdKey = cue.platform === 'darwin' ? '⌘' : 'Ctrl';
-  const isCmdOrCtrl = (e) => cue.platform === 'darwin' ? e.metaKey : e.ctrlKey;
-  const DEFAULT_ASSIST_SHORTCUT = 'CommandOrControl+Return';
+  const isWindows = cue.platform === 'win32';
+  const isMac = cue.platform === 'darwin';
 
   // ---- paint icons -------------------------------------------------------
   $('#logo-btn').innerHTML = icon('logo', { size: 18 });
@@ -18,42 +17,22 @@
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
   $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
   $('#send-btn').innerHTML = icon('play', { size: 15 });
+  const transcriptIC = document.querySelector('#transcript-toggle-btn .ic');
+  if (transcriptIC) transcriptIC.innerHTML = icon('file-text', { size: 15 });
+  const clearIC = document.querySelector('#clear-transcript-btn .ic');
+  if (clearIC) clearIC.innerHTML = icon('trash-2', { size: 15 });
 
   // ---- state -------------------------------------------------------------
   let settings = null;
   let busy = false;
   let aiEl = null;       // current streaming <div class="ai-text">
   let caretEl = null;
-  let assistShortcut = DEFAULT_ASSIST_SHORTCUT;
-  let recordingShortcut = false;
+  let responseCount = 0;
+  const MAX_RESPONSES = 20;
 
   const messages = $('#messages');
 
   function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-
-  function shortcutParts(accelerator) {
-    const labels = {
-      CommandOrControl: cue.platform === 'darwin' ? '⌘' : 'Ctrl',
-      Command: '⌘', Control: 'Ctrl', Super: 'Super',
-      Alt: cue.platform === 'darwin' ? '⌥' : 'Alt',
-      Shift: cue.platform === 'darwin' ? '⇧' : 'Shift',
-      Return: 'Enter', Escape: 'Esc', Space: 'Space',
-      Up: '↑', Down: '↓', Left: '←', Right: '→'
-    };
-    return (accelerator || DEFAULT_ASSIST_SHORTCUT).split('+').map((part) => labels[part] || part);
-  }
-
-  function shortcutKeycapsHtml(accelerator, className) {
-    const cls = className || 'keycap';
-    return shortcutParts(accelerator).map((part) => '<span class="' + cls + '">' + esc(part) + '</span>').join(' ');
-  }
-
-  function syncAssistShortcutLabels() {
-    const shortcutBtn = $('#shortcut-assist');
-    if (shortcutBtn && !recordingShortcut) shortcutBtn.textContent = shortcutParts(assistShortcut).join(' + ');
-    const placeholder = $('#placeholder');
-    if (placeholder) placeholder.innerHTML = 'Ask about your screen or conversation, or ' + shortcutKeycapsHtml(assistShortcut) + ' for Assist';
-  }
 
   // minimal, safe markdown: fenced code, bullets, inline code, bold, paragraphs
   function renderMarkdown(text) {
@@ -116,6 +95,60 @@
 
   function setBusy(v) { busy = v; $('#send-btn').classList.toggle('busy', v); }
 
+  // ---- transcript helpers ------------------------------------------------
+  let transcriptOpen = false;
+  let transcriptInterimEl = null;
+
+  function appendTranscriptTurn(channel, text, isInterim) {
+    const list = document.getElementById('transcript-list');
+    if (!list) return;
+    const ph = list.querySelector('.transcript-placeholder');
+    if (ph) ph.remove();
+    if (isInterim) {
+      if (!transcriptInterimEl) {
+        transcriptInterimEl = document.createElement('div');
+        transcriptInterimEl.className = 'tc-turn tc-interim';
+        list.appendChild(transcriptInterimEl);
+      }
+      transcriptInterimEl.textContent = (channel === 'them' ? 'Them: ' : 'You: ') + text;
+    } else {
+      const div = document.createElement('div');
+      div.className = 'tc-turn tc-' + channel;
+      div.textContent = (channel === 'them' ? 'Them: ' : 'You: ') + text;
+      list.appendChild(div);
+    }
+    if (transcriptOpen) {
+      const wrap = document.getElementById('transcript-wrap');
+      if (wrap) wrap.scrollTop = wrap.scrollHeight;
+    }
+  }
+
+  function updateTranscriptInterim(channel, text) {
+    appendTranscriptTurn(channel, text, true);
+  }
+
+  function clearTranscriptInterim() {
+    if (transcriptInterimEl) {
+      transcriptInterimEl.remove();
+      transcriptInterimEl = null;
+    }
+  }
+
+  // ---- toast helper ------------------------------------------------------
+  let toastTimer = null;
+  function showToast(message, ms) {
+    let el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      document.getElementById('app').appendChild(el);
+    }
+    el.textContent = message;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+  }
+
   // ---- actions -----------------------------------------------------------
   function runMode(mode, text) {
     if (busy) return;
@@ -149,11 +182,8 @@
   }
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
-    const captured = keyEventToAccelerator(e);
-    if (captured.accelerator && captured.accelerator.toLowerCase() === assistShortcut.toLowerCase()) {
-      e.preventDefault(); runMode('assist', ''); return;
-    }
-    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); send(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); send(); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runMode('assist', ''); }
   });
 
   // Smart toggle
@@ -173,78 +203,294 @@
 
   // Stop = start/stop listening. Kick off system-audio capture straight from the click so
   // the user-gesture is fresh for getDisplayMedia (loopback capture needs it).
-  $('#stop-btn').addEventListener('click', () => {
+  $('#stop-btn').addEventListener('click', async () => {
     const turningOn = !$('#stop-btn').classList.contains('active');
-    if (turningOn) startSystemAudio();
-    cue.captureToggle();
+    if (turningOn) {
+      await startSystemAudio();
+    }
+    await cue.captureToggle();
   });
 
-  // ---- capture: mic (renderer side) --------------------------------------
-  let audioCtx = null, micStream = null, micNode = null, micProc = null;
+  // Transcript toggle
+  const transcriptToggleBtn = document.getElementById('transcript-toggle-btn');
+  if (transcriptToggleBtn) {
+    transcriptToggleBtn.addEventListener('click', () => {
+      transcriptOpen = !transcriptOpen;
+      const wrap = document.getElementById('transcript-wrap');
+      if (wrap) {
+        wrap.classList.toggle('hidden', !transcriptOpen);
+        if (transcriptOpen) {
+          const list = document.getElementById('transcript-list');
+          if (list && !list.children.length) {
+            const ph = document.createElement('div');
+            ph.className = 'transcript-placeholder';
+            ph.textContent = 'Nothing heard yet — start listening to begin.';
+            list.appendChild(ph);
+          }
+          if (wrap) wrap.scrollTop = wrap.scrollHeight;
+        }
+      }
+    });
+  }
+
+  // Clear transcript
+  const clearTranscriptBtn = document.getElementById('clear-transcript-btn');
+  if (clearTranscriptBtn) {
+    clearTranscriptBtn.addEventListener('click', async () => {
+      await cue.clearTranscript();
+      clearMessages();
+      // Also clear the floating interim bar
+      if (interimEl) { interimEl.textContent = ''; interimEl.classList.remove('show'); }
+      const list = document.getElementById('transcript-list');
+      if (list) list.innerHTML = '';
+      transcriptInterimEl = null;
+      showToast('Transcript cleared', 3000);
+    });
+  }
+
+  // ---- capture: mic (renderer side) — uses AudioWorklet (modern, off-main-thread) ----
+  let audioCtx = null, micStream = null, micWorklet = null;
   async function startMic() {
     if (micStream) return;
     try {
-      micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 16000
+        }
+      });
+      cue.log('mic stream started');
       audioCtx = new AudioContext({ sampleRate: 16000 });
-      await audioCtx.audioWorklet.addModule('./pcm-processor.js');
-      micNode = audioCtx.createMediaStreamSource(micStream);
-      micProc = new AudioWorkletNode(audioCtx, 'pcm-processor');
-      micProc.port.onmessage = (e) => cue.micPcm(e.data);
-      const sink = audioCtx.createGain(); sink.gain.value = 0; // run processor silently
-      micNode.connect(micProc); micProc.connect(sink); sink.connect(audioCtx.destination);
+
+      // Use AudioWorklet for low-latency, off-main-thread processing
+      try {
+        await audioCtx.audioWorklet.addModule('audio-worklet-processor.js');
+        const source = audioCtx.createMediaStreamSource(micStream);
+        micWorklet = new AudioWorkletNode(audioCtx, 'cue-audio-processor');
+        micWorklet.port.onmessage = (e) => {
+          cue.micPcm(e.data);
+        };
+        source.connect(micWorklet);
+        // Don't connect to destination — we just capture, don't play
+        cue.log('mic AudioWorklet processor attached');
+      } catch (workletErr) {
+        // Fallback to ScriptProcessor if AudioWorklet fails (shouldn't happen in Electron 33+)
+        cue.log('AudioWorklet failed, falling back to ScriptProcessor: ' + workletErr.message);
+        const micNode = audioCtx.createMediaStreamSource(micStream);
+        const micProc = audioCtx.createScriptProcessor(4096, 1, 1);
+        const sink = audioCtx.createGain(); sink.gain.value = 0;
+        micNode.connect(micProc); micProc.connect(sink); sink.connect(audioCtx.destination);
+        micProc.onaudioprocess = (e) => {
+          const f = e.inputBuffer.getChannelData(0);
+          const out = new Int16Array(f.length);
+          for (let i = 0; i < f.length; i++) { const s = Math.max(-1, Math.min(1, f[i])); out[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+          cue.micPcm(out.buffer);
+        };
+        micWorklet = { _legacy: true, proc: micProc, node: micNode, sink };
+      }
     } catch (err) {
-      cue.log('mic error: ' + (err && err.message));
+      const message = err && err.message ? err.message : String(err);
+      cue.log('mic error: ' + message);
+      showStatus('Microphone capture could not be started. Check your mic permissions and try again.');
     }
   }
   function stopMic() {
-    if (micProc) { micProc.port.onmessage = null; micProc.disconnect(); micProc = null; }
-    if (micNode) { micNode.disconnect(); micNode = null; }
+    if (micWorklet) {
+      if (micWorklet._legacy) {
+        micWorklet.proc.disconnect(); micWorklet.proc.onaudioprocess = null;
+        micWorklet.node.disconnect(); micWorklet.sink.disconnect();
+      } else {
+        micWorklet.disconnect();
+      }
+      micWorklet = null;
+    }
     if (audioCtx) { audioCtx.close(); audioCtx = null; }
     if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
   }
 
   // ---- capture: system/meeting audio (getDisplayMedia loopback, in cue's process) ----
-  let sysStream = null, sysCtx = null, sysNode = null, sysProc = null;
+  let sysStream = null, sysCtx = null, sysWorklet = null;
   async function startSystemAudio() {
     if (sysStream) return;
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
+      cue.log('system audio unavailable: getDisplayMedia not supported');
+      showStatus('Meeting audio capture is not available on this device build.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       stream.getVideoTracks().forEach((t) => t.stop()); // we only want the audio
       const tracks = stream.getAudioTracks();
-      if (!tracks.length) { cue.log('system audio: no loopback track (macOS loopback unsupported here)'); stream.getTracks().forEach((t) => t.stop()); return; }
+      if (!tracks.length) {
+        cue.log('system audio: no loopback track on this platform');
+        stream.getTracks().forEach((t) => t.stop());
+        const msg = isWindows
+          ? 'No system-audio loopback track detected. On Windows, make sure your default audio device is not set to exclusive mode. Go to Sound Settings → your playback device → Properties → Advanced → uncheck "Allow applications to take exclusive control".'
+          : 'No system-audio loopback track was detected.';
+        showStatus(msg);
+        return;
+      }
       sysStream = stream;
       sysCtx = new AudioContext({ sampleRate: 16000 });
-      await sysCtx.audioWorklet.addModule('./pcm-processor.js');
-      sysNode = sysCtx.createMediaStreamSource(new MediaStream(tracks));
-      sysProc = new AudioWorkletNode(sysCtx, 'pcm-processor');
-      sysProc.port.onmessage = (e) => cue.systemPcm(e.data);
-      const sink = sysCtx.createGain(); sink.gain.value = 0;
-      sysNode.connect(sysProc); sysProc.connect(sink); sink.connect(sysCtx.destination);
-      cue.log('system audio: capturing loopback');
+
+      // Use AudioWorklet for system audio too
+      try {
+        await sysCtx.audioWorklet.addModule('audio-worklet-processor.js');
+        const source = sysCtx.createMediaStreamSource(new MediaStream(tracks));
+        sysWorklet = new AudioWorkletNode(sysCtx, 'cue-audio-processor');
+        sysWorklet.port.onmessage = (e) => {
+          cue.systemPcm(e.data);
+        };
+        source.connect(sysWorklet);
+        cue.log('system audio: AudioWorklet capturing loopback');
+      } catch (workletErr) {
+        // Fallback to ScriptProcessor
+        cue.log('system audio AudioWorklet failed, using ScriptProcessor: ' + workletErr.message);
+        const sysNode = sysCtx.createMediaStreamSource(new MediaStream(tracks));
+        const sysProc = sysCtx.createScriptProcessor(4096, 1, 1);
+        const sink = sysCtx.createGain(); sink.gain.value = 0;
+        sysNode.connect(sysProc); sysProc.connect(sink); sink.connect(sysCtx.destination);
+        sysProc.onaudioprocess = (e) => {
+          const f = e.inputBuffer.getChannelData(0);
+          const out = new Int16Array(f.length);
+          for (let i = 0; i < f.length; i++) { const s = Math.max(-1, Math.min(1, f[i])); out[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+          cue.systemPcm(out.buffer);
+        };
+        sysWorklet = { _legacy: true, proc: sysProc, node: sysNode, sink };
+      }
     } catch (err) {
-      cue.log('system audio error: ' + (err && err.message));
+      const message = err && err.message ? err.message : String(err);
+      cue.log('system audio error: ' + message);
+      showStatus('Meeting audio could not be started. Grant screen/audio access to cue and try again.');
     }
   }
   function stopSystemAudio() {
-    if (sysProc) { sysProc.port.onmessage = null; sysProc.disconnect(); sysProc = null; }
-    if (sysNode) { sysNode.disconnect(); sysNode = null; }
+    if (sysWorklet) {
+      if (sysWorklet._legacy) {
+        sysWorklet.proc.disconnect(); sysWorklet.proc.onaudioprocess = null;
+        sysWorklet.node.disconnect(); sysWorklet.sink.disconnect();
+      } else {
+        sysWorklet.disconnect();
+      }
+      sysWorklet = null;
+    }
     if (sysCtx) { sysCtx.close(); sysCtx = null; }
     if (sysStream) { sysStream.getTracks().forEach((t) => t.stop()); sysStream = null; }
   }
 
+  // ---- STT / VAD status helpers ------------------------------------------
+  // Live dot states: 'off' | 'idle' | 'speaking' | 'transcribing'
+  function setLiveDotState(dotState) {
+    const dot = document.getElementById('live-dot');
+    if (!dot) return;
+    dot.classList.remove('off', 'idle', 'speaking', 'transcribing');
+    dot.classList.add(dotState);
+    const labels = {
+      off:          'Not listening',
+      idle:         'Listening — silence detected',
+      speaking:     'Speech detected',
+      transcribing: 'Transcribing…'
+    };
+    dot.title = labels[dotState] || '';
+  }
+
+  let sttState = 'disconnected';
+
+  function updateSttStatus({ active, streaming } = {}) {
+    const label = document.getElementById('stt-status');
+    if (!label) return;
+    if (active === false) {
+      sttState = 'disconnected';
+      label.textContent = 'off';
+    } else if (active === true) {
+      sttState = streaming ? 'connecting' : 'batch';
+      label.textContent = sttState;
+    }
+    label.className = 'stt-status stt-' + sttState;
+  }
+
   // ---- events from main --------------------------------------------------
-  cue.on('capture:state', ({ active }) => {
-    $('#live-dot').classList.toggle('off', !active);
+  cue.on('capture:state', ({ active, streaming }) => {
+    setLiveDotState(active ? 'idle' : 'off');
     $('#stop-btn').classList.toggle('active', active);
-    // System audio is started directly from the button click above so the
-    // getDisplayMedia request keeps its user gesture. Starting it here too
-    // can create a second capture request before the first one resolves.
-    if (active) startMic(); else { stopMic(); stopSystemAudio(); }
+    if (active) { startMic(); startSystemAudio(); } else { stopMic(); stopSystemAudio(); }
+    updateSttStatus({ active, streaming });
   });
-  cue.on('llm:start', ({ userBubble, small }) => {
-    clearMessages();
-    if (userBubble) addUserBubble(userBubble);
-    startAi(!!small);
+
+  // ---- real-time transcript display (interim + final) ----
+  let interimEl = null;
+  function getOrCreateInterimEl() {
+    if (!interimEl) {
+      interimEl = document.createElement('div');
+      interimEl.className = 'interim-transcript';
+      const panel = document.getElementById('panel');
+      const actionRow = document.getElementById('action-row');
+      panel.insertBefore(interimEl, actionRow);
+    }
+    return interimEl;
+  }
+  cue.on('stt:interim', ({ channel, text }) => {
+    setLiveDotState('transcribing');
+    const el = getOrCreateInterimEl();
+    const label = channel === 'them' ? 'Them' : 'You';
+    el.textContent = `${label}: ${text}`;
+    el.classList.add('show');
+    updateTranscriptInterim(channel, text);
+  });
+  cue.on('stt:final', ({ channel, text }) => {
+    setLiveDotState('idle');
+    // Clear interim when we get a final
+    if (interimEl) { interimEl.textContent = ''; interimEl.classList.remove('show'); }
+    clearTranscriptInterim();
+  });
+  cue.on('stt:status', ({ channel, status }) => {
+    cue.log(`[stt] ${channel} ${status}`);
+    if (status === 'connected') {
+      sttState = 'streaming';
+      const label = document.getElementById('stt-status');
+      if (label) { label.textContent = sttState; label.className = 'stt-status stt-streaming'; }
+    }
+  });
+  cue.on('vad:state', ({ channel, speaking }) => {
+    setLiveDotState(speaking ? 'speaking' : 'idle');
+  });
+  cue.on('llm:start', ({ userBubble, small, category }) => {
+    responseCount++;
+    if (responseCount > MAX_RESPONSES) {
+      const oldest = messages.querySelector('.response-group');
+      if (oldest) oldest.remove();
+      responseCount = MAX_RESPONSES;
+    }
+    const group = document.createElement('div');
+    group.className = 'response-group';
+    const sep = document.createElement('div');
+    sep.className = 'response-sep';
+    sep.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    group.appendChild(sep);
+    if (userBubble) {
+      const b = document.createElement('div');
+      b.className = 'user-bubble';
+      b.textContent = userBubble;
+      group.appendChild(b);
+    }
+    if (category) {
+      const pill = document.createElement('div');
+      pill.className = 'category-pill';
+      pill.textContent = category.charAt(0).toUpperCase() + category.slice(1);
+      group.appendChild(pill);
+    }
+    aiEl = document.createElement('div');
+    aiEl.className = 'ai-text' + (small ? ' small' : '');
+    aiEl.dataset.raw = '';
+    caretEl = document.createElement('span');
+    caretEl.className = 'ai-caret';
+    aiEl.appendChild(caretEl);
+    group.appendChild(aiEl);
+    messages.appendChild(group);
+    sep.scrollIntoView({ behavior: 'smooth', block: 'start' });
     setBusy(true);
   });
   cue.on('llm:token', ({ text }) => appendToken(text));
@@ -252,6 +498,9 @@
   cue.on('llm:error', ({ message }) => {
     if (!aiEl) startAi(true);
     aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
+  });
+  cue.on('transcript', ({ channel, text }) => {
+    appendTranscriptTurn(channel, text, false);
   });
   let statusTimer = null;
   function showStatus(message) {
@@ -267,155 +516,138 @@
     clearTimeout(statusTimer);
     statusTimer = setTimeout(() => el.classList.remove('show'), 11000);
   }
-  cue.on('status', ({ message }) => { cue.log('[status] ' + message); showStatus(message); });
+  cue.on('status', ({ message }) => {
+    cue.log('[status] ' + message);
+    showStatus(message);
+    if (sttState !== 'disconnected') {
+      const lower = message.toLowerCase();
+      if (lower.includes('error') || lower.includes(' off')) {
+        sttState = 'error';
+        const label = document.getElementById('stt-status');
+        if (label) { label.textContent = sttState; label.className = 'stt-status stt-error'; }
+      }
+    }
+  });
+
+  // ---- prep status & smart tooltip helpers -------------------------------
+  function updatePrepStatus() {
+    if (!settings) return;
+    const fields = {
+      resume:  !!(settings.resumeText && settings.resumeText.trim()),
+      jd:      !!(settings.jobDescription && settings.jobDescription.trim()),
+      stories: !!(settings.starStories && settings.starStories.trim()),
+      salary:  !!(settings.salaryTarget && settings.salaryTarget.trim())
+    };
+    document.querySelectorAll('#prep-status .prep-item').forEach((el) => {
+      const loaded = fields[el.dataset.field];
+      el.classList.toggle('loaded', loaded);
+      el.classList.toggle('missing', !loaded);
+      el.title = loaded
+        ? el.textContent.trim() + ' loaded'
+        : el.textContent.trim() + ' not set — add in Settings';
+    });
+  }
+
+  function updateSmartTooltip() {
+    if (!settings) return;
+    const m = settings.models[settings.provider] || { fast: '', smart: '' };
+    const fast = m.fast || 'fast model';
+    const smart = m.smart || 'smart model';
+    const btn = document.getElementById('smart-toggle');
+    if (btn) btn.title = 'Fast: ' + fast + ' · Smart: ' + smart + ' (higher quality, ~2× slower)';
+  }
 
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
   function openSettings() { fillSettings(); scrim.classList.remove('hidden'); }
-  function closeSettings() { cancelShortcutRecording(); saveSettings(); scrim.classList.add('hidden'); }
+  function closeSettings() { saveSettings(); scrim.classList.add('hidden'); }
   $('#more-btn').addEventListener('click', openSettings);
   $('#s-close').addEventListener('click', closeSettings);
   scrim.addEventListener('click', (e) => { if (e.target === scrim) closeSettings(); });
 
+  // Tab switching
+  document.querySelectorAll('.s-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      if (!tab.classList.contains('on')) {
+        saveSettings().catch((err) => console.error('[cue] tab auto-save error', err));
+      }
+      document.querySelectorAll('.s-tab').forEach(t => t.classList.remove('on'));
+      document.querySelectorAll('.s-tab-pane').forEach(p => p.classList.add('hidden'));
+      tab.classList.add('on');
+      const pane = document.querySelector(`.s-tab-pane[data-pane="${tab.dataset.tab}"]`);
+      if (pane) pane.classList.remove('hidden');
+    });
+  });
+
   function fillSettings() {
+    // Keys tab
     document.querySelectorAll('#provider-seg button').forEach((b) => b.classList.toggle('on', b.dataset.provider === settings.provider));
     $('#key-openai').value = settings.apiKeys.openai || '';
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
     $('#key-gemini').value = settings.apiKeys.gemini || '';
-    $('#key-nvidia').value = settings.apiKeys.nvidia || '';
-    $('#resume-context').value = settings.resumeContext || '';
+    $('#key-deepgram').value = settings.apiKeys.deepgram || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
-    syncAssistShortcutLabels();
     $('#s-status').textContent = statusText();
+    // Profile tab
+    $('#resume-text').value = settings.resumeText || '';
+    $('#job-description').value = settings.jobDescription || '';
+    // Interview Prep tab
+    $('#star-stories').value = settings.starStories || '';
+    $('#why-company').value = settings.whyCompany || '';
+    $('#why-leaving').value = settings.whyLeaving || '';
+    $('#work-style').value = settings.workStyle || '';
+    // Q&A tab
+    $('#salary-target').value = settings.salaryTarget || '';
+    $('#questions-to-ask').value = settings.questionsToAsk || '';
   }
-  $('#clear-resume').addEventListener('click', async () => {
-    $('#resume-context').value = '';
-    settings.resumeContext = '';
-    await cue.settingsSet({ resumeContext: '' });
-  });
+
   function statusText() {
     const k = settings.apiKeys;
-    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.nvidia && 'Nvidia'].filter(Boolean);
-    const stt = k.openai ? 'Whisper' : (k.gemini ? 'Gemini' : 'none');
-    return 'Active: ' + settings.provider + ' · keys: ' + (has.join(', ') || 'none set') + ' · transcription: ' + stt;
+    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram'].filter(Boolean);
+    const stt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.gemini ? 'Gemini (batch)' : 'none'));
+    const ready = [
+      settings.resumeText ? '✓ resume' : null,
+      settings.jobDescription ? '✓ JD' : null,
+      settings.starStories ? '✓ stories' : null,
+      settings.salaryTarget ? '✓ salary' : null
+    ].filter(Boolean);
+    return `${settings.provider} · STT: ${stt}` + (ready.length ? ' · ' + ready.join(' · ') : '');
   }
+
   document.querySelectorAll('#provider-seg button').forEach((b) => b.addEventListener('click', () => {
     settings.provider = b.dataset.provider;
     document.querySelectorAll('#provider-seg button').forEach((x) => x.classList.toggle('on', x === b));
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     $('#s-status').textContent = statusText();
+    updateSmartTooltip();
   }));
+
   async function saveSettings() {
+    // Keys
     settings.apiKeys.openai = $('#key-openai').value.trim();
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
-    settings.apiKeys.nvidia = $('#key-nvidia').value.trim();
-    settings.resumeContext = $('#resume-context').value.trim();
+    settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
+    // Profile
+    settings.resumeText = $('#resume-text').value.trim();
+    settings.jobDescription = $('#job-description').value.trim();
+    // Interview Prep
+    settings.starStories = $('#star-stories').value.trim();
+    settings.whyCompany = $('#why-company').value.trim();
+    settings.whyLeaving = $('#why-leaving').value.trim();
+    settings.workStyle = $('#work-style').value.trim();
+    // Q&A
+    settings.salaryTarget = $('#salary-target').value.trim();
+    settings.questionsToAsk = $('#questions-to-ask').value.trim();
     await cue.settingsSet(settings);
+    updatePrepStatus();
+    updateSmartTooltip();
   }
-
-  // Assist shortcut recorder. The renderer captures a key combination and the
-  // main process only saves it after Electron confirms the global registration.
-  const shortcutBtn = $('#shortcut-assist');
-  const shortcutHint = $('#shortcut-hint');
-
-  function setShortcutHint(message, kind) {
-    shortcutHint.textContent = message;
-    shortcutHint.classList.toggle('error', kind === 'error');
-    shortcutHint.classList.toggle('success', kind === 'success');
-  }
-
-  function cancelShortcutRecording() {
-    recordingShortcut = false;
-    shortcutBtn.classList.remove('recording');
-    syncAssistShortcutLabels();
-  }
-
-  function keyEventToAccelerator(e) {
-    const modifierKeys = new Set(['Meta', 'Control', 'Alt', 'Shift']);
-    if (modifierKeys.has(e.key)) return { error: 'Press a modifier together with another key.' };
-
-    const parts = [];
-    const primaryDown = cue.platform === 'darwin' ? e.metaKey : e.ctrlKey;
-    if (primaryDown) parts.push('CommandOrControl');
-    if (cue.platform === 'darwin' && e.ctrlKey) parts.push('Control');
-    if (cue.platform !== 'darwin' && e.metaKey) parts.push('Super');
-    if (e.altKey) parts.push('Alt');
-    if (e.shiftKey) parts.push('Shift');
-
-    const named = {
-      Enter: 'Return', ' ': 'Space', Tab: 'Tab', Backspace: 'Backspace',
-      Delete: 'Delete', Insert: 'Insert', Home: 'Home', End: 'End',
-      PageUp: 'PageUp', PageDown: 'PageDown', ArrowUp: 'Up', ArrowDown: 'Down',
-      ArrowLeft: 'Left', ArrowRight: 'Right'
-    };
-    const punctuation = { '+': 'Plus', '-': '-', '=': '=', ',': ',', '.': '.', '/': '/', ';': ';', "'": "'", '[': '[', ']': ']', '\\': '\\', '`': '`' };
-    let key = named[e.key] || punctuation[e.key] || '';
-    if (!key && /^[a-z]$/i.test(e.key)) key = e.key.toUpperCase();
-    if (!key && /^[0-9]$/.test(e.key)) key = e.key;
-    if (!key && /^F(?:[1-9]|1[0-9]|2[0-4])$/.test(e.key)) key = e.key;
-    if (!key) return { error: 'Use a letter, number, function key, arrow, or common navigation key.' };
-    if (!parts.length && !/^F/.test(key)) return { error: 'Include Command/Ctrl, Alt, or Shift in the shortcut.' };
-    parts.push(key);
-    return { accelerator: parts.join('+') };
-  }
-
-  async function applyAssistShortcut(accelerator) {
-    const wasRecording = recordingShortcut;
-    recordingShortcut = false;
-    shortcutBtn.classList.remove('recording');
-    shortcutBtn.textContent = 'Saving…';
-    let result;
-    try {
-      result = await cue.shortcutAssistSet(accelerator);
-    } catch (_) {
-      result = { ok: false, error: 'cue could not update the shortcut. Please try again.' };
-    }
-    if (!result.ok) {
-      setShortcutHint(result.error, 'error');
-      recordingShortcut = wasRecording;
-      shortcutBtn.classList.toggle('recording', recordingShortcut);
-      if (recordingShortcut) shortcutBtn.textContent = 'Press keys…';
-      else syncAssistShortcutLabels();
-      return;
-    }
-    assistShortcut = result.accelerator;
-    if (!settings.shortcuts) settings.shortcuts = {};
-    settings.shortcuts.assist = assistShortcut;
-    cancelShortcutRecording();
-    setShortcutHint('Assist shortcut updated.', 'success');
-  }
-
-  shortcutBtn.addEventListener('click', () => {
-    recordingShortcut = true;
-    shortcutBtn.classList.add('recording');
-    shortcutBtn.textContent = 'Press keys…';
-    setShortcutHint('Press Escape to cancel.', '');
-  });
-
-  $('#shortcut-reset').addEventListener('click', () => applyAssistShortcut(DEFAULT_ASSIST_SHORTCUT));
-
-  document.addEventListener('keydown', (e) => {
-    if (!recordingShortcut) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    if (e.key === 'Escape') {
-      cancelShortcutRecording();
-      setShortcutHint('Shortcut change cancelled.', '');
-      return;
-    }
-    const captured = keyEventToAccelerator(e);
-    if (captured.error) {
-      setShortcutHint(captured.error, 'error');
-      return;
-    }
-    applyAssistShortcut(captured.accelerator);
-  }, true);
 
   // ---- example conversation (matches the reference screenshot) ------------
   function showExample() {
@@ -430,19 +662,8 @@
   // ---- global keys -------------------------------------------------------
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !scrim.classList.contains('hidden')) closeSettings();
-    if (isCmdOrCtrl(e)) {
-      if (e.key === ',') { e.preventDefault(); openSettings(); }
-    }
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); openSettings(); }
   });
-
-  // UI Zoom buttons (text only)
-  let currentZoom = 1;
-  function updateZoom(delta) {
-    currentZoom = Math.max(0.5, Math.min(3, currentZoom + delta));
-    document.documentElement.style.setProperty('--text-zoom', currentZoom);
-  }
-  $('#zoom-in-btn').addEventListener('click', () => updateZoom(0.1));
-  $('#zoom-out-btn').addEventListener('click', () => updateZoom(-0.1));
 
   // ---- click-through: only the UI blocks the mouse; empty gaps pass to your screen ----
   let ignoring = null;
@@ -456,38 +677,48 @@
 
   // ---- onboarding / first-run tutorial -----------------------------------
   const obScrim = $('#onboard-scrim');
+  const permissionHelp = isWindows
+    ? 'cue needs permission to see and hear. Open Windows Privacy & security settings, allow <strong>Microphone</strong> and <strong>Screen recording</strong> for cue, then come back here.'
+    : 'cue needs two macOS permissions. Click each button, turn <strong>cue</strong> ON in the window that opens, then come back here.';
+  const permissionButtons = isWindows
+    ? [
+        { label: 'Open Microphone settings', action: () => cue.openPane('ms-settings:privacy-microphone') },
+        { label: 'Open Screen recording settings', action: () => cue.openPane('ms-settings:privacy-screenrecorder') }
+      ]
+    : [
+        { label: 'Open Microphone settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone') },
+        { label: 'Open Screen Recording settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') }
+      ];
+  const assistShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">↵</span>' : '<span class="kbd">⌘</span> <span class="kbd">↵</span>';
+  const solveShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">H</span>' : '<span class="kbd">⌘</span> <span class="kbd">H</span>';
+  const quitShortcut = isWindows ? '<span class="kbd">Ctrl</span><span class="kbd">⇧</span><span class="kbd">X</span>' : '<span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">X</span>';
   const OB_STEPS = [
     {
       icon: '👋',
       title: 'Welcome to cue',
       body: 'cue is a private AI copilot that floats over your screen. It can <strong>see your screen</strong>, <strong>hear your meetings</strong>, and help you answer questions or solve coding problems — while staying hidden from most screen shares.<br><br>This quick guide gets you running in about a minute.'
     },
-    ...(cue.platform === 'darwin' ? [{
+    {
       icon: '🔐',
       title: 'Allow cue to see & hear',
-      body: 'cue needs two macOS permissions. Click each button, turn <strong>cue</strong> ON in the window that opens, then come back here.<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen Recording</strong> — to see your screen and hear meeting audio</li></ul>',
-      buttons: [
-        { label: 'Open Microphone settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone') },
-        { label: 'Open Screen Recording settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') }
-      ]
-    }] : []),
+      body: permissionHelp + '<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen recording</strong> — to see your screen and hear meeting audio</li></ul>',
+      buttons: permissionButtons
+    },
     {
       icon: '🔑',
       title: 'Connect an AI provider',
-      body: 'cue uses <strong>your own</strong> API key — pick <span class="hl">OpenAI</span>, <span class="hl">Anthropic</span>, <span class="hl">Google Gemini</span>, or <span class="hl">Nvidia</span>. Get a key from your provider, then paste it into cue\'s Settings.<br><br><strong>Tip:</strong> the listening features need speech-to-text access (an OpenAI key with Whisper, or a Gemini key). A chat-only key still powers screen &amp; coding help.',
+      body: 'cue uses <strong>your own</strong> API key — pick <span class="hl">OpenAI</span>, <span class="hl">Anthropic</span>, or <span class="hl">Google Gemini</span>. Get a key from your provider, then paste it into cue\'s Settings.<br><br><strong>Tip:</strong> For the <em>best</em> real-time listening, add a <span class="hl">Deepgram</span> key (lowest latency streaming transcription). Otherwise, an OpenAI key enables streaming via the Realtime API, and Gemini/Whisper work as batch fallbacks.',
       buttons: [{ label: 'Open cue Settings', action: () => { finishOnboard(); openSettings(); } }]
     },
     {
       icon: '🫥',
       title: 'Stay hidden in Zoom',
-      body: cue.platform === 'darwin'
-        ? 'cue is hidden from most screen shares automatically (Google Meet, Teams, QuickTime — nothing to do). <strong>Zoom needs one setting:</strong><br><br>Zoom → <span class="hl">Settings</span> → <span class="hl">Share Screen</span> → <span class="hl">Advanced</span> → <strong>Screen capture mode</strong> → choose <strong>“Advanced capture with window filtering.”</strong><br><br>Avoid “<strong>without</strong> window filtering” — that mode reveals cue.'
-        : 'cue is hidden from screen shares automatically. <strong>For Zoom:</strong><br><br>Zoom → <span class="hl">Settings</span> → <span class="hl">Share Screen</span> → <span class="hl">Advanced</span> → <strong>Screen capture mode</strong> → choose <strong>“Advanced capture with window filtering.”</strong>'
+      body: 'cue is hidden from most screen shares automatically (Google Meet, Teams, QuickTime — nothing to do). <strong>Zoom needs one setting:</strong><br><br>Zoom → <span class="hl">Settings</span> → <span class="hl">Share Screen</span> → <span class="hl">Advanced</span> → <strong>Screen capture mode</strong> → choose <strong>“Advanced capture with window filtering.”</strong><br><br>Avoid “<strong>without</strong> window filtering” — that mode reveals cue.'
     },
     {
       icon: '✨',
       title: 'You’re all set',
-      body: () => `How to use cue:<ul><li>${shortcutKeycapsHtml(assistShortcut, 'kbd')} — <strong>Assist</strong> with whatever's on screen or being said</li><li><span class="kbd">${cmdKey}</span> <span class="kbd">H</span> — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Change Assist's shortcut in <strong>Settings</strong>. Quit with <span class="kbd">${cmdKey}</span><span class="kbd">⇧</span><span class="kbd">X</span>.`
+      body: 'How to use cue:<ul><li>' + assistShortcut + ' — <strong>Assist</strong> with whatever\'s on screen or being said</li><li>' + solveShortcut + ' — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Quit with ' + quitShortcut + '.'
     }
   ];
   let obIndex = 0;
@@ -495,7 +726,7 @@
     const step = OB_STEPS[obIndex];
     $('#ob-icon').textContent = step.icon;
     $('#ob-title').textContent = step.title;
-    $('#ob-body').innerHTML = typeof step.body === 'function' ? step.body() : step.body;
+    $('#ob-body').innerHTML = step.body;
     const btns = $('#ob-buttons'); btns.innerHTML = '';
     (step.buttons || []).forEach((b) => { const el = document.createElement('button'); el.textContent = b.label; el.addEventListener('click', b.action); btns.appendChild(el); });
     const dots = $('#ob-dots'); dots.innerHTML = '';
@@ -517,15 +748,41 @@
   // ---- boot --------------------------------------------------------------
   (async function boot() {
     settings = await cue.settingsGet();
-    assistShortcut = (settings.shortcuts && settings.shortcuts.assist) || DEFAULT_ASSIST_SHORTCUT;
-    syncAssistShortcutLabels();
+    const platformInfo = await cue.platformInfo();
+
+    // R4: shortcut hints
+    const sayHintEl = document.getElementById('say-shortcut-hint');
+    const assistHintEl = document.getElementById('assist-shortcut-hint');
+    if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
+    if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
+
+    // R5: prep status
+    updatePrepStatus();
+    // R6: smart tooltip
+    updateSmartTooltip();
+    // Fix 3: Adjust permission buttons based on actual Windows version.
+    // ms-settings:privacy-screenrecorder only exists on Windows 11.
+    // On Windows 10, screen capture needs no permission — so replace the button
+    // with a more helpful note instead of an invalid settings link.
+    if (isWindows && platformInfo.winBuild > 0 && platformInfo.winBuild < 22000) {
+      // Windows 10: update the onboarding screen recording button to be more helpful
+      const ob = OB_STEPS[1];
+      ob.buttons = ob.buttons.filter((b) => !b.label.toLowerCase().includes('screen'));
+      ob.body = 'cue needs microphone permission to hear you. Click the button below to open Windows microphone settings and allow cue.<br><br><strong>Screen capture works automatically on Windows 10</strong> — no additional permission needed.<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen recording</strong> — works automatically on Windows 10</li></ul>';
+    }
+
     smartBtn.classList.toggle('on', !!settings.smart);
     showExample();
     syncPlaceholder();
+
+    // Fix placeholder shortcut hint to match platform
+    if (isWindows) {
+      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⏎</span> for Assist';
+    }
+
     const st = await cue.captureState();
     $('#live-dot').classList.toggle('off', !st.active);
     $('#stop-btn').classList.toggle('active', st.active);
     if (!settings.onboarded) showOnboard();
-
   })();
 })();

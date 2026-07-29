@@ -8,14 +8,25 @@ const FILE = path.join(app.getPath('userData'), 'cue-data.json');
 const DEFAULTS = {
   provider: 'openai',
   smart: false,
-  resumeContext: '',
-  shortcuts: { assist: 'CommandOrControl+Return' },
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', nvidia: '' },
+  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '' },
+  // Tab 2: Profile
+  resumeText: '',
+  jobDescription: '',
+  // Tab 3: Interview Prep
+  starStories: '',       // 3-5 behavioral STAR stories in plain English
+  whyCompany: '',        // Why do you want to work here?
+  whyLeaving: '',        // Why are you leaving your current job?
+  workStyle: '',         // How you work, decision-making style, values
+  // Tab 4: Q&A
+  salaryTarget: '',      // e.g. "$150k-$180k base + equity"
+  questionsToAsk: '',    // Questions to ask the interviewer
+  // Window position
+  windowX: null,
+  windowY: null,
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
-    gemini: { fast: 'gemini-2.5-flash', smart: 'gemini-2.5-pro' },
-    nvidia: { fast: 'meta/llama-3.2-11b-vision-instruct', smart: 'meta/llama-3.2-90b-vision-instruct' }
+    gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' }
   }
 };
 
@@ -37,17 +48,6 @@ function load() {
   if (data) return data;
   try { data = deepMerge(DEFAULTS, JSON.parse(fs.readFileSync(FILE, 'utf8'))); }
   catch { data = deepMerge(DEFAULTS, {}); }
-  
-  // Auto-switch provider if the current one has no key, but another one does.
-  if (!data.apiKeys[data.provider]) {
-    const validProviders = ['openai', 'anthropic', 'gemini', 'nvidia'];
-    const active = validProviders.find(p => data.apiKeys[p]);
-    if (active) {
-      data.provider = active;
-      // We don't save() here so we don't spam disk, it will persist on next save.
-    }
-  }
-  
   return data;
 }
 function save() { try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2)); } catch (e) { /* ignore */ } }

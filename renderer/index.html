@@ -8,8 +8,12 @@
 </head>
 <body>
   <div id="app">
-    <!-- Top-center floating pill toolbar (drag handle) -->
-    <div id="toolbar">
+    <!-- Dedicated drag handle / top bar -->
+    <div id="toolbar" class="drag-handle">
+      <div class="drag-pill" title="Drag to move window">
+        <span class="drag-dots" aria-hidden="true"></span>
+        <span class="drag-label">Drag</span>
+      </div>
       <button class="tb-logo" id="logo-btn" title="cue"></button>
       <div class="tb-divider"></div>
       <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
@@ -20,17 +24,34 @@
     <!-- Main assistant panel -->
     <div id="panel-wrap">
       <span id="live-dot" class="off"></span>
+      <div id="stt-status" class="stt-status stt-disconnected" title="STT connection status">off</div>
       <div id="panel" class="glass no-drag">
         <div id="messages"></div>
 
+        <div id="transcript-wrap" class="transcript-wrap hidden">
+          <div id="transcript-list" class="transcript-list"></div>
+        </div>
+
         <div id="action-row">
-          <button class="act" data-mode="assist"><span class="ic"></span><span>Assist</span></button>
+          <button class="act act-primary" data-mode="say"
+            title="Suggests what to say next based on the conversation">
+            <span class="ic"></span><span>What should I say?</span>
+            <span class="shortcut-hint" id="say-shortcut-hint"></span>
+          </button>
           <span class="sep">•</span>
-          <button class="act" data-mode="say"><span class="ic"></span><span>What should I say?</span></button>
+          <button class="act act-secondary" data-mode="assist"
+            title="Scans your screen and conversation to decide what you need">
+            <span class="ic"></span><span>Assist</span>
+            <span class="shortcut-hint" id="assist-shortcut-hint"></span>
+          </button>
           <span class="sep">•</span>
-          <button class="act" data-mode="followup"><span class="ic"></span><span>Follow-up questions</span></button>
+          <button class="act" data-mode="followup"><span class="ic"></span><span>Follow-up</span></button>
           <span class="sep">•</span>
           <button class="act" data-mode="recap"><span class="ic"></span><span>Recap</span></button>
+          <span class="sep">•</span>
+          <button class="act" id="transcript-toggle-btn" title="Show/hide what was heard"><span class="ic"></span><span>Transcript</span></button>
+          <span class="sep">•</span>
+          <button class="act act-clear" id="clear-transcript-btn" title="Clear transcript and start fresh"><span class="ic"></span><span>Clear</span></button>
         </div>
 
         <div id="composer">
@@ -41,11 +62,16 @@
           <div id="composer-bottom">
             <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
             <button id="more-btn" class="more-btn" title="Settings"></button>
-            <button id="zoom-out-btn" class="more-btn" title="Zoom Out" style="font-size: 18px; font-family: monospace; line-height: 1;">-</button>
-            <button id="zoom-in-btn" class="more-btn" title="Zoom In" style="font-size: 16px; font-family: monospace; line-height: 1;">+</button>
             <div class="spacer"></div>
             <button id="send-btn" title="Send"></button>
           </div>
+        </div>
+
+        <div id="prep-status" class="prep-status">
+          <span class="prep-item" data-field="resume">📄 Resume</span>
+          <span class="prep-item" data-field="jd">💼 JD</span>
+          <span class="prep-item" data-field="stories">🎯 Stories</span>
+          <span class="prep-item" data-field="salary">💰 Salary</span>
         </div>
       </div>
     </div>
@@ -58,39 +84,70 @@
         <div class="s-title">Settings</div>
         <button id="s-close" class="s-close">Done</button>
       </div>
-      <div class="s-body">
+
+      <!-- Tab bar -->
+      <div class="s-tabs">
+        <button class="s-tab on" data-tab="keys">🔑 Keys</button>
+        <button class="s-tab" data-tab="profile">📄 Profile</button>
+        <button class="s-tab" data-tab="prep">🎯 Interview Prep</button>
+        <button class="s-tab" data-tab="qa">💬 Q&amp;A</button>
+      </div>
+
+      <!-- Tab: Keys -->
+      <div class="s-body s-tab-pane" data-pane="keys">
         <label class="s-label">Provider</label>
         <div class="s-seg" id="provider-seg">
           <button data-provider="openai">OpenAI</button>
           <button data-provider="anthropic">Anthropic</button>
           <button data-provider="gemini">Gemini</button>
-          <button data-provider="nvidia">Nvidia</button>
         </div>
 
-        <label class="s-label">API keys <span class="s-hint">stored locally in cue-data.json</span></label>
+        <label class="s-label">API keys <span class="s-hint">stored locally · never sent to any server</span></label>
         <div class="s-field"><span>OpenAI</span><input id="key-openai" type="password" placeholder="sk-..." autocomplete="off" /></div>
         <div class="s-field"><span>Anthropic</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off" /></div>
         <div class="s-field"><span>Gemini</span><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="off" /></div>
-        <div class="s-field"><span>Nvidia</span><input id="key-nvidia" type="password" placeholder="nvapi-..." autocomplete="off" /></div>
-
-        <label class="s-label" for="resume-context">Résumé / professional background <span class="s-hint">stored locally; sent to your selected provider with each request</span></label>
-        <textarea id="resume-context" class="s-textarea" maxlength="12000" placeholder="Paste your résumé or professional background here. cue will use it as the factual source for career-related answers."></textarea>
-        <div class="s-resume-actions"><span class="s-hint">Maximum 12,000 characters</span><button id="clear-resume" type="button">Clear résumé</button></div>
+        <div class="s-field"><span>Deepgram</span><input id="key-deepgram" type="password" placeholder="dg-..." autocomplete="off" /></div>
 
         <label class="s-label">Models <span class="s-hint">fast = Smart off · smart = Smart on</span></label>
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
 
-        <label class="s-label">Keyboard shortcuts</label>
-        <div class="s-shortcut">
-          <span>Assist</span>
-          <button id="shortcut-assist" class="shortcut-record" type="button" aria-label="Change Assist shortcut"></button>
-          <button id="shortcut-reset" class="shortcut-reset" type="button">Reset</button>
-        </div>
-        <div class="shortcut-hint" id="shortcut-hint">Click the shortcut, then press a new key combination.</div>
-
         <div class="s-status" id="s-status"></div>
       </div>
+
+      <!-- Tab: Profile -->
+      <div class="s-body s-tab-pane hidden" data-pane="profile">
+        <label class="s-label">Your resume <span class="s-hint">paste full resume — cue parses it into sections</span></label>
+        <textarea id="resume-text" rows="7" spellcheck="false" placeholder="Paste your full resume here. cue will extract Name, Summary, Experience, Skills, Projects, and Education automatically."></textarea>
+
+        <label class="s-label">Target job description <span class="s-hint">optional — every answer gets tailored to this role</span></label>
+        <textarea id="job-description" rows="5" spellcheck="false" placeholder="Paste the job description for the role you're interviewing for. cue will highlight your most relevant experience."></textarea>
+      </div>
+
+      <!-- Tab: Interview Prep -->
+      <div class="s-body s-tab-pane hidden" data-pane="prep">
+        <label class="s-label">Your STAR stories <span class="s-hint">write 3–5 real behavioral stories — used for "tell me about a time…" questions</span></label>
+        <textarea id="star-stories" rows="8" spellcheck="false" placeholder="Story 1: At [Company], we faced [situation]. I was responsible for [task]. I did [specific actions]. The result was [outcome with metrics if possible].&#10;&#10;Story 2: ..."></textarea>
+
+        <label class="s-label">Why this company <span class="s-hint">used for motivation questions</span></label>
+        <textarea id="why-company" rows="3" spellcheck="false" placeholder="e.g. I admire how [company] has [specific thing]. Their work on [X] aligns with my experience in [Y]..."></textarea>
+
+        <label class="s-label">Why leaving current role <span class="s-hint">keep it positive</span></label>
+        <textarea id="why-leaving" rows="2" spellcheck="false" placeholder="e.g. I've grown a lot at [company] and I'm looking for [next challenge]..."></textarea>
+
+        <label class="s-label">Work style &amp; values <span class="s-hint">used for culture fit and situational questions</span></label>
+        <textarea id="work-style" rows="3" spellcheck="false" placeholder="e.g. I prefer data-driven decisions, work well with autonomy, value direct feedback, thrive in fast-paced environments..."></textarea>
+      </div>
+
+      <!-- Tab: Q&A -->
+      <div class="s-body s-tab-pane hidden" data-pane="qa">
+        <label class="s-label">Salary target <span class="s-hint">used when asked about compensation</span></label>
+        <input id="salary-target" type="text" placeholder="e.g. $150k–$180k base + equity, open to discuss total comp" autocomplete="off" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.14);background:rgba(0,0,0,0.25);color:#fff;font-size:13px;font-family:inherit;outline:none;" />
+
+        <label class="s-label" style="margin-top:14px;">Questions to ask the interviewer <span class="s-hint">cue will suggest these at the end</span></label>
+        <textarea id="questions-to-ask" rows="6" spellcheck="false" placeholder="e.g.&#10;- What does success look like in the first 90 days?&#10;- How does the team handle technical debt?&#10;- What's the biggest challenge the team is facing right now?&#10;- How does feedback and mentorship work here?"></textarea>
+      </div>
+
     </div>
   </div>
 
