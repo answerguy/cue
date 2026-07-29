@@ -166,13 +166,19 @@ async function runFeature(mode, userText) {
     let imageDataUrl = null;
     if (def.needsScreen) {
       if (DEBUG) console.log('[DEBUG MAIN] Feature needs screen. Capturing screenshot...');
-      try { 
-        imageDataUrl = await captureScreenshot(); 
+      try {
+        imageDataUrl = await captureScreenshot();
+        if (!imageDataUrl) throw new Error('No screen source was available.');
         if (DEBUG) console.log('[DEBUG MAIN] Screenshot captured successfully (length:', imageDataUrl.length, ')');
       }
       catch (e) { 
         if (DEBUG) console.error('[DEBUG MAIN] Screenshot capture failed:', e);
-        send('status', { message: 'Screen capture needs permission — grant Screen Recording to cue in System Settings.' }); 
+        const message = process.platform === 'darwin'
+          ? 'Screen capture needs permission — grant Screen Recording to cue in System Settings.'
+          : process.platform === 'win32'
+            ? 'Screen capture failed. Make sure cue is not blocked by Windows privacy or security software, then try again.'
+            : 'Screen capture failed. Check your desktop capture permissions, then try again.';
+        send('status', { message });
       }
     }
 

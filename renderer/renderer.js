@@ -211,7 +211,14 @@
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       stream.getVideoTracks().forEach((t) => t.stop()); // we only want the audio
       const tracks = stream.getAudioTracks();
-      if (!tracks.length) { cue.log('system audio: no loopback track (macOS loopback unsupported here)'); stream.getTracks().forEach((t) => t.stop()); return; }
+      if (!tracks.length) {
+        const hint = cue.platform === 'win32'
+          ? 'Windows did not provide a system-audio loopback track'
+          : 'system-audio loopback is unavailable on this platform';
+        cue.log('system audio: ' + hint);
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       sysStream = stream;
       sysCtx = new AudioContext({ sampleRate: 16000 });
       await sysCtx.audioWorklet.addModule('./pcm-processor.js');

@@ -45,10 +45,10 @@ There are two ways to install cue. **If you're not a developer, use Option A.**
 
 ### Option A — Download the app (easiest)
 
-1. Go to the [**Releases**](../../releases) page and download the **`cue-…-arm64-mac.zip`** file.
-2. Double-click the zip to unzip it. You'll get **`cue.app`**.
-3. Drag **`cue.app`** into your **Applications** folder.
-4. Double-click it. That's it — no warnings, no Terminal. ✅
+Go to the [**Releases**](../../releases) page, then choose your platform:
+
+- **Windows 10/11 (x64):** download **`cue.Setup.…exe`**, run it, and launch cue from the Start menu. The current installer is unsigned, so Windows SmartScreen may show an **Unknown publisher** warning.
+- **macOS (Apple silicon):** download **`cue-…-arm64-mac.zip`**, unzip it, drag **`cue.app`** into **Applications**, and open it.
 
 cue is signed with an Apple Developer ID and notarized by Apple, so it opens
 on the first double-click like any other app.
@@ -64,10 +64,17 @@ npm install
 npm start
 ```
 
-To build your own `cue.app`:
+To package the app for your current platform:
 ```bash
-npm run pack      # creates dist/mac-arm64/cue.app
+npm run pack
 ```
+
+On Windows you can explicitly build either an unpacked app or an installer:
+```powershell
+npm run pack:win  # creates dist\win-unpacked\cue.exe
+npm run dist:win  # creates dist\cue Setup <version>.exe
+```
+
 > Note: the packaged app is **ad-hoc signed** (no paid Apple certificate). macOS ties permission grants to the exact build, so **rebuilding resets the mic/screen permissions** — you'll grant them again. For everyday use, build once and keep it.
 
 ---
@@ -76,12 +83,14 @@ npm run pack      # creates dist/mac-arm64/cue.app
 
 When cue opens the first time, a **built-in tutorial** walks you through everything below. You can reopen it anytime by clicking the **cue logo** (top-left of the pill). Here's the same thing in writing.
 
-### Step 1 — Grant two macOS permissions
+### Step 1 — Check capture permissions
 
-cue can't help until macOS lets it see and hear. When you first use a feature, macOS will prompt you — click **Allow**. If a prompt doesn't appear, add cue manually:
+**macOS:** cue can't help until macOS lets it see and hear. When you first use a feature, macOS will prompt you — click **Allow**. If a prompt doesn't appear, add cue manually:
 
 - **Microphone:** System Settings → **Privacy & Security** → **Microphone** → turn on **cue**.
 - **Screen Recording:** System Settings → **Privacy & Security** → **Screen Recording** → turn on **cue**. (This one grant covers both screenshots *and* meeting audio.) macOS may ask you to **quit & reopen** cue — let it.
+
+**Windows:** no Screen Recording grant is normally required. If microphone capture is blocked, open **Settings → Privacy & security → Microphone**, turn on **Microphone access**, and allow desktop apps to access the microphone. System/meeting audio uses Windows loopback capture.
 
 ### Step 2 — Add your AI key (bring your own)
 
@@ -131,7 +140,7 @@ cue is an [Electron](https://www.electronjs.org/) app. Everything runs locally e
 
 Both audio streams are transcribed (OpenAI Whisper or Gemini) and fed, with an optional screenshot, to your AI model. Responses **stream** into the panel word-by-word.
 
-**The invisibility** is a single macOS window flag: `setContentProtection(true)`, which sets `NSWindowSharingNone`. This asks the window server to exclude cue from screen-capture streams. It's the same mechanism DRM apps and Zoom's own toolbar use. It is **not** a GPU trick or a special overlay layer — and on macOS 15.4+ Apple lets some capture tools ignore it, which is why it's best-effort (see the disclaimer at the top).
+**The invisibility** uses Electron's `setContentProtection(true)`. On Windows 10 version 2004 and newer this requests `WDA_EXCLUDEFROMCAPTURE`; on macOS it sets `NSWindowSharingNone`. These OS flags ask capture tools to exclude cue, but the result is still best-effort because some capture paths can ignore them (see the disclaimer at the top).
 
 ```
 main process ──┬─ overlay window (frameless, transparent, always-on-top, content-protected)
