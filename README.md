@@ -47,7 +47,7 @@ There are two ways to install cue. **If you're not a developer, use Option A.**
 
 ### Option B — Run from source (developers)
 
-You need [Node.js](https://nodejs.org) 18+ installed.
+You need [Node.js](https://nodejs.org) 22.12+ installed (required by dev dependencies).
 
 ```bash
 git clone https://github.com/Blueturboguy07/cue.git

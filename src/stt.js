@@ -41,7 +41,7 @@ function createSTT(settings) {
     async transcribe(pcm) {
       if (!chain.length || !pcm || pcm.length < 3200) return { text: '' };
       const now = Date.now();
-      if (disabledUntil && now < disabledUntil) return { text: '', error: { provider: lastProvider, message: 'Temporary Gemini quota exhaustion; waiting before retrying.' } };
+      if (disabledUntil && now < disabledUntil) return { text: '', error: { provider: lastProvider, message: `Temporary ${lastProvider || 'provider'} quota or rate-limit; waiting 30s before retrying.` } };
       const wav = pcmToWav(pcm, 16000, 1);
       let lastErr = null;
       for (const c of chain) {

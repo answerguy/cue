@@ -416,7 +416,10 @@
   cue.on('capture:state', ({ active, streaming }) => {
     setLiveDotState(active ? 'idle' : 'off');
     $('#stop-btn').classList.toggle('active', active);
-    if (active) { startMic(); startSystemAudio(); } else { stopMic(); stopSystemAudio(); }
+    // startSystemAudio() is called directly from the stop-button click handler
+    // so that the getDisplayMedia request has a fresh user gesture.
+    // Here we only start the mic (no gesture required) and stop everything on deactivate.
+    if (active) { startMic(); } else { stopMic(); stopSystemAudio(); }
     updateSttStatus({ active, streaming });
   });
 

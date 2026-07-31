@@ -238,12 +238,12 @@ function initStreamingSTT() {
       },
       onError: (err) => {
         console.log('[streaming-stt] error', err.provider, err.message);
-        // If streaming fails, fall back to batch mode
+        // If streaming fails, disconnect cleanly then fall back to batch mode
+        stopStreamingSTT(); // close WebSockets and clear keep-alive intervals
         if (!sttDisabled) {
           send('status', { message: `Streaming transcription (${err.provider}) error: ${err.message}. Falling back to batch mode.` });
         }
         streamingMode = false;
-        if (streamingSTT[channel]) { streamingSTT[channel] = null; }
         startFlushLoop(); // activate batch fallback
       },
       onStatusChange: (ch, status) => {

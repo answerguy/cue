@@ -1,5 +1,6 @@
 const fs = require('fs');
-const src = fs.readFileSync('./renderer/renderer.js', 'utf8');
+const path = require('path');
+const src = fs.readFileSync(path.join(__dirname, 'renderer', 'renderer.js'), 'utf8');
 
 const defPos = src.indexOf('function updateTranscriptInterim');
 const handlerPos = src.indexOf("cue.on('stt:interim'");
