@@ -1,39 +1,37 @@
-const assert = require('node:assert/strict');
 const test = require('node:test');
-const { MODES, formatTranscript } = require('../src/prompts');
+const assert = require('node:assert/strict');
+const { MODES } = require('../src/prompts');
 
-test('formats transcript speakers and preserves chronological order', () => {
-  const transcript = [
-    { channel: 'you', text: 'Hello' },
-    { channel: 'them', text: 'Hi there' },
-    { channel: 'you', text: 'How are you?' }
-  ];
-
-  assert.equal(formatTranscript(transcript), 'You: Hello\nThem: Hi there\nYou: How are you?');
+test('assist mode gives a direct answer in first person', () => {
+  const system = MODES.assist.buildSystem(null);
+  const text = system + '\n' + MODES.assist.build({ transcript: [], userText: '' });
+  // System prompt must instruct to answer in first person with no preamble
+  assert.match(text, /first person/i);
+  assert.match(text, /no preamble|preamble/i);
 });
 
-test('limits transcript formatting to the most recent turns', () => {
-  const transcript = [
-    { channel: 'them', text: 'Earlier' },
-    { channel: 'you', text: 'Middle' },
-    { channel: 'them', text: 'Latest' }
-  ];
-
-  assert.equal(formatTranscript(transcript, 2), 'You: Middle\nThem: Latest');
+test('say mode produces a spoken answer not a question', () => {
+  const system = MODES.say.buildSystem(null);
+  const text = system + '\n' + MODES.say.build({ transcript: [], userText: '' });
+  assert.match(text, /say out loud|in first person/i);
+  // Must instruct to write actual spoken words (not meta-instructions)
+  assert.match(text, /actual words|Write the|2.5 sentences/i);
 });
 
-test('builds an ask prompt from user text and recent conversation', () => {
-  const prompt = MODES.ask.build({
-    transcript: [{ channel: 'them', text: 'Can you send that today?' }],
-    userText: 'Draft a concise reply.'
-  });
-
-  assert.match(prompt, /Them: Can you send that today\?/);
-  assert.match(prompt, /Question: Draft a concise reply\./);
+test('leetcode mode ignores context block and returns coding prompt', () => {
+  const system = MODES.leetcode.buildSystem('IGNORED_CONTEXT');
+  assert.match(system, /competitive programmer|coding problem/i);
+  assert.ok(!system.includes('IGNORED_CONTEXT'), 'leetcode should not include context block');
 });
 
-test('builds an empty-state prompt when no conversation has been captured', () => {
-  const prompt = MODES.say.build({ transcript: [] });
+test('followup mode returns a bullet list', () => {
+  const system = MODES.followup.buildSystem(null);
+  assert.match(system, /bullet list|bullets/i);
+});
 
-  assert.match(prompt, /nothing heard yet/);
+test('all modes have a build function', () => {
+  for (const [name, mode] of Object.entries(MODES)) {
+    assert.equal(typeof mode.build, 'function', `${name}.build must be a function`);
+    assert.equal(typeof mode.buildSystem, 'function', `${name}.buildSystem must be a function`);
+  }
 });

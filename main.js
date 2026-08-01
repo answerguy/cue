@@ -1,32 +1,71 @@
-const DEBUG = false; // Set to false to disable debug logging
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell } = require('electron');
 const path = require('path');
+const os = require('os');
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
 const { createLLM } = require('./src/llm');
 const { MODES } = require('./src/prompts');
-const { appendResumeContext } = require('./src/profile-context');
 const { rms16 } = require('./src/wav');
+const { createStreamingSTT } = require('./src/stt-streaming');
+const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
+const { buildInterviewContext, detectCategory } = require('./src/interview-context');
 
 let win = null;
-let registeredAssistShortcut = null;
+const isMac = process.platform === 'darwin';
+const isWindows = process.platform === 'win32';
 
-const DEFAULT_ASSIST_SHORTCUT = 'CommandOrControl+Return';
-const RESERVED_SHORTCUTS = new Set([
-  'commandorcontrol+h',
-  'commandorcontrol+shift+x'
-]);
+// -------- Windows version helpers --------
+// WDA_EXCLUDEFROMCAPTURE (setContentProtection) requires Windows 10 build 19041+.
+// os.release() returns the NT kernel version e.g. "10.0.19041" or "10.0.22000" (Win11).
+function getWindowsBuild() {
+  if (!isWindows) return 0;
+  const parts = os.release().split('.').map(Number);
+  return parts[2] || 0; // third segment is the build number
+}
+const WIN_BUILD = getWindowsBuild();
+const WIN_SUPPORTS_CONTENT_PROTECTION = !isWindows || WIN_BUILD >= 19041;
 
 // -------- capture / transcript state --------
 const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
 let sttDisabled = false; // set when the key can't reach any speech model (stops retry spam)
 const buffers = { you: [], them: [] };
-const transcript = []; // { channel, text, ts }
-const FLUSH_MS = 3500;
-const MIN_BYTES = Math.floor(16000 * 2 * 0.6); // ~0.6s
-const RMS_GATE = 240;
+const transcript = []; // { channel, text, ts } — capped at MAX_TRANSCRIPT_TURNS
+const MAX_TRANSCRIPT_TURNS = 200; // ~30–40 minutes of conversation at normal pace
+const FLUSH_MS = 900;
+const MIN_BYTES = Math.floor(16000 * 2 * 0.12); // ~0.12s
+const RMS_GATE = 180;
 let flushTimer = null;
+
+// -------- streaming STT state --------
+let streamingSTT = { you: null, them: null }; // streaming STT instances per channel
+let streamingMode = false; // true when using WebSocket streaming STT
+const vad = {
+  you: new AdaptiveVAD({
+    onsetThreshold: 220,
+    offsetThreshold: 130,
+    silenceFrames: 18,       // ~540ms silence before end
+    onSpeechStart: () => send('vad:state', { channel: 'you', speaking: true }),
+    onSpeechEnd: (dur) => send('vad:state', { channel: 'you', speaking: false, durationMs: dur })
+  }),
+  them: new AdaptiveVAD({
+    onsetThreshold: 200,
+    offsetThreshold: 120,
+    silenceFrames: 20,       // ~600ms for remote audio (more forgiving)
+    onSpeechStart: () => send('vad:state', { channel: 'them', speaking: true }),
+    onSpeechEnd: (dur) => send('vad:state', { channel: 'them', speaking: false, durationMs: dur })
+  })
+};
+// Pre-speech ring buffers (300ms) so we never clip the start of a word
+const ringBuffers = {
+  you: new AudioRingBuffer(300, 16000),
+  them: new AudioRingBuffer(300, 16000)
+};
+
+function pushTranscript(turn) {
+  transcript.push(turn);
+  if (transcript.length > MAX_TRANSCRIPT_TURNS) transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
+}
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
 
@@ -34,11 +73,23 @@ function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.se
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   const W = 700, H = 600;
-  win = new BrowserWindow({
+
+  const savedSettings = store.getSettings();
+  let startX = Math.round(workArea.x + (workArea.width - W) / 2);
+  let startY = workArea.y + 6;
+
+  if (savedSettings.windowX !== null && savedSettings.windowY !== null) {
+    const clampedX = Math.max(workArea.x - W + 100, Math.min(savedSettings.windowX, workArea.x + workArea.width - 100));
+    const clampedY = Math.max(workArea.y, Math.min(savedSettings.windowY, workArea.y + workArea.height - 40));
+    startX = clampedX;
+    startY = clampedY;
+  }
+
+  const winOptions = {
     width: W,
     height: H,
-    x: Math.round(workArea.x + (workArea.width - W) / 2),
-    y: workArea.y + 6,
+    x: startX,
+    y: startY,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -52,25 +103,63 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false
     }
-  });
+  };
 
-  // Invisibility + overlay behavior. Set CUE_NO_PROTECT=1 to disable for debugging.
-  win.setContentProtection(!process.env.CUE_NO_PROTECT);            // excluded from screen capture (best-effort)
-  if (process.platform === 'darwin') {
-    win.setAlwaysOnTop(true, 'screen-saver', 1);
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    if (typeof win.setHiddenInMissionControl === 'function') win.setHiddenInMissionControl(true);
-  } else {
-    win.setAlwaysOnTop(true);
+  // Fix 1: On Windows, set type:'toolbar' which sets WS_EX_TOOLWINDOW.
+  // This removes the window from Alt+Tab AND the taskbar entirely.
+  // On macOS, this is not needed (dock hiding + Mission Control handle it).
+  if (isWindows) {
+    winOptions.type = 'toolbar';
   }
+
+  win = new BrowserWindow(winOptions);
+
+  // Fix 2: Only call setContentProtection if the OS supports it.
+  // On Windows, WDA_EXCLUDEFROMCAPTURE requires build 19041+ (Windows 10 May 2020 Update).
+  // On older builds we skip it silently to avoid a no-op and send a warning to the renderer.
+  const shouldProtect = !process.env.CUE_NO_PROTECT;
+  if (shouldProtect) {
+    if (WIN_SUPPORTS_CONTENT_PROTECTION) {
+      win.setContentProtection(true);
+    } else {
+      // Will notify the renderer after it loads
+      console.log(`[cue] Windows build ${WIN_BUILD} < 19041 — setContentProtection not supported. Window may appear in screen shares.`);
+    }
+  }
+
+  win.setAlwaysOnTop(true, 'screen-saver', 1);
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  if (isMac && typeof win.setHiddenInMissionControl === 'function') win.setHiddenInMissionControl(true);
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  win.webContents.on('did-finish-load', () => win.showInactive());
+  let moveSaveTimer = null;
+  win.on('moved', () => {
+    clearTimeout(moveSaveTimer);
+    moveSaveTimer = setTimeout(() => {
+      if (win && !win.isDestroyed()) {
+        const [x, y] = win.getPosition();
+        store.setSettings({ windowX: x, windowY: y });
+      }
+    }, 500);
+  });
+
+  win.setTitle('Microsoft Edge Update'); // set before load
+
+  win.webContents.on('did-finish-load', () => {
+    win.showInactive();
+    win.setTitle('Microsoft Edge Update');
+    // Warn about missing content protection on old Windows builds
+    if (isWindows && shouldProtect && !WIN_SUPPORTS_CONTENT_PROTECTION) {
+      send('status', {
+        message: `Heads up: your Windows version (build ${WIN_BUILD}) does not support screen-share hiding. Upgrade to Windows 10 build 19041+ or Windows 11 to enable invisibility in screen shares.`
+      });
+    }
+  });
   win.webContents.on('render-process-gone', (_e, d) => console.log('[cue] renderer gone', JSON.stringify(d)));
 }
 
-// -------- STT flushing --------
+// -------- STT flushing (batch mode fallback) --------
 async function flushChannel(channel) {
   if (state.transcribing[channel]) return;
   const chunks = buffers[channel];
@@ -85,7 +174,7 @@ async function flushChannel(channel) {
     const settings = store.getSettings();
     const stt = createSTT(settings);
     if (!stt.available) {
-      if (!sttDisabled) { sttDisabled = true; send('status', { message: 'No transcription key set. Add an OpenAI (Whisper) or Gemini key in Settings to enable listening. Screen/LeetCode features work without it.' }); }
+      if (!sttDisabled) { sttDisabled = true; send('status', { message: 'No transcription key set. Add an OpenAI (Whisper), Deepgram, or Gemini key in Settings to enable listening. Screen/LeetCode features work without it.' }); }
       return;
     }
     const res = await stt.transcribe(pcm);
@@ -95,8 +184,7 @@ async function flushChannel(channel) {
     }
     if (res.text && res.text.trim()) {
       const turn = { channel, text: res.text.trim(), ts: Date.now() };
-      transcript.push(turn);
-      if (DEBUG) console.log(`[TRANSCRIPT] ${channel === 'you' ? 'You' : 'Them'}:`, turn.text);
+      pushTranscript(turn);
       send('transcript', turn);
     }
   } catch (e) {
@@ -124,6 +212,86 @@ function startFlushLoop() {
 }
 function stopFlushLoop() { if (flushTimer) { clearInterval(flushTimer); flushTimer = null; } }
 
+// -------- streaming STT setup --------
+function initStreamingSTT() {
+  const settings = store.getSettings();
+  const keys = settings.apiKeys || {};
+
+  // Check if we have a streaming-capable key
+  if (!keys.deepgram && !keys.openai) {
+    streamingMode = false;
+    return false;
+  }
+
+  streamingMode = true;
+
+  ['you', 'them'].forEach((channel) => {
+    const sttInstance = createStreamingSTT(settings, channel, {
+      onTranscript: (ch, text) => {
+        const turn = { channel: ch, text, ts: Date.now() };
+        pushTranscript(turn);
+        send('transcript', turn);
+        send('stt:final', { channel: ch, text });
+      },
+      onInterim: (ch, text) => {
+        send('stt:interim', { channel: ch, text });
+      },
+      onError: (err) => {
+        console.log('[streaming-stt] error', err.provider, err.message);
+        // If streaming fails, disconnect cleanly then fall back to batch mode
+        stopStreamingSTT(); // close WebSockets and clear keep-alive intervals
+        if (!sttDisabled) {
+          send('status', { message: `Streaming transcription (${err.provider}) error: ${err.message}. Falling back to batch mode.` });
+        }
+        streamingMode = false;
+        startFlushLoop(); // activate batch fallback
+      },
+      onStatusChange: (ch, status) => {
+        send('stt:status', { channel: ch, status });
+        if (status === 'connected') {
+          console.log(`[streaming-stt] ${ch} channel connected`);
+        }
+      }
+    });
+
+    if (sttInstance.type === 'streaming' && sttInstance.instance) {
+      streamingSTT[channel] = sttInstance.instance;
+      sttInstance.instance.connect();
+    }
+  });
+
+  return streamingMode;
+}
+
+function stopStreamingSTT() {
+  ['you', 'them'].forEach((channel) => {
+    if (streamingSTT[channel]) {
+      streamingSTT[channel].disconnect();
+      streamingSTT[channel] = null;
+    }
+  });
+  streamingMode = false;
+}
+
+// -------- audio routing (streaming or batch) --------
+function routeAudio(channel, pcmBuffer) {
+  const buf = Buffer.from(pcmBuffer);
+
+  // Always run through VAD for speech state detection
+  vad[channel].processChunk(buf);
+
+  // Keep pre-speech buffer
+  ringBuffers[channel].write(buf);
+
+  if (streamingMode && streamingSTT[channel]) {
+    // Streaming mode: send raw PCM directly to the WebSocket
+    streamingSTT[channel].sendAudio(pcmBuffer);
+  } else {
+    // Batch mode: accumulate in buffers for periodic flush
+    buffers[channel].push(buf);
+  }
+}
+
 // -------- capture toggle --------
 // Mic + system audio are both captured in the RENDERER (getUserMedia for the mic,
 // getDisplayMedia loopback for system audio) so they run inside cue's own process
@@ -131,63 +299,61 @@ function stopFlushLoop() { if (flushTimer) { clearInterval(flushTimer); flushTim
 function setCapturing(active) {
   state.capturing = active;
   if (active) {
-    startFlushLoop();
+    sttDisabled = false; // reset on re-enable
+    // Try streaming first, fall back to batch
+    const streaming = initStreamingSTT();
+    if (!streaming) {
+      startFlushLoop();
+    }
+    console.log('[cue] capture started, mode:', streaming ? 'streaming' : 'batch');
   } else {
     stopFlushLoop();
+    stopStreamingSTT();
     buffers.you = []; buffers.them = [];
+    vad.you.reset(); vad.them.reset();
+    ringBuffers.you.clear(); ringBuffers.them.clear();
   }
-  send('capture:state', { active });
+  send('capture:state', { active, streaming: streamingMode });
   return active;
 }
 
 // -------- feature runner --------
 async function runFeature(mode, userText) {
-  if (DEBUG) console.log('[DEBUG MAIN] runFeature called:', { mode, userText, isBusy: state.busy });
   if (state.busy) return;
   const def = MODES[mode];
-  if (!def) {
-    if (DEBUG) console.log('[DEBUG MAIN] mode not found:', mode);
-    return;
-  }
+  if (!def) return;
   state.busy = true;
   try {
     const settings = store.getSettings();
     const llm = createLLM(settings);
     const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' ? userText : null);
-    if (DEBUG) console.log('[DEBUG MAIN] LLM settings loaded:', { provider: settings.provider, smart: settings.smart });
-    send('llm:start', { userBubble, small: !!def.small });
+    const category = mode !== 'leetcode' ? detectCategory(transcript) : null;
+    send('llm:start', { userBubble, small: !!def.small, category });
 
     if (!llm.ready) {
-      if (DEBUG) console.log('[DEBUG MAIN] LLM not ready (missing key or model).');
       send('llm:error', { message: 'Add your ' + settings.provider + ' API key in Settings (gear icon) to start. Model: ' + (llm.model || 'unset') + '.' });
       return;
     }
 
     let imageDataUrl = null;
     if (def.needsScreen) {
-      if (DEBUG) console.log('[DEBUG MAIN] Feature needs screen. Capturing screenshot...');
-      try { 
-        imageDataUrl = await captureScreenshot(); 
-        if (DEBUG) console.log('[DEBUG MAIN] Screenshot captured successfully (length:', imageDataUrl.length, ')');
-      }
-      catch (e) { 
-        if (DEBUG) console.error('[DEBUG MAIN] Screenshot capture failed:', e);
-        send('status', { message: 'Screen capture needs permission — grant Screen Recording to cue in System Settings.' }); 
-      }
+      try { imageDataUrl = await captureScreenshot(); }
+      catch (e) { send('status', { message: 'Screen capture needs permission — grant screen/audio access to cue in your system settings.' }); }
     }
 
+    const settingsForPrompt = store.getSettings();
+    const contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
+    const system = def.buildSystem ? def.buildSystem(contextBlock) : (def.system || '');
     const built = def.build({ transcript, userText: userText || '' });
-    if (DEBUG) console.log('[DEBUG MAIN] Built prompt. Starting LLM stream...');
-    const fullText = await llm.stream({
-      system: appendResumeContext(def.system, settings.resumeContext),
+    await llm.stream({
+      system,
       turns: [{ role: 'user', text: built }],
       imageDataUrl,
       onToken: (t) => send('llm:token', { text: t })
     });
-    if (DEBUG) console.log('[DEBUG MAIN] Full LLM Output:\n', fullText);
     send('llm:done', {});
   } catch (e) {
-    send('llm:error', { message: 'Error: ' + (e && e.message ? e.message : String(e)) });
+    send('llm:error', { message: e && e.message ? e.message : String(e) });
   } finally {
     state.busy = false;
   }
@@ -196,79 +362,54 @@ async function runFeature(mode, userText) {
 // -------- IPC --------
 ipcMain.handle('settings:get', () => store.getSettings());
 ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return store.setSettings(patch); });
-ipcMain.handle('shortcut:assist:set', (_e, accelerator) => setAssistShortcut(accelerator));
 ipcMain.handle('capture:toggle', () => setCapturing(!state.capturing));
 ipcMain.handle('capture:state', () => ({ active: state.capturing }));
+ipcMain.handle('platform:info', () => ({
+  platform: process.platform,
+  winBuild: WIN_BUILD,
+  winSupportsContentProtection: WIN_SUPPORTS_CONTENT_PROTECTION
+}));
+ipcMain.handle('transcript:clear', () => {
+  transcript.splice(0, transcript.length);
+  return { ok: true };
+});
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
-ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.you.push(Buffer.from(arrayBuffer)); });
-ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) buffers.them.push(Buffer.from(arrayBuffer)); });
+ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('you', arrayBuffer); });
+ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('them', arrayBuffer); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
 ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
 
 // -------- shortcuts --------
-function normalizeShortcut(accelerator) {
-  return typeof accelerator === 'string' ? accelerator.trim().replace(/\s+/g, '') : '';
-}
-
-function registerAssistShortcut(accelerator) {
-  const next = normalizeShortcut(accelerator) || DEFAULT_ASSIST_SHORTCUT;
-  if (next.length > 80) return { ok: false, error: 'That shortcut is too long.' };
-  if (RESERVED_SHORTCUTS.has(next.toLowerCase())) {
-    return { ok: false, error: 'That shortcut is reserved by another cue action.' };
-  }
-
-  const previous = registeredAssistShortcut;
-  if (previous) globalShortcut.unregister(previous);
-
-  try {
-    if (!globalShortcut.register(next, () => runFeature('assist', ''))) {
-      if (previous) globalShortcut.register(previous, () => runFeature('assist', ''));
-      return { ok: false, error: 'That shortcut is already in use by another application.' };
-    }
-  } catch (_) {
-    if (previous) globalShortcut.register(previous, () => runFeature('assist', ''));
-    return { ok: false, error: 'That key combination is not a valid global shortcut.' };
-  }
-
-  registeredAssistShortcut = next;
-  return { ok: true, accelerator: next };
-}
-
-function setAssistShortcut(accelerator) {
-  const result = registerAssistShortcut(accelerator);
-  if (result.ok) store.setSettings({ shortcuts: { assist: result.accelerator } });
-  return result;
-}
-
 function registerShortcuts() {
+  globalShortcut.register('CommandOrControl+Return', () => runFeature('assist', ''));
+  globalShortcut.register('CommandOrControl+Shift+Return', () => runFeature('say', ''));
   globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
   globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
-
-  const settings = store.getSettings();
-  const configured = settings.shortcuts && settings.shortcuts.assist;
-  const result = registerAssistShortcut(configured || DEFAULT_ASSIST_SHORTCUT);
-  if (!result.ok && configured && configured !== DEFAULT_ASSIST_SHORTCUT) {
-    console.log('[cue] unable to register Assist shortcut:', result.error, 'Falling back to default.');
-    const fallback = registerAssistShortcut(DEFAULT_ASSIST_SHORTCUT);
-    if (fallback.ok) store.setSettings({ shortcuts: { assist: DEFAULT_ASSIST_SHORTCUT } });
-  }
 }
 
 // -------- lifecycle --------
 app.whenReady().then(() => {
-  if (app.dock) app.dock.hide();
+  app.setName('MicrosoftEdgeUpdate');
+  if (isWindows) {
+    process.title = 'MicrosoftEdgeUpdate';
+  }
 
-  const allowMedia = (permission) => permission === 'media' || permission === 'microphone' || permission === 'audioCapture' || permission === 'display-capture';
+  if (isMac && app.dock) app.dock.hide();
+
+  const allowMedia = (permission) => permission === 'media' || permission === 'microphone' || permission === 'audioCapture' || permission === 'display-capture' || permission === 'screen';
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowMedia(permission)));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
 
   // System-audio loopback for getDisplayMedia: hand back a screen source with 'loopback'
   // audio so the renderer can capture what's playing (Zoom/Meet) using cue's own grant.
-  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      if (sources.length) callback({ video: sources[0], audio: 'loopback' });
-      else callback();
+      if (!sources.length) return callback();
+      const request = { video: sources[0] };
+      if (isWindows) request.audio = true;
+      else request.audio = 'loopback';
+      callback(request);
     }).catch(() => callback());
   }, { useSystemPicker: false });
 

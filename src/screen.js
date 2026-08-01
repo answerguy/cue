@@ -1,5 +1,5 @@
 // Full-resolution screenshot via desktopCapturer (main process).
-// First call triggers the macOS Screen-Recording permission prompt for the app.
+// The first call can trigger the system permission prompt for the app.
 const { desktopCapturer, screen } = require('electron');
 
 async function captureScreenshot() {
