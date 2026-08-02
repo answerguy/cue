@@ -29,9 +29,9 @@ function stripDataUrl(dataUrl) {
   return m ? { mime: m[1], b64: m[2] } : null;
 }
 
-async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, baseURL }) {
   const OpenAI = require('openai');
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, baseURL });
   const messages = [{ role: 'system', content: system }];
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
@@ -107,7 +107,7 @@ function createLLM(settings) {
   if (provider === 'gemini' && /^gemini-1\.5\-/.test(model || '')) {
     model = 'gemini-2.0-flash';
   }
-  if (!model) model = provider === 'gemini' ? 'gemini-2.0-flash' : (provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-latest');
+  if (!model) model = provider === 'gemini' ? 'gemini-2.0-flash' : (provider === 'openai' ? 'gpt-4o-mini' : (provider === 'ollama' ? 'llama3.2' : 'claude-3-5-haiku-latest'));
   const maxTokens = settings.smart ? 1400 : 700;
 
   return {
@@ -117,6 +117,12 @@ function createLLM(settings) {
       const args = { apiKey, model, maxTokens, ...params, turns: sanitizeTurns(params.turns) };
       try {
         if (provider === 'openai') return await streamOpenAI(args);
+        if (provider === 'ollama') {
+          // For Ollama, the 'apiKey' field holds the URL (e.g. http://localhost:11434/v1)
+          let baseURL = apiKey || 'http://localhost:11434';
+          if (!baseURL.endsWith('/v1')) baseURL = baseURL.replace(/\/+$/, '') + '/v1';
+          return await streamOpenAI({ ...args, apiKey: 'ollama', baseURL });
+        }
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
         throw new Error('unknown provider: ' + provider);

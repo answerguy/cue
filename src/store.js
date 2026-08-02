@@ -8,7 +8,7 @@ const FILE = path.join(app.getPath('userData'), 'cue-data.json');
 const DEFAULTS = {
   provider: 'openai',
   smart: false,
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '' },
+  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', ollama: 'http://localhost:11434' },
   // Tab 2: Profile
   resumeText: '',
   jobDescription: '',
@@ -26,7 +26,8 @@ const DEFAULTS = {
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
-    gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' }
+    gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' },
+    ollama: { fast: 'llama3.2', smart: 'llama3.3' }
   }
 };
 
@@ -48,6 +49,16 @@ function load() {
   if (data) return data;
   try { data = deepMerge(DEFAULTS, JSON.parse(fs.readFileSync(FILE, 'utf8'))); }
   catch { data = deepMerge(DEFAULTS, {}); }
+
+  // Auto-switch provider if the current one has no key, but another one does.
+  if (!data.apiKeys[data.provider]) {
+    const validProviders = ['openai', 'anthropic', 'gemini']; // Exclude ollama from auto-switch
+    const active = validProviders.find(p => data.apiKeys[p]);
+    if (active) {
+      data.provider = active;
+    }
+  }
+
   return data;
 }
 function save() { try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2)); } catch (e) { /* ignore */ } }
