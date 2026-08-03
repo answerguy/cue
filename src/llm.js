@@ -1,5 +1,14 @@
-// LLM factory — OpenAI / Anthropic / Gemini behind one streaming interface.
+// LLM factory — OpenAI, Anthropic, Gemini, and OpenAI-compatible APIs behind one streaming interface.
 // stream({ system, turns:[{role,text}], imageDataUrl, maxTokens, onToken }) -> Promise<fullText>
+
+const { createCompatibleClientOptions } = require('./openai-compatible');
+
+const CUSTOM_PROVIDER = 'custom';
+const DEFAULT_MODELS = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-3-5-haiku-latest',
+  gemini: 'gemini-2.0-flash'
+};
 
 function normalizeProviderName(provider) {
   if (!provider) return 'provider';
@@ -29,9 +38,9 @@ function stripDataUrl(dataUrl) {
   return m ? { mime: m[1], b64: m[2] } : null;
 }
 
-async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUrl, maxTokens, onToken }) {
   const OpenAI = require('openai');
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI(baseURL ? { apiKey, baseURL } : { apiKey });
   const messages = [{ role: 'system', content: system }];
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
@@ -101,22 +110,45 @@ async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTok
 function createLLM(settings) {
   const provider = settings.provider;
   const keys = settings.apiKeys || {};
-  const apiKey = keys[provider];
+  let apiKey = keys[provider];
+  let baseURL = '';
+  let configurationError = '';
   const tier = settings.smart ? 'smart' : 'fast';
-  let model = (settings.models[provider] || {})[tier];
+  const models = settings.models || {};
+  let model = (models[provider] || {})[tier];
   if (provider === 'gemini' && /^gemini-1\.5\-/.test(model || '')) {
     model = 'gemini-2.0-flash';
   }
-  if (!model) model = provider === 'gemini' ? 'gemini-2.0-flash' : (provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-latest');
+  if (!model) model = DEFAULT_MODELS[provider] || '';
+
+  if (provider === CUSTOM_PROVIDER) {
+    try {
+      const clientOptions = createCompatibleClientOptions(apiKey, settings.baseUrl);
+      apiKey = clientOptions.apiKey;
+      baseURL = clientOptions.baseURL;
+    } catch (error) {
+      configurationError = error.message;
+    }
+    if (!model && !configurationError) {
+      configurationError = 'Set a Fast or Smart model for the Custom provider.';
+    }
+  } else if (!apiKey) {
+    configurationError = `Add your ${provider} API key in Settings.`;
+  }
+
+  const ready = !configurationError && !!model;
   const maxTokens = settings.smart ? 1400 : 700;
 
   return {
-    provider, model, apiKey,
-    ready: !!apiKey && !!model,
+    provider, model, apiKey, baseURL,
+    ready,
+    configurationError,
     async stream(params) {
-      const args = { apiKey, model, maxTokens, ...params, turns: sanitizeTurns(params.turns) };
+      if (!ready) throw new Error(configurationError || `Complete the ${provider} provider settings.`);
+      const args = { apiKey, baseURL, model, maxTokens, ...params, turns: sanitizeTurns(params.turns) };
       try {
         if (provider === 'openai') return await streamOpenAI(args);
+        if (provider === CUSTOM_PROVIDER) return await streamOpenAI(args);
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
         throw new Error('unknown provider: ' + provider);

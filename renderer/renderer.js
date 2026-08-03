@@ -563,17 +563,18 @@
   // ---- settings ----------------------------------------------------------
   const scrim = $('#settings-scrim');
   function openSettings() { fillSettings(); scrim.classList.remove('hidden'); }
-  function closeSettings() { saveSettings(); scrim.classList.add('hidden'); }
+  async function closeSettings() {
+    if (await saveSettings()) scrim.classList.add('hidden');
+  }
   $('#more-btn').addEventListener('click', openSettings);
-  $('#s-close').addEventListener('click', closeSettings);
-  scrim.addEventListener('click', (e) => { if (e.target === scrim) closeSettings(); });
+  $('#s-close').addEventListener('click', () => { void closeSettings(); });
+  scrim.addEventListener('click', (e) => { if (e.target === scrim) void closeSettings(); });
 
   // Tab switching
   document.querySelectorAll('.s-tab').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      if (!tab.classList.contains('on')) {
-        saveSettings().catch((err) => console.error('[cue] tab auto-save error', err));
-      }
+    tab.addEventListener('click', async () => {
+      if (tab.classList.contains('on')) return;
+      if (!(await saveSettings())) return;
       document.querySelectorAll('.s-tab').forEach(t => t.classList.remove('on'));
       document.querySelectorAll('.s-tab-pane').forEach(p => p.classList.add('hidden'));
       tab.classList.add('on');
@@ -582,6 +583,10 @@
     });
   });
 
+  function updateCustomProviderFields() {
+    $('#custom-endpoint-settings').classList.toggle('hidden', settings.provider !== 'custom');
+  }
+
   function fillSettings() {
     // Keys tab
     document.querySelectorAll('#provider-seg button').forEach((b) => b.classList.toggle('on', b.dataset.provider === settings.provider));
@@ -589,6 +594,9 @@
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
     $('#key-gemini').value = settings.apiKeys.gemini || '';
     $('#key-deepgram').value = settings.apiKeys.deepgram || '';
+    $('#key-custom').value = settings.apiKeys.custom || '';
+    $('#base-url').value = settings.baseUrl || '';
+    updateCustomProviderFields();
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     $('#s-status').textContent = statusText();
@@ -621,6 +629,7 @@
   document.querySelectorAll('#provider-seg button').forEach((b) => b.addEventListener('click', () => {
     settings.provider = b.dataset.provider;
     document.querySelectorAll('#provider-seg button').forEach((x) => x.classList.toggle('on', x === b));
+    updateCustomProviderFields();
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     $('#s-status').textContent = statusText();
@@ -633,6 +642,8 @@
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
     settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
+    settings.apiKeys.custom = $('#key-custom').value.trim();
+    settings.baseUrl = $('#base-url').value.trim();
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
@@ -647,9 +658,18 @@
     // Q&A
     settings.salaryTarget = $('#salary-target').value.trim();
     settings.questionsToAsk = $('#questions-to-ask').value.trim();
-    await cue.settingsSet(settings);
-    updatePrepStatus();
-    updateSmartTooltip();
+    try {
+      settings = await cue.settingsSet(settings);
+      $('#s-status').textContent = statusText();
+      updatePrepStatus();
+      updateSmartTooltip();
+      return true;
+    } catch (error) {
+      const message = error && error.message ? error.message : String(error);
+      $('#s-status').textContent = message;
+      $('#base-url').focus();
+      return false;
+    }
   }
 
   // ---- example conversation (matches the reference screenshot) ------------
