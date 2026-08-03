@@ -36,9 +36,42 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in main.js preload.js renderer/*.js src/*.js test/*.js; do
+          for file in main.js preload.js electron-builder.cjs renderer/*.js src/*.js scripts/*.js test/*.js; do
             node --check "$file"
           done
 
       - name: Run tests
         run: npm test
+
+  runtime-smoke:
+    name: Local runtime (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore prepared runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/whisper-runtime
+          key: whisper-runtime-1.9.1-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Prepare pinned runtime
+        run: npm run prepare:whisper
+
+      - name: Launch runtime smoke test
+        run: npm run verify:whisper-runtime
