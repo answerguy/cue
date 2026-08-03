@@ -27,9 +27,14 @@ async function transcribeGemini(apiKey, wav) {
 
 function createSTT(settings) {
   const keys = settings.apiKeys || {};
+  const selectedProvider = settings.sttProvider || 'auto';
   const chain = [];
-  if (keys.openai) chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, settings.sttModel) });
-  if (keys.gemini) chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
+  if ((selectedProvider === 'auto' || selectedProvider === 'openai') && keys.openai) {
+    chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, settings.sttModel) });
+  }
+  if ((selectedProvider === 'auto' || selectedProvider === 'gemini') && keys.gemini) {
+    chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
+  }
   if (keys.openai && chain.length > 1) chain.unshift(chain.splice(chain.findIndex((c) => c.p === 'openai'), 1)[0]);
 
   let disabledUntil = 0;

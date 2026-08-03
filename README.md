@@ -60,7 +60,16 @@ To build a packaged app:
 ```bash
 npm run dist:mac    # macOS build
 npm run dist:win    # Windows build
+npm run dist:linux  # Linux x64 AppImage
 ```
+
+Packaged builds include a pinned `whisper.cpp` runtime. When running from source, prepare the matching runtime once:
+
+```bash
+npm run prepare:whisper
+```
+
+Windows x64 and Linux x64/arm64 use checksum-verified binaries from the pinned upstream release. macOS x64/arm64 builds `whisper-server` from the same pinned source tag and requires CMake plus Xcode command-line tools.
 
 > Note: permission grants can reset after a rebuild, so you may need to re-enable microphone/screen access after packaging a fresh build.
 
@@ -88,6 +97,17 @@ cue uses **your own** API key, so it's free to run (you only pay your AI provide
 | **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | One key does chat + transcription. |
 
 Your key is stored **only on your computer** (in `cue-data.json`) and is sent **only** to that provider. cue has no server and collects nothing.
+
+### Optional — transcribe locally with whisper.cpp
+
+Open **Settings → Audio**, choose **Local**, and download a model. `base.en` is the recommended English default; all 30 models supported by the official whisper.cpp download script are available, including multilingual, quantized, large, turbo, and TinyDiarize variants.
+
+Local mode is independent from the chat provider, so you can use local speech-to-text with OpenAI, Anthropic, or Gemini chat. The selected model loads once when listening starts, serves both the **You** and **Them** channels, and unloads only after queued speech has been transcribed when listening stops.
+
+- Audio inference stays on your computer and audio is never written to a temporary file.
+- Model files are downloaded only when you ask, support cancel/resume, and are checked against pinned byte counts and SHA-256 hashes.
+- Local mode never silently sends audio to a cloud fallback. A local failure is reported without sending the audio elsewhere.
+- Models are stored under Cue's Electron user-data directory and can be imported or deleted from Settings.
 
 ### Optional — tailor answers to your background
 
@@ -127,7 +147,9 @@ cue is an [Electron](https://www.electronjs.org/) app. Everything runs locally e
 - **Your mic ("You")** — `getUserMedia` → downsampled to 16 kHz audio → transcribed.
 - **Meeting audio ("Them")** — `getDisplayMedia` loopback capture of your system's output audio, kept on its own channel so cue knows *who* said what.
 
-Both audio streams are transcribed (OpenAI Whisper or Gemini) and fed, with an optional screenshot, to your AI model. Responses **stream** into the panel word-by-word.
+Both audio streams are transcribed by the independently selected speech provider (local whisper.cpp, Deepgram, OpenAI, or Gemini) and fed, with an optional screenshot, to your chat model. Responses **stream** into the panel word-by-word.
+
+When Local transcription is selected, Cue runs one persistent `whisper-server` sidecar bound to `127.0.0.1` on a temporary port with a random request path. Voice activity detection creates bounded in-memory utterances with pre-roll, and both channels share a serialized inference queue because one Whisper context must not process concurrent requests. Stop immediately ends new audio capture, drains the current queue for a bounded period, then terminates the sidecar.
 
 **The invisibility** is a single macOS window flag: `setContentProtection(true)`, which sets `NSWindowSharingNone`. This asks the window server to exclude cue from screen-capture streams. It's the same mechanism DRM apps and Zoom's own toolbar use. It is **not** a GPU trick or a special overlay layer — and on macOS 15.4+ Apple lets some capture tools ignore it, which is why it's best-effort (see the disclaimer at the top).
 
@@ -142,6 +164,15 @@ renderer ──────┴─ the glass UI + mic capture + system-audio loop
 ---
 
 ## Troubleshooting
+
+**Local transcription says the runtime is not prepared.**
+Packaged releases include the runtime. If you are running from source, run `npm run prepare:whisper` once and restart Cue. On macOS, install CMake and Xcode command-line tools first.
+
+**Local transcription says the model is missing or invalid.**
+Open **Settings → Audio**, select the model, and choose **Download**. A cancelled download can be resumed. If verification fails repeatedly, delete the partial/model file from the same screen and download it again.
+
+**A large local model is slow or runs out of memory.**
+Try `base.en`, `tiny.en`, or a quantized `q5`/`q8` model. Model size in Settings is the download size, not a guarantee of runtime RAM use; larger models require substantially more memory and CPU/GPU time.
 
 **"It says give access, but I already gave access."**
 You probably granted an older build. Because the app is ad-hoc signed, a rebuild changes its identity and macOS stops honoring the old grant (the checkmark can linger). Toggle cue **off and on** in System Settings → Screen Recording, or remove and re-add it.
@@ -162,10 +193,12 @@ Run `xattr -cr /Applications/cue.app` in Terminal once (see Install → Option A
 
 ## Privacy
 
-- No accounts, no servers, no telemetry. cue collects nothing.
+- No Cue accounts, hosted service, or telemetry. cue collects nothing.
 - Your API keys live in a local file (`cue-data.json`) and are sent only to the provider you chose.
 - Your optional résumé text also lives in `cue-data.json` and is sent with each model request to your selected AI provider. It is stored as plain text; clear it in Settings to remove it.
-- Screenshots and audio are sent to your AI provider only when a feature runs, and are not stored by cue beyond the current session's transcript (kept in memory).
+- In Local transcription mode, microphone and meeting audio stay on your computer. In cloud transcription modes, audio is sent only to the selected speech provider.
+- Audio utterances and the current transcript stay in memory; Cue does not write captured audio to disk. Downloaded local model files remain on disk until you delete them.
+- Screenshots are sent to your selected chat provider only when a feature needs the screen.
 
 ## Contributing
 
@@ -174,5 +207,7 @@ Issues and PRs welcome. cue is intentionally small and readable — `main.js` (a
 ## Credits & license
 
 Built as an open-source study of how tools like **Cluely** and **Interview Coder** work. Modeled on the open-source clones `pickle-com/glass` and `sohzm/cheating-daddy`.
+
+Local transcription uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp), distributed under the MIT License. Its license notice is included in packaged runtimes.
 
 **License: [GPL-3.0-or-later](LICENSE).**

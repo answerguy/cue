@@ -7,6 +7,12 @@ const FILE = path.join(app.getPath('userData'), 'cue-data.json');
 
 const DEFAULTS = {
   provider: 'openai',
+  sttProvider: 'auto',
+  localWhisper: {
+    modelId: 'base.en',
+    language: 'auto',
+    threads: 0
+  },
   smart: false,
   apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '' },
   // Tab 2: Profile

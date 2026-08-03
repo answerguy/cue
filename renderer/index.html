@@ -88,6 +88,7 @@
       <!-- Tab bar -->
       <div class="s-tabs">
         <button class="s-tab on" data-tab="keys">🔑 Keys</button>
+        <button class="s-tab" data-tab="transcription">Audio</button>
         <button class="s-tab" data-tab="profile">📄 Profile</button>
         <button class="s-tab" data-tab="prep">🎯 Interview Prep</button>
         <button class="s-tab" data-tab="qa">💬 Q&amp;A</button>
@@ -113,6 +114,57 @@
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
 
         <div class="s-status" id="s-status"></div>
+      </div>
+
+      <!-- Tab: Transcription -->
+      <div class="s-body s-tab-pane hidden" data-pane="transcription">
+        <label class="s-label">Speech-to-text provider</label>
+        <div class="s-seg s-seg-wrap" id="stt-provider-seg">
+          <button data-stt-provider="auto">Auto</button>
+          <button data-stt-provider="local">Local</button>
+          <button data-stt-provider="deepgram">Deepgram</button>
+          <button data-stt-provider="openai">OpenAI</button>
+          <button data-stt-provider="gemini">Gemini</button>
+        </div>
+        <div class="s-note">Local mode keeps microphone and meeting audio on this computer. It never silently falls back to a cloud transcription provider.</div>
+
+        <div class="whisper-card">
+          <div class="whisper-runtime-row">
+            <span class="s-label">whisper.cpp runtime</span>
+            <span id="whisper-runtime-status" class="whisper-badge">Checking…</span>
+          </div>
+
+          <label class="s-label" for="whisper-model">Local model</label>
+          <select id="whisper-model" class="s-select"></select>
+          <div id="whisper-model-detail" class="s-note"></div>
+
+          <div id="whisper-progress-wrap" class="whisper-progress-wrap hidden">
+            <progress id="whisper-progress" max="100" value="0"></progress>
+            <span id="whisper-progress-label">0%</span>
+          </div>
+
+          <div class="whisper-actions">
+            <button id="whisper-download" class="s-action">Download</button>
+            <button id="whisper-cancel" class="s-action hidden">Cancel</button>
+            <button id="whisper-import" class="s-action">Import…</button>
+            <button id="whisper-delete" class="s-action danger" disabled>Delete</button>
+          </div>
+
+          <div class="s-field">
+            <span>Language</span>
+            <select id="whisper-language" class="s-select compact">
+              <option value="auto">Auto-detect</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="s-field">
+            <span>CPU threads</span>
+            <input id="whisper-threads" type="number" min="0" max="64" step="1" value="0" />
+          </div>
+          <div class="s-note">Use 0 for whisper.cpp's default. English-only models always use English regardless of the language setting.</div>
+        </div>
+
+        <div class="s-status" id="whisper-status"></div>
       </div>
 
       <!-- Tab: Profile -->

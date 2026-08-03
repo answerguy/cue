@@ -31,10 +31,12 @@ module.exports = {
   productName: "cue",
   asar: false,
   publish: null,
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}",
   files: ["main.js", "preload.js", "src/**/*", "renderer/**/*"],
   directories: { buildResources: "build-resources" },
+  afterPack: "scripts/after-pack.js",
   mac: {
-    target: [{ target: "zip", arch: ["arm64"] }],
+    target: [{ target: "zip", arch: ["x64", "arm64"] }],
     category: "public.app-category.productivity",
     // With a real cert, let electron-builder discover it and apply the hardened
     // runtime (notarization is refused without it). Without one, identity:null
@@ -58,5 +60,9 @@ module.exports = {
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
+  },
+  linux: {
+    target: [{ target: "AppImage", arch: ["x64", "arm64"] }],
+    category: "Utility",
   },
 };

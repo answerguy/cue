@@ -9,41 +9,14 @@
     "start": "electron .",
     "test": "node --test test/*.test.js",
     "postinstall": "node scripts/rename-electron.js",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder --mac zip",
-    "dist:mac": "electron-builder --mac zip",
-    "dist:win": "electron-builder --win zip"
-  },
-  "build": {
-    "appId": "com.cue.overlay",
-    "productName": "cue",
-    "asar": false,
-    "files": [
-      "main.js",
-      "preload.js",
-      "src/**/*",
-      "renderer/**/*"
-    ],
-    "mac": {
-      "target": [
-        "dir"
-      ],
-      "category": "public.app-category.productivity",
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "identity": null,
-      "extendInfo": {
-        "LSUIElement": true,
-        "NSMicrophoneUsageDescription": "cue transcribes your microphone so it can help you in conversations.",
-        "NSCameraUsageDescription": "cue does not use the camera.",
-        "NSAudioCaptureUsageDescription": "cue captures system audio to transcribe the other participant in a call."
-      }
-    },
-    "win": {
-      "target": [
-        "dir"
-      ]
-    }
+    "prepare:whisper": "node scripts/prepare-whisper-runtime.js",
+    "verify:whisper-runtime": "node scripts/verify-whisper-runtime.js",
+    "pack": "electron-builder --config electron-builder.cjs --dir",
+    "dist": "npm run dist:mac",
+    "dist:mac": "electron-builder --config electron-builder.cjs --mac zip",
+    "dist:win": "electron-builder --config electron-builder.cjs --win nsis",
+    "dist:linux": "electron-builder --config electron-builder.cjs --linux AppImage --x64",
+    "dist:linux:arm64": "electron-builder --config electron-builder.cjs --linux AppImage --arm64"
   },
   "keywords": [
     "electron",
@@ -56,7 +29,9 @@
   "devDependencies": {
     "electron": "33.2.1",
     "electron-builder": "^24.13.3",
-    "resedit": "^3.0.2"
+    "extract-zip": "^2.0.1",
+    "resedit": "^3.0.2",
+    "tar": "^7.5.22"
   },
   "engines": {
     "node": ">=22.12.0"
