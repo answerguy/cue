@@ -424,7 +424,9 @@ button:focus { outline: none; }
 .lts-turn.lts-you {
   color: rgba(160,210,255,0.85);
   background: rgba(160,210,255,0.05);
+  padding-bottom: 22px; /* room for the Expand button */
 }
+.lts-turn.lts-you:hover { background: rgba(160,210,255,0.10); }
 .lts-turn.lts-them {
   color: rgba(255,255,255,0.80);
   background: rgba(255,255,255,0.04);
@@ -465,7 +467,8 @@ button:focus { outline: none; }
   -webkit-app-region: no-drag;
   letter-spacing: 0.02em;
 }
-.lts-turn.lts-them:hover .lts-answer-btn { display: block; }
+.lts-turn.lts-them:hover .lts-answer-btn,
+.lts-turn.lts-you:hover .lts-answer-btn { display: block; }
 .lts-answer-btn:hover { filter: brightness(1.2); }
 
 /* Widen overall panel when sidebar is visible */

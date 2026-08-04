@@ -182,7 +182,7 @@ async function flushChannel(channel) {
       handleSttError(res.error, settings);
       return;
     }
-    if (res.text && res.text.trim()) {
+    if (res.text && res.text.trim() && res.text.trim().length > 1 && !/^[?!.,;:\-…]+$/.test(res.text.trim())) {
       const turn = { channel, text: res.text.trim(), ts: Date.now() };
       pushTranscript(turn);
       send('transcript', turn);

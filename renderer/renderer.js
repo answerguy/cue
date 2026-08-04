@@ -471,11 +471,11 @@
         row.appendChild(chLabel);
         row.appendChild(txt);
 
-        if (channel === 'them') {
+        if (channel === 'them' || channel === 'you') {
           const btn = document.createElement('button');
           btn.className = 'lts-answer-btn';
-          btn.textContent = '▶ Answer';
-          btn.title = 'Answer this specific question';
+          btn.textContent = channel === 'them' ? '▶ Answer' : '▶ Expand';
+          btn.title = channel === 'them' ? 'Answer this specific question' : 'Expand on what you said';
           btn.onclick = (e) => {
             e.stopPropagation();
             const fullText = row.querySelector('.lts-text').textContent;
@@ -604,6 +604,8 @@
     aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
   });
   cue.on('transcript', ({ channel, text }) => {
+    // Filter out noise/garbage — skip single chars, punctuation-only, very short fragments
+    if (!text || text.trim().length < 2 || /^[?!.,;:\-…]+$/.test(text.trim())) return;
     appendTranscriptTurn(channel, text, false);
     appendLtsTurn(channel, text, false); // populate live sidebar
   });
