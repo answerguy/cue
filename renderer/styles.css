@@ -353,6 +353,109 @@ button:focus { outline: none; }
 .ob-primary { border: none; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; padding: 9px 22px; border-radius: 999px; cursor: pointer; transition: filter 140ms ease; }
 .ob-primary:hover { filter: brightness(1.08); }
 
+/* ============================ Two-column panel layout ============================ */
+#panel-columns {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+}
+#panel-main {
+  flex: 1;
+  min-width: 0; /* allow shrink */
+}
+
+/* Live transcript sidebar */
+.live-transcript-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  margin-left: 12px;
+  border-left: 1px solid var(--bd-hair);
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+}
+.live-transcript-sidebar.hidden { display: none; }
+
+.lts-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.lts-title { font-size: 11px; font-weight: 700; color: var(--tx-mut); text-transform: uppercase; letter-spacing: 0.06em; }
+.lts-hint { font-size: 9.5px; color: rgba(255,255,255,0.2); }
+
+.lts-list {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lts-placeholder { font-size: 11.5px; color: var(--tx-mut); font-style: italic; padding: 4px 0; }
+
+/* Each transcript turn in the sidebar */
+.lts-turn {
+  position: relative;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-user-select: text;
+  user-select: text;
+  transition: background 120ms ease;
+}
+.lts-turn.lts-you {
+  color: rgba(160,210,255,0.85);
+  background: rgba(160,210,255,0.05);
+}
+.lts-turn.lts-them {
+  color: rgba(255,255,255,0.80);
+  background: rgba(255,255,255,0.04);
+  cursor: default;
+}
+.lts-turn.lts-them:hover {
+  background: rgba(255,255,255,0.08);
+}
+.lts-channel {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+  opacity: 0.55;
+  display: block;
+}
+.lts-text { display: block; }
+.lts-interim { font-style: italic; opacity: 0.6; }
+
+/* "Answer this" button on Them turns */
+.lts-answer-btn {
+  display: none;
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 120ms ease;
+  -webkit-app-region: no-drag;
+}
+.lts-turn.lts-them:hover .lts-answer-btn { display: block; }
+.lts-answer-btn:hover { filter: brightness(1.15); }
+
+/* Widen overall panel when sidebar is visible */
+#panel-wrap.sidebar-open { width: min(840px, 96vw); }
+
 /* ============================ Transcript viewer ============================ */
 .transcript-wrap {
   max-height: 150px; overflow-y: auto; margin: 6px 0 4px;

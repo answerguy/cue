@@ -326,7 +326,9 @@ async function runFeature(mode, userText) {
   try {
     const settings = store.getSettings();
     const llm = createLLM(settings);
-    const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' ? userText : null);
+    const userBubble = def.userBubble !== null
+      ? def.userBubble
+      : (mode === 'ask' ? userText : mode === 'answerThis' ? `"${(userText || '').slice(0, 60)}${userText && userText.length > 60 ? '…' : ''}"` : null);
     const category = mode !== 'leetcode' ? detectCategory(transcript) : null;
     send('llm:start', { userBubble, small: !!def.small, category });
 

@@ -26,53 +26,67 @@
       <span id="live-dot" class="off"></span>
       <div id="stt-status" class="stt-status stt-disconnected" title="STT connection status">off</div>
       <div id="panel" class="glass no-drag">
-        <div id="messages"></div>
 
-        <div id="transcript-wrap" class="transcript-wrap hidden">
-          <div id="transcript-list" class="transcript-list"></div>
-        </div>
+        <!-- Two-column layout: responses (left) + live transcript sidebar (right) -->
+        <div id="panel-columns">
 
-        <div id="action-row">
-          <button class="act act-primary" data-mode="say"
-            title="Suggests what to say next based on the conversation">
-            <span class="ic"></span><span>What should I say?</span>
-            <span class="shortcut-hint" id="say-shortcut-hint"></span>
-          </button>
-          <span class="sep">•</span>
-          <button class="act act-secondary" data-mode="assist"
-            title="Scans your screen and conversation to decide what you need">
-            <span class="ic"></span><span>Assist</span>
-            <span class="shortcut-hint" id="assist-shortcut-hint"></span>
-          </button>
-          <span class="sep">•</span>
-          <button class="act" data-mode="followup"><span class="ic"></span><span>Follow-up</span></button>
-          <span class="sep">•</span>
-          <button class="act" data-mode="recap"><span class="ic"></span><span>Recap</span></button>
-          <span class="sep">•</span>
-          <button class="act" id="transcript-toggle-btn" title="Show/hide what was heard"><span class="ic"></span><span>Transcript</span></button>
-          <span class="sep">•</span>
-          <button class="act act-clear" id="clear-transcript-btn" title="Clear transcript and start fresh"><span class="ic"></span><span>Clear</span></button>
-        </div>
+          <!-- Left column: AI responses -->
+          <div id="panel-main">
+            <div id="messages"></div>
 
-        <div id="composer">
-          <div id="input-area">
-            <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Assist</div>
-            <textarea id="input" rows="1" spellcheck="false"></textarea>
+            <div id="action-row">
+              <button class="act act-primary" data-mode="say"
+                title="Suggests what to say next based on the conversation">
+                <span class="ic"></span><span>What should I say?</span>
+                <span class="shortcut-hint" id="say-shortcut-hint"></span>
+              </button>
+              <span class="sep">•</span>
+              <button class="act act-secondary" data-mode="assist"
+                title="Scans your screen and conversation to decide what you need">
+                <span class="ic"></span><span>Assist</span>
+                <span class="shortcut-hint" id="assist-shortcut-hint"></span>
+              </button>
+              <span class="sep">•</span>
+              <button class="act" data-mode="followup"><span class="ic"></span><span>Follow-up</span></button>
+              <span class="sep">•</span>
+              <button class="act" data-mode="recap"><span class="ic"></span><span>Recap</span></button>
+              <span class="sep">•</span>
+              <button class="act act-clear" id="clear-transcript-btn" title="Clear transcript and start fresh"><span class="ic"></span><span>Clear</span></button>
+            </div>
+
+            <div id="composer">
+              <div id="input-area">
+                <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Assist</div>
+                <textarea id="input" rows="1" spellcheck="false"></textarea>
+              </div>
+              <div id="composer-bottom">
+                <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
+                <button id="more-btn" class="more-btn" title="Settings"></button>
+                <div class="spacer"></div>
+                <button id="send-btn" title="Send"></button>
+              </div>
+            </div>
+
+            <div id="prep-status" class="prep-status">
+              <span class="prep-item" data-field="resume">📄 Resume</span>
+              <span class="prep-item" data-field="jd">💼 JD</span>
+              <span class="prep-item" data-field="stories">🎯 Stories</span>
+              <span class="prep-item" data-field="salary">💰 Salary</span>
+            </div>
           </div>
-          <div id="composer-bottom">
-            <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
-            <button id="more-btn" class="more-btn" title="Settings"></button>
-            <div class="spacer"></div>
-            <button id="send-btn" title="Send"></button>
-          </div>
-        </div>
 
-        <div id="prep-status" class="prep-status">
-          <span class="prep-item" data-field="resume">📄 Resume</span>
-          <span class="prep-item" data-field="jd">💼 JD</span>
-          <span class="prep-item" data-field="stories">🎯 Stories</span>
-          <span class="prep-item" data-field="salary">💰 Salary</span>
-        </div>
+          <!-- Right column: live transcript sidebar (shown only when listening) -->
+          <div id="live-transcript-sidebar" class="live-transcript-sidebar hidden">
+            <div class="lts-header">
+              <span class="lts-title">Live Transcript</span>
+              <span class="lts-hint">Click ▶ to answer</span>
+            </div>
+            <div id="lts-list" class="lts-list">
+              <div class="lts-placeholder">Start listening to see the transcript here.</div>
+            </div>
+          </div>
+
+        </div><!-- /panel-columns -->
       </div>
     </div>
   </div>

@@ -139,6 +139,32 @@ const MODES = {
     }
   },
 
+  // ── Answer This: answer one specific transcript question ─────────────────
+  answerThis: {
+    needsScreen: false,
+    userBubble: null,   // bubble set dynamically from the question text
+    small: false,
+    resumeMode: 'say',  // same context budget as 'say'
+    buildSystem(contextBlock) {
+      return buildSystem(
+        'You are cue, whispering a direct answer to the candidate for ONE specific question just asked. ' +
+        BASE_RULES +
+        'The question is provided below. Ignore the rest of the conversation — answer ONLY this question.\n\n' +
+        'Rules:\n' +
+        '• BEHAVIORAL ("tell me about a time…"): STAR format using real stories. Situation → Task → Action → Result.\n' +
+        '• MOTIVATION ("why this company"): Specific, genuine reasons from their prep data.\n' +
+        '• TECHNICAL: Clear explanation with a concrete example.\n' +
+        '• EXPERIENCE: Reference specific roles/projects from their resume.\n' +
+        '• COMPENSATION: State the target confidently.\n\n' +
+        'Write in first person. No preamble. 2–5 sentences max.',
+        contextBlock
+      );
+    },
+    build(ctx) {
+      return 'Answer this specific question:\n\n"' + (ctx.userText || '(no question provided)') + '"';
+    }
+  },
+
   // ── LeetCode: pure coding solver — no personal context ────────────────────
   leetcode: {
     needsScreen: true,

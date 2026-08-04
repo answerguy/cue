@@ -211,27 +211,7 @@
     await cue.captureToggle();
   });
 
-  // Transcript toggle
-  const transcriptToggleBtn = document.getElementById('transcript-toggle-btn');
-  if (transcriptToggleBtn) {
-    transcriptToggleBtn.addEventListener('click', () => {
-      transcriptOpen = !transcriptOpen;
-      const wrap = document.getElementById('transcript-wrap');
-      if (wrap) {
-        wrap.classList.toggle('hidden', !transcriptOpen);
-        if (transcriptOpen) {
-          const list = document.getElementById('transcript-list');
-          if (list && !list.children.length) {
-            const ph = document.createElement('div');
-            ph.className = 'transcript-placeholder';
-            ph.textContent = 'Nothing heard yet — start listening to begin.';
-            list.appendChild(ph);
-          }
-          if (wrap) wrap.scrollTop = wrap.scrollHeight;
-        }
-      }
-    });
-  }
+  // Transcript toggle removed — sidebar now auto-opens with listening
 
   // Clear transcript
   const clearTranscriptBtn = document.getElementById('clear-transcript-btn');
@@ -244,6 +224,7 @@
       const list = document.getElementById('transcript-list');
       if (list) list.innerHTML = '';
       transcriptInterimEl = null;
+      clearLtsSidebar(); // clear the live sidebar too
       showToast('Transcript cleared', 3000);
     });
   }
@@ -412,6 +393,91 @@
     label.className = 'stt-status stt-' + sttState;
   }
 
+  // ---- live transcript sidebar helpers ----------------------------------
+  let ltsSidebarInterimEl = null;
+
+  function showSidebar() {
+    const sidebar = document.getElementById('live-transcript-sidebar');
+    const wrap = document.getElementById('panel-wrap');
+    if (sidebar) sidebar.classList.remove('hidden');
+    if (wrap) wrap.classList.add('sidebar-open');
+  }
+
+  function hideSidebar() {
+    const sidebar = document.getElementById('live-transcript-sidebar');
+    const wrap = document.getElementById('panel-wrap');
+    if (sidebar) sidebar.classList.add('hidden');
+    if (wrap) wrap.classList.remove('sidebar-open');
+  }
+
+  function appendLtsTurn(channel, text, isInterim) {
+    const list = document.getElementById('lts-list');
+    if (!list) return;
+
+    // Remove placeholder on first real turn
+    const ph = list.querySelector('.lts-placeholder');
+    if (ph) ph.remove();
+
+    if (isInterim) {
+      if (!ltsSidebarInterimEl) {
+        ltsSidebarInterimEl = document.createElement('div');
+        ltsSidebarInterimEl.className = 'lts-turn lts-' + channel + ' lts-interim-row';
+        const chLabel = document.createElement('span');
+        chLabel.className = 'lts-channel';
+        chLabel.textContent = channel === 'them' ? 'Them' : 'You';
+        const txt = document.createElement('span');
+        txt.className = 'lts-text lts-interim';
+        ltsSidebarInterimEl.appendChild(chLabel);
+        ltsSidebarInterimEl.appendChild(txt);
+        list.appendChild(ltsSidebarInterimEl);
+      }
+      ltsSidebarInterimEl.querySelector('.lts-text').textContent = text;
+    } else {
+      // Remove interim row if present
+      if (ltsSidebarInterimEl) { ltsSidebarInterimEl.remove(); ltsSidebarInterimEl = null; }
+
+      const row = document.createElement('div');
+      row.className = 'lts-turn lts-' + channel;
+
+      const chLabel = document.createElement('span');
+      chLabel.className = 'lts-channel';
+      chLabel.textContent = channel === 'them' ? 'Them' : 'You';
+
+      const txt = document.createElement('span');
+      txt.className = 'lts-text';
+      txt.textContent = text;
+
+      row.appendChild(chLabel);
+      row.appendChild(txt);
+
+      // "Answer this" button — only on Them (interviewer) turns
+      if (channel === 'them') {
+        const btn = document.createElement('button');
+        btn.className = 'lts-answer-btn';
+        btn.textContent = '▶ Answer';
+        btn.title = 'Answer this specific question';
+        const capturedText = text; // closure
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!busy) runMode('answerThis', capturedText);
+        });
+        row.appendChild(btn);
+      }
+
+      list.appendChild(row);
+      // Auto-scroll to latest
+      list.scrollTop = list.scrollHeight;
+    }
+  }
+
+  function clearLtsSidebar() {
+    const list = document.getElementById('lts-list');
+    if (list) {
+      list.innerHTML = '<div class="lts-placeholder">Start listening to see the transcript here.</div>';
+    }
+    ltsSidebarInterimEl = null;
+  }
+
   // ---- events from main --------------------------------------------------
   cue.on('capture:state', ({ active, streaming }) => {
     setLiveDotState(active ? 'idle' : 'off');
@@ -419,7 +485,14 @@
     // startSystemAudio() is called directly from the stop-button click handler
     // so that the getDisplayMedia request has a fresh user gesture.
     // Here we only start the mic (no gesture required) and stop everything on deactivate.
-    if (active) { startMic(); } else { stopMic(); stopSystemAudio(); }
+    if (active) {
+      startMic();
+      showSidebar(); // auto-open transcript sidebar when listening starts
+    } else {
+      stopMic();
+      stopSystemAudio();
+      hideSidebar(); // collapse when not listening
+    }
     updateSttStatus({ active, streaming });
   });
 
@@ -442,12 +515,14 @@
     el.textContent = `${label}: ${text}`;
     el.classList.add('show');
     updateTranscriptInterim(channel, text);
+    appendLtsTurn(channel, text, true); // update sidebar interim
   });
   cue.on('stt:final', ({ channel, text }) => {
     setLiveDotState('idle');
     // Clear interim when we get a final
     if (interimEl) { interimEl.textContent = ''; interimEl.classList.remove('show'); }
     clearTranscriptInterim();
+    // sidebar: the final turn is added via the 'transcript' event below
   });
   cue.on('stt:status', ({ channel, status }) => {
     cue.log(`[stt] ${channel} ${status}`);
@@ -504,6 +579,7 @@
   });
   cue.on('transcript', ({ channel, text }) => {
     appendTranscriptTurn(channel, text, false);
+    appendLtsTurn(channel, text, false); // populate live sidebar
   });
   let statusTimer = null;
   function showStatus(message) {
