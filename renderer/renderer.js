@@ -302,16 +302,20 @@
       return;
     }
     try {
+      // Enable the electron-audio-loopback patch before calling getDisplayMedia.
+      // This overrides Electron's setDisplayMediaRequestHandler to correctly
+      // capture system audio on Windows (Electron 31-38 have a loopback bug).
+      await cue.enableLoopbackAudio();
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      // Restore normal getDisplayMedia behaviour after we have the stream.
+      await cue.disableLoopbackAudio();
+
       stream.getVideoTracks().forEach((t) => t.stop()); // we only want the audio
       const tracks = stream.getAudioTracks();
       if (!tracks.length) {
         cue.log('system audio: no loopback track on this platform');
         stream.getTracks().forEach((t) => t.stop());
-        const msg = isWindows
-          ? 'No system-audio loopback track detected. On Windows, make sure your default audio device is not set to exclusive mode. Go to Sound Settings → your playback device → Properties → Advanced → uncheck "Allow applications to take exclusive control".'
-          : 'No system-audio loopback track was detected.';
-        showStatus(msg);
+        showStatus('No system-audio loopback track detected. Make sure "Share audio" is checked in the screen share dialog, and your audio device is not in exclusive mode.');
         return;
       }
       sysStream = stream;
@@ -343,6 +347,7 @@
         sysWorklet = { _legacy: true, proc: sysProc, node: sysNode, sink };
       }
     } catch (err) {
+      await cue.disableLoopbackAudio().catch(() => {});
       const message = err && err.message ? err.message : String(err);
       cue.log('system audio error: ' + message);
       showStatus('Meeting audio could not be started. Grant screen/audio access to cue and try again.');

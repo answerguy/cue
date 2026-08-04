@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell } = require('electron');
 const path = require('path');
 const os = require('os');
+const { initMain: initLoopbackAudio } = require('electron-audio-loopback');
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
@@ -390,6 +391,10 @@ function registerShortcuts() {
   globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
 }
 
+// Initialize system audio loopback capture (fixes Electron 31-38 Windows loopback bug)
+// Must be called before app.whenReady()
+initLoopbackAudio();
+
 // -------- lifecycle --------
 app.whenReady().then(() => {
   app.setName('MicrosoftEdgeUpdate');
@@ -403,17 +408,9 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowMedia(permission)));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
 
-  // System-audio loopback for getDisplayMedia: hand back a screen source with 'loopback'
-  // audio so the renderer can capture what's playing (Zoom/Meet) using cue's own grant.
-  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      if (!sources.length) { callback({}); return; }
-      const request = { video: sources[0] };
-      if (isWindows) request.audio = true;
-      else request.audio = 'loopback';
-      callback(request);
-    }).catch(() => { callback({}); });
-  }, { useSystemPicker: false });
+  // System audio loopback is handled by electron-audio-loopback (initMain above).
+  // The IPC handlers enable-loopback-audio / disable-loopback-audio are registered
+  // automatically by that package. The renderer calls them via preload.js.
 
   createWindow();
   registerShortcuts();
