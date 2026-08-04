@@ -551,9 +551,16 @@
     if (!interimEl) {
       interimEl = document.createElement('div');
       interimEl.className = 'interim-transcript';
-      const panel = document.getElementById('panel');
+      // Insert into panel-main (the left column), before the action row
+      const panelMain = document.getElementById('panel-main');
       const actionRow = document.getElementById('action-row');
-      panel.insertBefore(interimEl, actionRow);
+      if (panelMain && actionRow && actionRow.parentNode === panelMain) {
+        panelMain.insertBefore(interimEl, actionRow);
+      } else if (panelMain) {
+        panelMain.appendChild(interimEl);
+      } else {
+        document.getElementById('panel').appendChild(interimEl);
+      }
     }
     return interimEl;
   }
@@ -640,8 +647,16 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'cue-status';
-      const panel = document.getElementById('panel');
-      panel.insertBefore(el, document.getElementById('action-row'));
+      // Insert into panel-main before the action row
+      const panelMain = document.getElementById('panel-main');
+      const actionRow = document.getElementById('action-row');
+      if (panelMain && actionRow && actionRow.parentNode === panelMain) {
+        panelMain.insertBefore(el, actionRow);
+      } else if (panelMain) {
+        panelMain.appendChild(el);
+      } else {
+        document.getElementById('panel').appendChild(el);
+      }
     }
     el.textContent = message;
     el.classList.add('show');
