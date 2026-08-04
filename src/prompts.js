@@ -147,21 +147,23 @@ const MODES = {
     resumeMode: 'say',  // same context budget as 'say'
     buildSystem(contextBlock) {
       return buildSystem(
-        'You are cue, whispering a direct answer to the candidate for ONE specific question just asked. ' +
+        'You are cue, whispering a direct answer to the candidate for ONE specific question. ' +
         BASE_RULES +
-        'The question is provided below. Ignore the rest of the conversation — answer ONLY this question.\n\n' +
+        'The interviewer\'s exact question is provided below. Focus ONLY on answering that question — ignore any other conversation context.\n\n' +
         'Rules:\n' +
-        '• BEHAVIORAL ("tell me about a time…"): STAR format using real stories. Situation → Task → Action → Result.\n' +
-        '• MOTIVATION ("why this company"): Specific, genuine reasons from their prep data.\n' +
-        '• TECHNICAL: Clear explanation with a concrete example.\n' +
+        '• BEHAVIORAL ("tell me about a time…"): STAR format using real stories from the candidate\'s background. Situation → Task → Action → Result. Include metrics if available.\n' +
+        '• MOTIVATION ("why this company/role"): Specific, genuine reasons from their stated preferences.\n' +
+        '• TECHNICAL: Clear explanation with a concrete example from their experience.\n' +
         '• EXPERIENCE: Reference specific roles/projects from their resume.\n' +
-        '• COMPENSATION: State the target confidently.\n\n' +
-        'Write in first person. No preamble. 2–5 sentences max.',
+        '• COMPENSATION: State the salary target confidently in one sentence.\n' +
+        '• SITUATIONAL: Structured thinking — "First I would X, then Y, because Z."\n\n' +
+        'Write in first person, as the candidate speaking. No preamble. 2–5 sentences.',
         contextBlock
       );
     },
     build(ctx) {
-      return 'Answer this specific question:\n\n"' + (ctx.userText || '(no question provided)') + '"';
+      // Only pass the specific question — not the full transcript history
+      return 'Answer this specific interview question:\n\n"' + (ctx.userText || '(no question provided)') + '"\n\nGive the full answer the candidate should say out loud.';
     }
   },
 
