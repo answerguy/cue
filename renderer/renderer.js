@@ -167,12 +167,54 @@
   const placeholder = $('#placeholder');
   const composer = $('#composer');
 
+  // Track whether the current input text came from STT auto-fill (Them channel)
+  let inputFromSTT = false;
+
+  // Auto-fill the input box with transcribed speech from the interviewer (Them channel)
+  // Words accumulate until a pause or the user starts typing manually
+  let sttFillTimer = null;
+  function autoFillInputFromSTT(text) {
+    // If user has manually typed something different, don't overwrite
+    if (!inputFromSTT && input.value.trim().length > 0) return;
+
+    const current = input.value.trim();
+    const newText = current ? current + ' ' + text : text;
+    input.value = newText;
+    inputFromSTT = true;
+    syncPlaceholder();
+
+    // Show a subtle indicator that text came from STT
+    composer.classList.add('stt-filling');
+
+    // After 6 seconds of no new words, mark as stable (keep text, remove indicator)
+    clearTimeout(sttFillTimer);
+    sttFillTimer = setTimeout(() => {
+      composer.classList.remove('stt-filling');
+    }, 6000);
+  }
+
+  function clearSTTFill() {
+    // When the user speaks (You channel), clear the interviewer's question
+    // so the box is ready for the next question
+    if (inputFromSTT) {
+      input.value = '';
+      inputFromSTT = false;
+      composer.classList.remove('stt-filling');
+      syncPlaceholder();
+    }
+  }
+
   function syncPlaceholder() {
     placeholder.classList.toggle('hidden', input.value.length > 0 || document.activeElement === input);
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 140) + 'px';
   }
-  input.addEventListener('input', syncPlaceholder);
+  input.addEventListener('input', () => {
+    // User is typing manually — detach from STT
+    inputFromSTT = false;
+    composer.classList.remove('stt-filling');
+    syncPlaceholder();
+  });
   input.addEventListener('focus', () => { composer.classList.add('focused'); placeholder.classList.add('hidden'); });
   input.addEventListener('blur', () => { composer.classList.remove('focused'); syncPlaceholder(); });
   $('#input-area').addEventListener('click', () => input.focus());
@@ -180,8 +222,14 @@
   function send() {
     const text = input.value.trim();
     if (!text) { runMode('assist', ''); return; }
-    input.value = ''; syncPlaceholder();
-    runMode('ask', text);
+    const wasFromSTT = inputFromSTT;
+    input.value = '';
+    inputFromSTT = false;
+    composer.classList.remove('stt-filling');
+    syncPlaceholder();
+    // If text came from STT (interviewer question), use answerThis mode
+    // Otherwise use ask mode (user typed their own question)
+    runMode(wasFromSTT ? 'answerThis' : 'ask', text);
   }
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
@@ -640,6 +688,13 @@
     if (!text || text.trim().length < 2 || /^[?!.,;:\-…]+$/.test(text.trim())) return;
     appendTranscriptTurn(channel, text, false);
     appendLtsTurn(channel, text, false);
+    // Auto-fill the input box with Them (interviewer) speech
+    if (channel === 'them') {
+      autoFillInputFromSTT(text);
+    } else {
+      // User spoke — clear the interviewer question from the box
+      clearSTTFill();
+    }
   });
   let statusTimer = null;
   function showStatus(message) {
