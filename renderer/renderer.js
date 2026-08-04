@@ -81,7 +81,12 @@
     const span = document.createElement('span');
     span.className = 'w';
     span.textContent = t;
-    aiEl.insertBefore(span, caretEl);
+    // Guard: caretEl must be a child of aiEl
+    if (caretEl && caretEl.parentNode === aiEl) {
+      aiEl.insertBefore(span, caretEl);
+    } else {
+      aiEl.appendChild(span);
+    }
   }
 
   function finalizeAi() {
@@ -400,10 +405,11 @@
 
   // ---- live transcript sidebar helpers ----------------------------------
   let ltsSidebarInterimEl = null;
-  // Track last committed row per channel — small chunks accumulate into one row
+  // Track last committed row per channel — all chunks from same speaker go in one row
+  // A new row starts only when the OTHER channel speaks, or after a long 10s pause
   const ltsLastRow = { you: null, them: null };
   const ltsRowTimer = { you: null, them: null };
-  const LTS_SENTENCE_GAP_MS = 2000; // after 2s silence, next chunk starts a new row
+  const LTS_SENTENCE_GAP_MS = 10000; // 10s silence = new row (very generous for slow speech)
 
   function showSidebar() {
     const sidebar = document.getElementById('live-transcript-sidebar');
@@ -499,9 +505,15 @@
         ltsLastRow[channel] = row;
       }
 
-      // Reset silence timer — next chunk within 2s appends to this row
+      // Reset silence timer — generous 10s gap before starting a new row
       clearTimeout(ltsRowTimer[channel]);
       ltsRowTimer[channel] = setTimeout(() => { ltsLastRow[channel] = null; }, LTS_SENTENCE_GAP_MS);
+
+      // When THIS channel speaks, also reset the OTHER channel's row
+      // so alternating You/Them speech each gets its own block
+      const other = channel === 'you' ? 'them' : 'you';
+      clearTimeout(ltsRowTimer[other]);
+      ltsLastRow[other] = null;
 
       list.scrollTop = list.scrollHeight;
     }
@@ -605,7 +617,10 @@
     aiEl.appendChild(caretEl);
     group.appendChild(aiEl);
     messages.appendChild(group);
-    sep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Use requestAnimationFrame so the DOM is fully updated before scrolling
+    requestAnimationFrame(() => {
+      if (sep && sep.isConnected) sep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     setBusy(true);
   });
   cue.on('llm:token', ({ text }) => appendToken(text));
@@ -615,10 +630,9 @@
     aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
   });
   cue.on('transcript', ({ channel, text }) => {
-    // Filter out noise/garbage — skip single chars, punctuation-only, very short fragments
     if (!text || text.trim().length < 2 || /^[?!.,;:\-…]+$/.test(text.trim())) return;
     appendTranscriptTurn(channel, text, false);
-    appendLtsTurn(channel, text, false); // populate live sidebar
+    appendLtsTurn(channel, text, false);
   });
   let statusTimer = null;
   function showStatus(message) {
