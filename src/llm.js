@@ -19,14 +19,6 @@ function formatProviderErrorMessage(error, provider) {
   return rawMessage || 'Unknown LLM error.';
 }
 
-<<<<<<< HEAD
-=======
-function sanitizeTurns(turns) {
-  const valid = new Set(['user', 'assistant']);
-  return (turns || []).filter(t => valid.has(t.role)).map(t => ({ role: t.role, text: String(t.text || '') }));
-}
-
->>>>>>> upstream/main
 function sanitizeTurns(turns) {
   const valid = new Set(['user', 'assistant']);
   return (turns || []).filter(t => valid.has(t.role)).map(t => ({ role: t.role, text: String(t.text || '') }));
