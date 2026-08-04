@@ -10,8 +10,14 @@ const { rms16 } = require('./src/wav');
 const { createStreamingSTT } = require('./src/stt-streaming');
 const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
 const { buildInterviewContext, detectCategory } = require('./src/interview-context');
+const { startAppLink, stopAppLink, recordEvent, appLinkConsentState, revokeAppLinkCaller } = require('./src/applink');
 
 let win = null;
+// Which global shortcuts cue actually holds. `globalShortcut.register` returns
+// false when another application already owns the combination, and nothing used
+// to look at that — so the only symptom was a key that did nothing. Iris reads
+// this and can say which key is taken instead of guessing from a screenshot.
+const shortcutState = { assist: false, say: false, leetcode: false, quit: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 
@@ -156,7 +162,10 @@ function createWindow() {
       });
     }
   });
-  win.webContents.on('render-process-gone', (_e, d) => console.log('[cue] renderer gone', JSON.stringify(d)));
+  win.webContents.on('render-process-gone', (_e, d) => {
+    console.log('[cue] renderer gone', JSON.stringify(d));
+    recordEvent({ level: 'fatal', event: 'renderer_gone', code: d && d.reason, msg: 'renderer process ended: ' + JSON.stringify(d), frame: 'BrowserWindow' });
+  });
 }
 
 // -------- STT flushing (batch mode fallback) --------
@@ -189,6 +198,7 @@ async function flushChannel(channel) {
     }
   } catch (e) {
     console.log('[stt] error', e && e.message);
+    recordEvent({ level: 'error', event: 'stt_failed', msg: e && e.message ? e.message : String(e), frame: 'flushChannel', context: { channel } });
   } finally {
     state.transcribing[channel] = false;
   }
@@ -196,6 +206,16 @@ async function flushChannel(channel) {
 
 function handleSttError(err, settings) {
   console.log('[stt] error', err.provider, err.status, err.code, err.message);
+  // Recorded before the early return, because the second and hundredth
+  // occurrence still tell you the state cue is stuck in.
+  recordEvent({
+    level: 'error',
+    event: 'stt_rejected',
+    code: err.code || (err.status ? 'http_' + err.status : null),
+    msg: err.message,
+    frame: 'handleSttError',
+    context: { provider: err.provider, status: err.status || null, alreadyDisabled: sttDisabled },
+  });
   if (sttDisabled) return;
   const noAccess = err.status === 403 || err.status === 401 || err.code === 'model_not_found';
   sttDisabled = true; // stop hammering the API every few seconds
@@ -338,7 +358,10 @@ async function runFeature(mode, userText) {
     let imageDataUrl = null;
     if (def.needsScreen) {
       try { imageDataUrl = await captureScreenshot(); }
-      catch (e) { send('status', { message: 'Screen capture needs permission — grant screen/audio access to cue in your system settings.' }); }
+      catch (e) {
+        recordEvent({ level: 'error', event: 'screen_capture_failed', msg: e && e.message ? e.message : String(e), frame: 'captureScreenshot', context: { mode } });
+        send('status', { message: 'Screen capture needs permission — grant screen/audio access to cue in your system settings.' });
+      }
     }
 
     const settingsForPrompt = store.getSettings();
@@ -353,6 +376,7 @@ async function runFeature(mode, userText) {
     });
     send('llm:done', {});
   } catch (e) {
+    recordEvent({ level: 'error', event: 'llm_failed', msg: e && e.message ? e.message : String(e), frame: 'runFeature', context: { mode, provider: store.getSettings().provider } });
     send('llm:error', { message: e && e.message ? e.message : String(e) });
   } finally {
     state.busy = false;
@@ -379,13 +403,20 @@ ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio(
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
 ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
+ipcMain.handle('applink:state', () => appLinkConsentState());
+ipcMain.handle('applink:revoke', (_e, callerId) => revokeAppLinkCaller(callerId));
 
 // -------- shortcuts --------
 function registerShortcuts() {
-  globalShortcut.register('CommandOrControl+Return', () => runFeature('assist', ''));
-  globalShortcut.register('CommandOrControl+Shift+Return', () => runFeature('say', ''));
-  globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
-  globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
+  shortcutState.assist = globalShortcut.register('CommandOrControl+Return', () => runFeature('assist', ''));
+  shortcutState.say = globalShortcut.register('CommandOrControl+Shift+Return', () => runFeature('say', ''));
+  shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
+  shortcutState.quit = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
+  for (const [name, wasRegistered] of Object.entries(shortcutState)) {
+    if (!wasRegistered) {
+      recordEvent({ level: 'warn', event: 'shortcut_unavailable', msg: 'another application holds the ' + name + ' shortcut', frame: 'registerShortcuts', context: { shortcut: name } });
+    }
+  }
 }
 
 // -------- lifecycle --------
@@ -413,11 +444,34 @@ app.whenReady().then(() => {
     }).catch(() => callback());
   }, { useSystemPicker: false });
 
+  // Started before the shortcuts so their registration failures are recorded.
+  startAppLink({
+    snapshot: () => ({
+      state,
+      transcript,
+      settings: store.getSettings(),
+      sttDisabled,
+      shortcuts: { ...shortcutState },
+      windowAlive: !!(win && !win.isDestroyed()),
+    }),
+    setCapturing,
+    // Looked up rather than captured: the window is recreated on 'activate',
+    // so a reference taken at startup goes stale.
+    getWindow: () => win,
+  });
+
   createWindow();
   registerShortcuts();
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  // Best effort, deliberately not blocking the quit: the library also removes
+  // the instance file from a `process.on('exit')` handler, and a file left
+  // behind is harmless anyway because readers check whether the PID is alive.
+  // Delaying shutdown to tidy a directory would be the wrong trade.
+  stopAppLink();
+});
 app.on('window-all-closed', () => app.quit());
