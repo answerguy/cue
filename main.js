@@ -407,12 +407,12 @@ app.whenReady().then(() => {
   // audio so the renderer can capture what's playing (Zoom/Meet) using cue's own grant.
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      if (!sources.length) return callback();
+      if (!sources.length) { callback({}); return; }
       const request = { video: sources[0] };
       if (isWindows) request.audio = true;
       else request.audio = 'loopback';
       callback(request);
-    }).catch(() => callback());
+    }).catch(() => { callback({}); });
   }, { useSystemPicker: false });
 
   createWindow();

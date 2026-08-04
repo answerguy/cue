@@ -17,8 +17,6 @@
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
   $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
   $('#send-btn').innerHTML = icon('play', { size: 15 });
-  const transcriptIC = document.querySelector('#transcript-toggle-btn .ic');
-  if (transcriptIC) transcriptIC.innerHTML = icon('file-text', { size: 15 });
   const clearIC = document.querySelector('#clear-transcript-btn .ic');
   if (clearIC) clearIC.innerHTML = icon('trash-2', { size: 15 });
 
@@ -206,7 +204,9 @@
   $('#stop-btn').addEventListener('click', async () => {
     const turningOn = !$('#stop-btn').classList.contains('active');
     if (turningOn) {
-      await startSystemAudio();
+      // startSystemAudio may fail (user cancels, no permission) — that's OK,
+      // mic will still work and capture will toggle regardless
+      try { await startSystemAudio(); } catch (_) { /* handled inside startSystemAudio */ }
     }
     await cue.captureToggle();
   });
