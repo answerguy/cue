@@ -395,6 +395,10 @@
 
   // ---- live transcript sidebar helpers ----------------------------------
   let ltsSidebarInterimEl = null;
+  // Track last committed row per channel — small chunks accumulate into one row
+  const ltsLastRow = { you: null, them: null };
+  const ltsRowTimer = { you: null, them: null };
+  const LTS_SENTENCE_GAP_MS = 2000; // after 2s silence, next chunk starts a new row
 
   function showSidebar() {
     const sidebar = document.getElementById('live-transcript-sidebar');
@@ -419,6 +423,7 @@
     if (ph) ph.remove();
 
     if (isInterim) {
+      // Update the single floating interim row
       if (!ltsSidebarInterimEl) {
         ltsSidebarInterimEl = document.createElement('div');
         ltsSidebarInterimEl.className = 'lts-turn lts-' + channel + ' lts-interim-row';
@@ -433,49 +438,70 @@
       }
       ltsSidebarInterimEl.querySelector('.lts-text').textContent = text;
     } else {
-      // Remove interim row if present
+      // Remove interim row
       if (ltsSidebarInterimEl) { ltsSidebarInterimEl.remove(); ltsSidebarInterimEl = null; }
 
-      const row = document.createElement('div');
-      row.className = 'lts-turn lts-' + channel;
+      const existingRow = ltsLastRow[channel];
+      const useExisting = existingRow && existingRow.isConnected;
 
-      const chLabel = document.createElement('span');
-      chLabel.className = 'lts-channel';
-      chLabel.textContent = channel === 'them' ? 'Them' : 'You';
+      if (useExisting) {
+        // Append to existing row — accumulates "Tell" + "me about a time" into one sentence
+        const txt = existingRow.querySelector('.lts-text');
+        if (txt) {
+          txt.textContent = txt.textContent ? txt.textContent + ' ' + text : text;
+          // Keep Answer button's closure text up to date
+          if (channel === 'them') {
+            const btn = existingRow.querySelector('.lts-answer-btn');
+            if (btn) { const full = txt.textContent; btn.onclick = (e) => { e.stopPropagation(); if (!busy) runMode('answerThis', full); }; }
+          }
+        }
+      } else {
+        // Start a new row
+        const row = document.createElement('div');
+        row.className = 'lts-turn lts-' + channel;
 
-      const txt = document.createElement('span');
-      txt.className = 'lts-text';
-      txt.textContent = text;
+        const chLabel = document.createElement('span');
+        chLabel.className = 'lts-channel';
+        chLabel.textContent = channel === 'them' ? 'Them' : 'You';
 
-      row.appendChild(chLabel);
-      row.appendChild(txt);
+        const txt = document.createElement('span');
+        txt.className = 'lts-text';
+        txt.textContent = text;
 
-      // "Answer this" button — only on Them (interviewer) turns
-      if (channel === 'them') {
-        const btn = document.createElement('button');
-        btn.className = 'lts-answer-btn';
-        btn.textContent = '▶ Answer';
-        btn.title = 'Answer this specific question';
-        const capturedText = text; // closure
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (!busy) runMode('answerThis', capturedText);
-        });
-        row.appendChild(btn);
+        row.appendChild(chLabel);
+        row.appendChild(txt);
+
+        if (channel === 'them') {
+          const btn = document.createElement('button');
+          btn.className = 'lts-answer-btn';
+          btn.textContent = '▶ Answer';
+          btn.title = 'Answer this specific question';
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            const fullText = row.querySelector('.lts-text').textContent;
+            if (!busy) runMode('answerThis', fullText);
+          };
+          row.appendChild(btn);
+        }
+
+        list.appendChild(row);
+        ltsLastRow[channel] = row;
       }
 
-      list.appendChild(row);
-      // Auto-scroll to latest
+      // Reset silence timer — next chunk within 2s appends to this row
+      clearTimeout(ltsRowTimer[channel]);
+      ltsRowTimer[channel] = setTimeout(() => { ltsLastRow[channel] = null; }, LTS_SENTENCE_GAP_MS);
+
       list.scrollTop = list.scrollHeight;
     }
   }
 
   function clearLtsSidebar() {
     const list = document.getElementById('lts-list');
-    if (list) {
-      list.innerHTML = '<div class="lts-placeholder">Start listening to see the transcript here.</div>';
-    }
+    if (list) list.innerHTML = '<div class="lts-placeholder">Start listening to see the transcript here.</div>';
     ltsSidebarInterimEl = null;
+    ltsLastRow.you = null; ltsLastRow.them = null;
+    clearTimeout(ltsRowTimer.you); clearTimeout(ltsRowTimer.them);
   }
 
   // ---- events from main --------------------------------------------------
