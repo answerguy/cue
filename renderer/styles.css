@@ -417,6 +417,9 @@ button:focus { outline: none; }
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   -webkit-user-select: text;
   user-select: text;
   transition: background 120ms ease;
@@ -424,14 +427,12 @@ button:focus { outline: none; }
 .lts-turn.lts-you {
   color: rgba(160,210,255,0.85);
   background: rgba(160,210,255,0.05);
-  padding-bottom: 22px; /* room for the Expand button */
 }
 .lts-turn.lts-you:hover { background: rgba(160,210,255,0.10); }
 .lts-turn.lts-them {
   color: rgba(255,255,255,0.80);
   background: rgba(255,255,255,0.04);
   cursor: default;
-  padding-bottom: 22px; /* room for the Answer button */
 }
 .lts-turn.lts-them:hover {
   background: rgba(255,255,255,0.08);
@@ -448,28 +449,31 @@ button:focus { outline: none; }
 .lts-text { display: block; }
 .lts-interim { font-style: italic; opacity: 0.6; }
 
-/* "Answer this" button on Them turns */
+/* "Answer this" / "Expand" button on transcript turns */
 .lts-answer-btn {
-  display: none;
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid rgba(60,131,245,0.35);
+  background: rgba(60,131,245,0.15);
+  color: #a8c8ff;
+  font-size: 10.5px;
   font-weight: 700;
-  padding: 3px 8px;
+  padding: 4px 8px;
   border-radius: 5px;
   cursor: pointer;
+  text-align: center;
   white-space: nowrap;
-  transition: filter 120ms ease;
+  transition: background 120ms ease;
   -webkit-app-region: no-drag;
   letter-spacing: 0.02em;
 }
-.lts-turn.lts-them:hover .lts-answer-btn,
-.lts-turn.lts-you:hover .lts-answer-btn { display: block; }
-.lts-answer-btn:hover { filter: brightness(1.2); }
+.lts-turn.lts-you .lts-answer-btn {
+  border-color: rgba(160,210,255,0.25);
+  background: rgba(160,210,255,0.08);
+  color: rgba(160,210,255,0.8);
+}
+.lts-answer-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* Widen overall panel when sidebar is visible */
 #panel-wrap.sidebar-open { width: min(840px, 96vw); }

@@ -465,6 +465,12 @@
         const row = document.createElement('div');
         row.className = 'lts-turn lts-' + channel;
 
+        // Text block (channel label + content on same line)
+        const textBlock = document.createElement('div');
+        textBlock.style.display = 'flex';
+        textBlock.style.gap = '4px';
+        textBlock.style.alignItems = 'baseline';
+
         const chLabel = document.createElement('span');
         chLabel.className = 'lts-channel';
         chLabel.textContent = channel === 'them' ? 'Them' : 'You';
@@ -473,21 +479,21 @@
         txt.className = 'lts-text';
         txt.textContent = text;
 
-        row.appendChild(chLabel);
-        row.appendChild(txt);
+        textBlock.appendChild(chLabel);
+        textBlock.appendChild(txt);
+        row.appendChild(textBlock);
 
-        if (channel === 'them' || channel === 'you') {
-          const btn = document.createElement('button');
-          btn.className = 'lts-answer-btn';
-          btn.textContent = channel === 'them' ? '▶ Answer' : '▶ Expand';
-          btn.title = channel === 'them' ? 'Answer this specific question' : 'Expand on what you said';
-          btn.onclick = (e) => {
-            e.stopPropagation();
-            const fullText = row.querySelector('.lts-text').textContent;
-            if (!busy) runMode('answerThis', fullText);
-          };
-          row.appendChild(btn);
-        }
+        // Answer/Expand button — always visible below the text
+        const btn = document.createElement('button');
+        btn.className = 'lts-answer-btn';
+        btn.textContent = channel === 'them' ? '▶ Answer this' : '▶ Expand';
+        btn.title = channel === 'them' ? 'Answer this specific question' : 'Expand on what you said';
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const fullText = row.querySelector('.lts-text').textContent;
+          if (!busy) runMode('answerThis', fullText);
+        };
+        row.appendChild(btn);
 
         list.appendChild(row);
         ltsLastRow[channel] = row;
