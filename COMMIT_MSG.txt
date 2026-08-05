@@ -1,0 +1,71 @@
+feat: smart auto-fill system with conversation history sidebar
+
+This PR introduces a comprehensive smart auto-fill system that automatically
+captures interviewer questions and provides intelligent question detection,
+along with a redesigned conversation history sidebar.
+
+## New Features
+
+### Smart Auto-Fill System
+- Auto-fills input box with interviewer (Them channel) speech in real-time
+- Smart question completeness detection using behavioral interview patterns
+- Visual states for question readiness:
+  - `stt-filling`: Actively receiving speech (green border pulse)
+  - `stt-accumulating`: Building up text (subtle animation)
+  - `stt-ready`: Question looks complete (solid green, "Ready to answer" indicator)
+  - `stt-dimmed`: User speaking, may clear soon (dimmed state)
+
+### Soft Clear Behavior
+- When user speaks, doesn't immediately wipe the question
+- Waits 2.5s to see if user is just acknowledging vs actually answering
+- Preserves question if user only speaks briefly
+
+### Question History & Undo
+- Saves questions to history before clearing (max 10 items)
+- Ctrl+Z / Cmd+Z restores last question when input is empty
+- Escape key clears input with undo hint toast
+- History badge on toggle button shows saved question count
+
+### Floating Conversation History Sidebar
+- Redesigned as external floating panel (doesn't overlap main UI)
+- Manual toggle via history button (message icon in composer)
+- Glass morphism styling matching main panel
+- Slide-in animation, positioned at right edge of screen
+- Auto-scrolls to bottom when opened
+
+### Keyboard Shortcuts
+- Ctrl+Shift+A / Cmd+Shift+A: Force-answer current question immediately
+- Ctrl+Z / Cmd+Z: Restore last question (when input empty)
+- Escape: Clear input with undo hint
+
+### Visual Improvements
+- Send button turns green when question is ready
+- Small green listening indicator dot on composer when capture active
+- Interim transcription preview shown above input (grayed italic)
+- History button shows badge with question count
+
+## Bug Fixes
+
+- Fixed `transcript-list` element reference (renamed to `ts-list`)
+- Fixed interim element not cleared when capture stops
+- Fixed `userSpeechStart` timestamp not reset properly in soft-clear
+- Fixed editing STT text immediately losing STT status (now requires >30% change)
+- Fixed toast stacking/overlap issues
+- Fixed `stt-ready` visual state flickering
+- Fixed sidebar position hardcoded with calc() - now uses simple right edge
+- Fixed sidebar not scrolling to bottom when opened
+- Fixed `restoreLastQuestion` not tracking `lastSTTValue`
+- Added `message-square-text` and `trash-2` icons to icons.js
+
+## Technical Changes
+
+- renderer/renderer.js: +600 lines of smart auto-fill logic
+- renderer/styles.css: New visual states, floating sidebar, badges
+- renderer/index.html: Restructured sidebar as external element
+- renderer/icons.js: Added new icons for UI elements
+
+## Testing
+
+- All 27 existing tests pass
+- Syntax verified with `node --check`
+- Manual testing of all auto-fill scenarios
