@@ -215,20 +215,140 @@ button:focus { outline: none; }
 .act-secondary:hover { background: rgba(255,255,255,0.07); }
 .shortcut-hint { font-size: 10.5px; font-weight: 500; color: var(--tx-mut); margin-left: 4px; }
 
-/* STT auto-fill state — subtle green border when input text came from live transcription */
+/* FIX #4: Visual indication that listening is active in input box */
+#composer.listening {
+  border-color: rgba(34,197,94,0.25);
+}
+#composer.listening::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--live);
+  animation: pulse 2s infinite;
+  pointer-events: none;
+}
+
+/* FIX #9: Send button ready state */
+#send-btn.ready {
+  background: var(--live);
+  box-shadow: 0 2px 12px rgba(34,197,94,0.5);
+}
+#send-btn.has-text:not(.ready) {
+  background: var(--accent);
+}
+
+/* FIX #12: Interim text in input area — positioned relative to composer */
+.input-interim {
+  display: none;
+  position: absolute;
+  top: -28px;
+  left: 12px;
+  right: 12px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-style: italic;
+  color: rgba(255,255,255,0.4);
+  background: rgba(34,197,94,0.08);
+  border-radius: 6px 6px 0 0;
+  border: 1px solid rgba(34,197,94,0.15);
+  border-bottom: none;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 5;
+}
+
+/* FIX #14: History badge */
+.history-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 7px;
+  pointer-events: none;
+}
+.history-btn { position: relative; }
+.history-btn.listening .history-badge { background: var(--live); }
+
+/* STT auto-fill states — visual feedback for question readiness */
+
+/* Base filling state: subtle green border when accumulating interviewer speech */
 #composer.stt-filling {
   border-color: rgba(34,197,94,0.45);
   box-shadow: 0 0 0 2px rgba(34,197,94,0.12);
 }
 #composer.stt-filling #input { color: rgba(200,255,220,0.95); }
+
+/* Accumulating state: pulsing border to show text is still coming in */
+#composer.stt-accumulating {
+  border-color: rgba(34,197,94,0.35);
+  box-shadow: 0 0 0 2px rgba(34,197,94,0.08);
+  animation: stt-pulse 1.5s ease-in-out infinite;
+}
+
+/* Ready state: solid green, question looks complete */
+#composer.stt-ready {
+  border-color: rgba(34,197,94,0.6);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.18), 0 0 12px rgba(34,197,94,0.15);
+}
+#composer.stt-ready #input { color: rgba(180,255,200,1); }
+
+/* Ready indicator bar at bottom of composer */
+#composer.stt-ready::after {
+  content: '↵ Ready to answer';
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(34,197,94,0.8);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Dimmed state: user is speaking, might clear soon */
+#composer.stt-dimmed {
+  border-color: rgba(255,255,255,0.15);
+  box-shadow: none;
+  opacity: 0.6;
+}
+#composer.stt-dimmed #input { color: rgba(255,255,255,0.5); }
+
+@keyframes stt-pulse {
+  0%, 100% { 
+    border-color: rgba(34,197,94,0.35);
+    box-shadow: 0 0 0 2px rgba(34,197,94,0.08);
+  }
+  50% { 
+    border-color: rgba(34,197,94,0.55);
+    box-shadow: 0 0 0 3px rgba(34,197,94,0.15);
+  }
+}
 #composer {
+  position: relative; /* for ::after indicator */
   margin-top: 14px;
+  margin-bottom: 22px; /* space for ready indicator */
   background: var(--fill-1);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: var(--r-16);
   padding: 12px 14px;
   display: flex; flex-direction: column; gap: 10px;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
 }
 #composer.focused { border-color: var(--bd-strong); box-shadow: 0 0 0 3px rgba(60,131,245,0.15); }
 #input-area { position: relative; min-height: 22px; }
@@ -267,6 +387,18 @@ button:focus { outline: none; }
 .smart-pill:hover { background: rgba(255,255,255,0.09); }
 .smart-pill.on { border-color: rgba(60,131,245,0.5); color: #7FB0F9; background: rgba(60,131,245,0.10); }
 .smart-pill.on .ic { color: #7FB0F9; }
+/* History button */
+.history-btn {
+  width: 28px; height: 28px; border-radius: var(--r-8);
+  border: none; background: transparent; color: rgba(255,255,255,0.5);
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  transition: background 140ms ease, color 140ms ease;
+}
+.history-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
+.history-btn.active { color: var(--accent); background: rgba(60,131,245,0.12); }
+.history-btn.listening { color: var(--live); }
+.history-btn.listening.active { color: var(--live); background: rgba(34,197,94,0.12); }
+
 .more-btn {
   width: 28px; height: 28px; border-radius: var(--r-8);
   border: none; background: transparent; color: rgba(255,255,255,0.7);
@@ -369,119 +501,140 @@ button:focus { outline: none; }
   min-width: 0; /* allow shrink */
 }
 
-/* Live transcript sidebar */
-.live-transcript-sidebar {
-  width: 210px;
-  flex-shrink: 0;
-  margin-left: 12px;
-  border-left: 1px solid var(--bd-hair);
-  padding-left: 12px;
+/* Transcript history sidebar — floats OUTSIDE the main panel */
+.transcript-sidebar {
+  position: fixed;
+  top: 80px; /* below toolbar */
+  /* FIX #6: Use right edge positioning instead of calc that assumes fixed width */
+  right: 20px;
+  width: 220px;
+  max-height: 480px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
-  max-height: 460px;
-  min-height: 200px;
+  
+  /* Glass styling to match main panel */
+  background: rgba(20,22,28,0.85);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid var(--bd-hair);
+  border-radius: var(--r-16);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
+  padding: 14px;
+  
+  z-index: 10;
+  pointer-events: auto;
+  animation: slideInRight 200ms cubic-bezier(0.22,1,0.36,1);
 }
-.live-transcript-sidebar.hidden { display: none; }
+.transcript-sidebar.hidden { 
+  display: none; 
+}
 
-.lts-header {
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+.ts-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   flex-shrink: 0;
-  gap: 6px;
+  gap: 8px;
 }
-.lts-title { font-size: 11px; font-weight: 700; color: var(--tx-mut); text-transform: uppercase; letter-spacing: 0.06em; flex: 1; }
-
-/* Clear button inside sidebar header */
-.lts-clear-btn {
-  font-size: 9.5px; font-weight: 600; color: var(--tx-mut);
-  border: 1px solid rgba(255,255,255,0.10); background: transparent;
-  border-radius: 4px; padding: 2px 6px; cursor: pointer;
-  transition: all 120ms ease; white-space: nowrap;
-  -webkit-app-region: no-drag;
+.ts-title { 
+  font-size: 12px; 
+  font-weight: 600; 
+  color: var(--tx-2); 
+  flex: 1; 
 }
-.lts-clear-btn:hover { color: #fca5a5; border-color: rgba(239,68,68,0.30); background: rgba(239,68,68,0.08); }
+.ts-close-btn {
+  width: 20px; height: 20px;
+  border: none; background: transparent;
+  color: var(--tx-mut); font-size: 12px;
+  cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 120ms ease;
+}
+.ts-close-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
 
-.lts-list {
+.ts-list {
   overflow-y: auto;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  /* scroll styling */
+  gap: 4px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.12) transparent;
 }
-.lts-placeholder { font-size: 11.5px; color: var(--tx-mut); font-style: italic; padding: 4px 0; }
+.ts-placeholder { 
+  font-size: 11.5px; 
+  color: var(--tx-mut); 
+  font-style: italic; 
+  padding: 8px 0; 
+  text-align: center;
+}
 
-/* Each transcript turn in the sidebar */
-.lts-turn {
-  position: relative;
-  padding: 5px 8px;
+/* Each transcript turn — clean, minimal */
+.ts-turn {
+  padding: 6px 10px;
   border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.4;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  font-size: 12.5px;
+  line-height: 1.45;
   -webkit-user-select: text;
   user-select: text;
   transition: background 120ms ease;
 }
-.lts-turn.lts-you {
-  color: rgba(160,210,255,0.85);
-  background: rgba(160,210,255,0.05);
+.ts-turn.ts-you {
+  color: rgba(160,210,255,0.9);
+  background: rgba(160,210,255,0.06);
 }
-.lts-turn.lts-you:hover { background: rgba(160,210,255,0.10); }
-.lts-turn.lts-them {
-  color: rgba(255,255,255,0.80);
+.ts-turn.ts-you:hover { background: rgba(160,210,255,0.12); }
+.ts-turn.ts-them {
+  color: rgba(255,255,255,0.85);
   background: rgba(255,255,255,0.04);
-  cursor: default;
 }
-.lts-turn.lts-them:hover {
-  background: rgba(255,255,255,0.08);
-}
-.lts-channel {
-  font-size: 9.5px;
+.ts-turn.ts-them:hover { background: rgba(255,255,255,0.08); }
+
+.ts-channel {
+  font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 2px;
-  opacity: 0.55;
-  display: block;
+  letter-spacing: 0.06em;
+  opacity: 0.5;
+  margin-right: 6px;
 }
-.lts-text { display: block; }
-.lts-interim { font-style: italic; opacity: 0.6; }
+.ts-text { display: inline; }
+.ts-interim { font-style: italic; opacity: 0.5; }
 
-/* "Answer this" / "Expand" button on transcript turns */
-.lts-answer-btn {
-  display: block;
+.ts-footer {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--bd-hair);
+  flex-shrink: 0;
+}
+.ts-clear-btn {
   width: 100%;
-  margin-top: 4px;
-  border: 1px solid rgba(60,131,245,0.35);
-  background: rgba(60,131,245,0.15);
-  color: #a8c8ff;
-  font-size: 10.5px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 5px;
+  padding: 6px 10px;
+  border: 1px solid rgba(239,68,68,0.20);
+  background: rgba(239,68,68,0.06);
+  color: rgba(252,165,165,0.8);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
   cursor: pointer;
-  text-align: center;
-  white-space: nowrap;
-  transition: background 120ms ease;
-  -webkit-app-region: no-drag;
-  letter-spacing: 0.02em;
+  transition: all 120ms ease;
 }
-.lts-turn.lts-you .lts-answer-btn {
-  border-color: rgba(160,210,255,0.25);
-  background: rgba(160,210,255,0.08);
-  color: rgba(160,210,255,0.8);
+.ts-clear-btn:hover { 
+  background: rgba(239,68,68,0.15); 
+  border-color: rgba(239,68,68,0.35);
+  color: #fca5a5;
 }
-.lts-answer-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-/* Widen overall panel when sidebar is visible */
-#panel-wrap.sidebar-open { width: min(840px, 96vw); }
+/* Sidebar no longer widens panel — it floats outside */
+/* Remove the old sidebar-open behavior */
+#panel-wrap.sidebar-open { width: min(624px, 94vw); }
 
 /* ============================ Transcript viewer ============================ */
 .transcript-wrap {

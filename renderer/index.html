@@ -59,6 +59,7 @@
               </div>
               <div id="composer-bottom">
                 <button id="smart-toggle" class="smart-pill"><span class="ic"></span><span>Smart</span></button>
+                <button id="history-btn" class="history-btn" title="View conversation history"><span class="ic"></span></button>
                 <button id="more-btn" class="more-btn" title="Settings"></button>
                 <div class="spacer"></div>
                 <button id="send-btn" title="Send"></button>
@@ -73,18 +74,21 @@
             </div>
           </div>
 
-          <!-- Right column: live transcript sidebar (shown only when listening) -->
-          <div id="live-transcript-sidebar" class="live-transcript-sidebar hidden">
-            <div class="lts-header">
-              <span class="lts-title">Live Transcript</span>
-              <button class="lts-clear-btn" id="clear-transcript-btn" title="Clear transcript">✕ Clear</button>
-            </div>
-            <div id="lts-list" class="lts-list">
-              <div class="lts-placeholder">Start listening to see the transcript here.</div>
-            </div>
-          </div>
-
         </div><!-- /panel-columns -->
+      </div>
+    </div>
+
+    <!-- Transcript history sidebar — floats OUTSIDE main panel, toggled by history button -->
+    <div id="transcript-sidebar" class="transcript-sidebar hidden">
+      <div class="ts-header">
+        <span class="ts-title">Conversation History</span>
+        <button class="ts-close-btn" id="close-sidebar-btn" title="Close history">✕</button>
+      </div>
+      <div id="ts-list" class="ts-list">
+        <div class="ts-placeholder">Conversation history will appear here when listening.</div>
+      </div>
+      <div class="ts-footer">
+        <button class="ts-clear-btn" id="clear-transcript-btn" title="Clear all history">Clear History</button>
       </div>
     </div>
   </div>
