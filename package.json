@@ -14,37 +14,6 @@
     "dist:mac": "electron-builder --mac zip",
     "dist:win": "electron-builder --win zip"
   },
-  "build": {
-    "appId": "com.cue.overlay",
-    "productName": "cue",
-    "asar": false,
-    "files": [
-      "main.js",
-      "preload.js",
-      "src/**/*",
-      "renderer/**/*"
-    ],
-    "mac": {
-      "target": [
-        "dir"
-      ],
-      "category": "public.app-category.productivity",
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "identity": null,
-      "extendInfo": {
-        "LSUIElement": true,
-        "NSMicrophoneUsageDescription": "cue transcribes your microphone so it can help you in conversations.",
-        "NSCameraUsageDescription": "cue does not use the camera.",
-        "NSAudioCaptureUsageDescription": "cue captures system audio to transcribe the other participant in a call."
-      }
-    },
-    "win": {
-      "target": [
-        "dir"
-      ]
-    }
-  },
   "keywords": [
     "electron",
     "overlay",
