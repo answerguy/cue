@@ -351,7 +351,9 @@ async function runFeature(mode, userText) {
     send('llm:start', { userBubble, small: !!def.small, category });
 
     if (!llm.ready) {
-      send('llm:error', { message: 'Add your ' + settings.provider + ' API key in Settings (gear icon) to start. Model: ' + (llm.model || 'unset') + '.' });
+      const label = settings.provider === 'azure' ? 'Azure AI Foundry' : settings.provider;
+      const extra = settings.provider === 'azure' ? ' endpoint and ' : ' ';
+      send('llm:error', { message: 'Add your' + extra + label + ' API key in Settings (gear icon) to start. Model: ' + (llm.model || 'unset') + '.' });
       return;
     }
 

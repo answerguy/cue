@@ -1,8 +1,11 @@
 // LLM factory — OpenAI / Anthropic / Gemini behind one streaming interface.
 // stream({ system, turns:[{role,text}], imageDataUrl, maxTokens, onToken }) -> Promise<fullText>
 
+const PROVIDER_LABELS = { azure: 'Azure AI Foundry' };
+
 function normalizeProviderName(provider) {
   if (!provider) return 'provider';
+  if (PROVIDER_LABELS[provider]) return PROVIDER_LABELS[provider];
   return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
@@ -45,6 +48,56 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
     }
   });
   const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens });
+  let full = '';
+  for await (const part of stream) {
+    const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
+    if (d) { full += d; onToken(d); }
+  }
+  return full;
+}
+
+// Azure AI Foundry Models API (cognitiveservices.azure.com hosts) lives under
+// {endpoint}/openai/v1 and authenticates with the `api-key` header.
+function normalizeAzureBaseURL(raw) {
+  let u = String(raw || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+  if (!u) return '';
+  if (/cognitiveservices\.azure\.com/i.test(u) && !/\/openai\/v1$/i.test(u)) {
+    u += '/openai/v1';
+  }
+  return u;
+}
+
+async function streamAzure({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, endpoint }) {
+  const url = normalizeAzureBaseURL(endpoint);
+  if (!url) throw new Error('Missing Azure endpoint. Add your Azure AI Foundry or Azure OpenAI endpoint in Settings.');
+  const messages = [{ role: 'system', content: system }];
+  turns.forEach((t, i) => {
+    const last = i === turns.length - 1;
+    if (last && imageDataUrl && t.role === 'user') {
+      messages.push({ role: 'user', content: [
+        { type: 'text', text: t.text },
+        { type: 'image_url', image_url: { url: imageDataUrl } }
+      ] });
+    } else {
+      messages.push({ role: t.role, content: t.text });
+    }
+  });
+  const OpenAI = require('openai');
+  let client;
+  if (/openai\.azure\.com/i.test(url)) {
+    client = new OpenAI.AzureOpenAI({ endpoint: url.replace(/\/openai$/i, ''), apiKey, apiVersion: '2024-10-21' });
+  } else {
+    // Foundry / OpenAI-compatible base: force the `api-key` header and drop the
+    // Authorization header the SDK adds by default (those hosts don't take a Bearer key).
+    const azureFetch = async (input, init) => {
+      const headers = new Headers(init && init.headers);
+      headers.set('api-key', apiKey);
+      headers.delete('authorization');
+      return fetch(input, { ...init, headers });
+    };
+    client = new OpenAI({ baseURL: url, apiKey, fetch: azureFetch });
+  }
+  const stream = await client.chat.completions.create({ model, messages, stream: true, max_completion_tokens: maxTokens });
   let full = '';
   for await (const part of stream) {
     const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
@@ -107,18 +160,20 @@ function createLLM(settings) {
   if (provider === 'gemini' && /^gemini-1\.5\-/.test(model || '')) {
     model = 'gemini-2.0-flash';
   }
-  if (!model) model = provider === 'gemini' ? 'gemini-2.0-flash' : (provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-latest');
-  const maxTokens = settings.smart ? 1400 : 700;
+  if (!model) model = provider === 'gemini' ? 'gemini-2.0-flash' : ((provider === 'openai' || provider === 'azure') ? 'gpt-4o-mini' : 'claude-3-5-haiku-latest');
+  const maxTokens = provider === 'azure' ? 2000 : (settings.smart ? 1400 : 700);
+  const endpoint = settings.azureEndpoint;
 
   return {
     provider, model, apiKey,
-    ready: !!apiKey && !!model,
+    ready: !!apiKey && !!model && (provider !== 'azure' || !!endpoint),
     async stream(params) {
-      const args = { apiKey, model, maxTokens, ...params, turns: sanitizeTurns(params.turns) };
+      const args = { apiKey, model, maxTokens, endpoint, ...params, turns: sanitizeTurns(params.turns) };
       try {
         if (provider === 'openai') return await streamOpenAI(args);
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
+        if (provider === 'azure') return await streamAzure(args);
         throw new Error('unknown provider: ' + provider);
       } catch (error) {
         throw new Error(formatProviderErrorMessage(error, provider));

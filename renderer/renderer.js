@@ -589,6 +589,8 @@
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
     $('#key-gemini').value = settings.apiKeys.gemini || '';
     $('#key-deepgram').value = settings.apiKeys.deepgram || '';
+    $('#key-azure').value = settings.apiKeys.azure || '';
+    $('#azure-endpoint').value = settings.azureEndpoint || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     fillAppLinkCallers();
@@ -644,7 +646,8 @@
 
   function statusText() {
     const k = settings.apiKeys;
-    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram'].filter(Boolean);
+    const labels = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepgram: 'Deepgram', azure: 'Azure AI Foundry' };
+    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram', k.azure && 'Azure AI Foundry'].filter(Boolean);
     const stt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.gemini ? 'Gemini (batch)' : 'none'));
     const ready = [
       settings.resumeText ? '✓ resume' : null,
@@ -652,7 +655,7 @@
       settings.starStories ? '✓ stories' : null,
       settings.salaryTarget ? '✓ salary' : null
     ].filter(Boolean);
-    return `${settings.provider} · STT: ${stt}` + (ready.length ? ' · ' + ready.join(' · ') : '');
+    return `${labels[settings.provider] || settings.provider} · STT: ${stt}` + (ready.length ? ' · ' + ready.join(' · ') : '');
   }
 
   document.querySelectorAll('#provider-seg button').forEach((b) => b.addEventListener('click', () => {
@@ -670,6 +673,8 @@
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
     settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
+    settings.apiKeys.azure = $('#key-azure').value.trim();
+    settings.azureEndpoint = $('#azure-endpoint').value.trim();
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
@@ -784,7 +789,7 @@
     {
       icon: '🔑',
       title: 'Connect an AI provider',
-      body: 'cue uses <strong>your own</strong> API key — pick <span class="hl">OpenAI</span>, <span class="hl">Anthropic</span>, or <span class="hl">Google Gemini</span>. Get a key from your provider, then paste it into cue\'s Settings.<br><br><strong>Tip:</strong> For the <em>best</em> real-time listening, add a <span class="hl">Deepgram</span> key (lowest latency streaming transcription). Otherwise, an OpenAI key enables streaming via the Realtime API, and Gemini/Whisper work as batch fallbacks.',
+      body: 'cue uses <strong>your own</strong> API key — pick <span class="hl">OpenAI</span>, <span class="hl">Anthropic</span>, <span class="hl">Google Gemini</span>, or <span class="hl">Azure AI Foundry</span>. Get a key from your provider, then paste it into cue\'s Settings.<br><br><strong>Tip:</strong> For the <em>best</em> real-time listening, add a <span class="hl">Deepgram</span> key (lowest latency streaming transcription). Otherwise, an OpenAI key enables streaming via the Realtime API, and Gemini/Whisper work as batch fallbacks.',
       buttons: [{ label: 'Open cue Settings', action: () => { finishOnboard(); openSettings(); } }]
     },
     {

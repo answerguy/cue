@@ -8,7 +8,8 @@ const FILE = path.join(app.getPath('userData'), 'cue-data.json');
 const DEFAULTS = {
   provider: 'openai',
   smart: false,
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '' },
+  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', azure: '' },
+  azureEndpoint: '',
   // Tab 2: Profile
   resumeText: '',
   jobDescription: '',
@@ -26,7 +27,8 @@ const DEFAULTS = {
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
-    gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' }
+    gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' },
+    azure: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }
   }
 };
 
