@@ -533,6 +533,21 @@
   });
 
   // ---- prep status & smart tooltip helpers -------------------------------
+
+
+  // ---- AI rules: live char counter + soft cap ---------------------------
+  function updateAiRulesCounter() {
+    const el = document.getElementById('ai-rules');
+    const counter = document.getElementById('ai-rules-count');
+    if (!el || !counter) return;
+    const n = el.value.length;
+    const cap = 2000;
+    counter.textContent = String(n);
+    counter.classList.toggle('over', n >= cap);
+    counter.parentElement.classList.toggle('s-counter-warn', n >= cap - 100);
+  }
+  const aiRulesEl = document.getElementById('ai-rules');
+  if (aiRulesEl) aiRulesEl.addEventListener('input', updateAiRulesCounter);
   function updatePrepStatus() {
     if (!settings) return;
     const fields = {
@@ -603,6 +618,9 @@
     $('#why-company').value = settings.whyCompany || '';
     $('#why-leaving').value = settings.whyLeaving || '';
     $('#work-style').value = settings.workStyle || '';
+    // Style tab
+    $('#ai-rules').value = settings.aiRules || '';
+    updateAiRulesCounter();
     // Q&A tab
     $('#salary-target').value = settings.salaryTarget || '';
     $('#questions-to-ask').value = settings.questionsToAsk || '';
@@ -685,6 +703,8 @@
     settings.whyCompany = $('#why-company').value.trim();
     settings.whyLeaving = $('#why-leaving').value.trim();
     settings.workStyle = $('#work-style').value.trim();
+    // Style tab
+    settings.aiRules = $('#ai-rules').value.trim();
     // Q&A
     settings.salaryTarget = $('#salary-target').value.trim();
     settings.questionsToAsk = $('#questions-to-ask').value.trim();

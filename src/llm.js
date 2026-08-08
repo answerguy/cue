@@ -36,10 +36,12 @@ async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTok
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
     if (last && imageDataUrl && t.role === 'user') {
-      messages.push({ role: 'user', content: [
-        { type: 'text', text: t.text },
-        { type: 'image_url', image_url: { url: imageDataUrl } }
-      ] });
+      messages.push({
+        role: 'user', content: [
+          { type: 'text', text: t.text },
+          { type: 'image_url', image_url: { url: imageDataUrl } }
+        ]
+      });
     } else {
       messages.push({ role: t.role, content: t.text });
     }
@@ -159,7 +161,7 @@ async function streamOllama({ apiKey, model, system, turns, imageDataUrl, maxTok
         full += data.message.content;
         onToken(data.message.content);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   return full;
 }

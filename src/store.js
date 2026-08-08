@@ -5,6 +5,10 @@ const { app } = require('electron');
 
 const FILE = path.join(app.getPath('userData'), 'cue-data.json');
 
+// Cap on the user's custom response rules. Generous but bounded: anything longer
+// should live in a real prompt file, not in a settings field.
+const MAX_AI_RULES_CHARS = 2000;
+
 const DEFAULTS = {
   provider: 'openai',
   smart: false,
@@ -20,6 +24,11 @@ const DEFAULTS = {
   // Tab 4: Q&A
   salaryTarget: '',      // e.g. "$150k-$180k base + equity"
   questionsToAsk: '',    // Questions to ask the interviewer
+  // Tab 5: Style — custom response rules
+  // The user writes how the AI should write: e.g. "no em-dashes", "use bullet
+  // points", "casual tone". Applied to every LLM mode EXCEPT LeetCode (kept
+  // strict for coding problems).
+  aiRules: '',
   // Window position
   windowX: null,
   windowY: null,
@@ -40,7 +49,11 @@ function deepMerge(base, over) {
     if (over[k] && typeof over[k] === 'object' && !Array.isArray(over[k]) && typeof base[k] === 'object') {
       out[k] = deepMerge(base[k], over[k]);
     } else {
-      out[k] = over[k];
+      if (k === 'aiRules' && typeof over[k] === 'string') {
+        out[k] = over[k].slice(0, MAX_AI_RULES_CHARS);
+      } else {
+        out[k] = over[k];
+      }
     }
   }
   return out;
@@ -55,6 +68,7 @@ function load() {
 function save() { try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2)); } catch (e) { /* ignore */ } }
 
 module.exports = {
+  MAX_AI_RULES_CHARS,
   getSettings() { return load(); },
   setSettings(patch) { load(); data = deepMerge(data, patch || {}); save(); return data; }
 };

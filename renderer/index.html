@@ -90,6 +90,7 @@
         <button class="s-tab on" data-tab="keys">🔑 Keys</button>
         <button class="s-tab" data-tab="profile">📄 Profile</button>
         <button class="s-tab" data-tab="prep">🎯 Interview Prep</button>
+        <button class="s-tab" data-tab="style">✨ Style</button>
         <button class="s-tab" data-tab="qa">💬 Q&amp;A</button>
       </div>
 
@@ -154,6 +155,23 @@
         <label class="s-label" style="margin-top:14px;">Questions to ask the interviewer <span class="s-hint">cue will suggest these at the end</span></label>
         <textarea id="questions-to-ask" rows="6" spellcheck="false" placeholder="e.g.&#10;- What does success look like in the first 90 days?&#10;- How does the team handle technical debt?&#10;- What's the biggest challenge the team is facing right now?&#10;- How does feedback and mentorship work here?"></textarea>
       </div>
+
+      <!-- Tab: Style -->
+      <div class="s-body s-tab-pane hidden" data-pane="style">
+        <label class="s-label">AI rules <span class="s-hint">how the AI should write its responses</span></label>
+        <textarea id="ai-rules" rows="10" spellcheck="false" maxlength="2000" placeholder="e.g.
+- Never use em-dashes.
+- Reply in 2-3 short bullet points.
+- Use a casual, first-person tone.
+- Avoid jargon; explain technical terms.
+- Don&#39;t start with &quot;I&quot;.
+"></textarea>
+        <div class="s-counter"><span id="ai-rules-count">0</span> / 2000</div>
+        <div class="s-hint-block">
+          These rules tell cue <strong>how</strong> to write, not <strong>what</strong> to say. Use one imperative sentence per line (e.g. <em>Never use em-dashes.</em>). They apply to every mode except coding-problem solves (LeetCode), which stays strict. Stored locally; never sent anywhere except the AI provider when cue answers a question.
+        </div>
+      </div>
+
 
     </div>
   </div>
