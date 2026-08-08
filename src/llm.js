@@ -8,7 +8,8 @@ const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-latest',
   gemini: 'gemini-2.0-flash',
-  ollama: 'llama3.2'
+  ollama: 'llama3.2',
+  groq: 'llama-3.1-8b-instant'
 };
 
 function normalizeProviderName(provider) {
@@ -46,10 +47,12 @@ async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUr
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
     if (last && imageDataUrl && t.role === 'user') {
-      messages.push({ role: 'user', content: [
-        { type: 'text', text: t.text },
-        { type: 'image_url', image_url: { url: imageDataUrl } }
-      ] });
+      messages.push({
+        role: 'user', content: [
+          { type: 'text', text: t.text },
+          { type: 'image_url', image_url: { url: imageDataUrl } }
+        ]
+      });
     } else {
       messages.push({ role: t.role, content: t.text });
     }
@@ -108,6 +111,72 @@ async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTok
   return full;
 }
 
+async function streamOllama({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+  const baseUrl = apiKey || 'http://localhost:11434';
+  const url = `${baseUrl.replace(/\/$/, '')}/api/chat`;
+
+  const messages = [{ role: 'system', content: system }];
+  turns.forEach((t, i) => {
+    const last = i === turns.length - 1;
+    if (last && imageDataUrl && t.role === 'user') {
+      const img = stripDataUrl(imageDataUrl);
+      if (img) {
+        messages.push({ role: 'user', content: t.text, images: [img.b64] });
+      } else {
+        messages.push({ role: 'user', content: t.text });
+      }
+    } else {
+      messages.push({ role: t.role, content: t.text });
+    }
+  });
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: true })
+    });
+  } catch (err) {
+    throw new Error(`Ollama fetch failed: ${err.message}. Is Ollama running at ${baseUrl}?`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+  }
+
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // keep incomplete line
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line);
+        if (data.message && data.message.content) {
+          full += data.message.content;
+          onToken(data.message.content);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+  if (buffer.trim()) {
+    try {
+      const data = JSON.parse(buffer);
+      if (data.message && data.message.content) {
+        full += data.message.content;
+        onToken(data.message.content);
+      }
+    } catch (e) { }
+  }
+  return full;
+}
+
 function createLLM(settings) {
   const provider = settings.provider;
   const keys = settings.apiKeys || {};
@@ -151,12 +220,8 @@ function createLLM(settings) {
       try {
         if (provider === 'openai') return await streamOpenAI(args);
         if (provider === CUSTOM_PROVIDER) return await streamOpenAI(args);
-        if (provider === 'ollama') {
-          // For Ollama, the 'apiKey' field holds the URL (e.g. http://localhost:11434/v1)
-          let baseURL = apiKey || 'http://localhost:11434';
-          if (!baseURL.endsWith('/v1')) baseURL = baseURL.replace(/\/+$/, '') + '/v1';
-          return await streamOpenAI({ ...args, apiKey: 'ollama', baseURL });
-        }
+        if (provider === 'ollama') return await streamOllama(args);
+        if (provider === 'groq') return await streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
         throw new Error('unknown provider: ' + provider);

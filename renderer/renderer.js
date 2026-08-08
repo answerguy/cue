@@ -533,6 +533,21 @@
   });
 
   // ---- prep status & smart tooltip helpers -------------------------------
+
+
+  // ---- AI rules: live char counter + soft cap ---------------------------
+  function updateAiRulesCounter() {
+    const el = document.getElementById('ai-rules');
+    const counter = document.getElementById('ai-rules-count');
+    if (!el || !counter) return;
+    const n = el.value.length;
+    const cap = 2000;
+    counter.textContent = String(n);
+    counter.classList.toggle('over', n >= cap);
+    counter.parentElement.classList.toggle('s-counter-warn', n >= cap - 100);
+  }
+  const aiRulesEl = document.getElementById('ai-rules');
+  if (aiRulesEl) aiRulesEl.addEventListener('input', updateAiRulesCounter);
   function updatePrepStatus() {
     if (!settings) return;
     const fields = {
@@ -598,6 +613,7 @@
     $('#base-url').value = settings.baseUrl || '';
     updateCustomProviderFields();
     $('#key-ollama').value = settings.apiKeys.ollama || '';
+    $('#key-groq').value = settings.apiKeys.groq || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     fillAppLinkCallers();
@@ -610,6 +626,9 @@
     $('#why-company').value = settings.whyCompany || '';
     $('#why-leaving').value = settings.whyLeaving || '';
     $('#work-style').value = settings.workStyle || '';
+    // Style tab
+    $('#ai-rules').value = settings.aiRules || '';
+    updateAiRulesCounter();
     // Q&A tab
     $('#salary-target').value = settings.salaryTarget || '';
     $('#questions-to-ask').value = settings.questionsToAsk || '';
@@ -653,8 +672,8 @@
 
   function statusText() {
     const k = settings.apiKeys;
-    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram', k.ollama && 'Ollama'].filter(Boolean);
-    const stt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.gemini ? 'Gemini (batch)' : 'none'));
+    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram', k.ollama && 'Ollama', k.groq && 'Groq'].filter(Boolean);
+    const stt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : (k.gemini ? 'Gemini (batch)' : 'none')));
     const ready = [
       settings.resumeText ? '✓ resume' : null,
       settings.jobDescription ? '✓ JD' : null,
@@ -683,6 +702,7 @@
     settings.apiKeys.custom = $('#key-custom').value.trim();
     settings.baseUrl = $('#base-url').value.trim();
     settings.apiKeys.ollama = $('#key-ollama').value.trim();
+    settings.apiKeys.groq = $('#key-groq').value.trim();
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
@@ -694,6 +714,8 @@
     settings.whyCompany = $('#why-company').value.trim();
     settings.whyLeaving = $('#why-leaving').value.trim();
     settings.workStyle = $('#work-style').value.trim();
+    // Style tab
+    settings.aiRules = $('#ai-rules').value.trim();
     // Q&A
     settings.salaryTarget = $('#salary-target').value.trim();
     settings.questionsToAsk = $('#questions-to-ask').value.trim();

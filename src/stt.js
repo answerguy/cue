@@ -3,10 +3,10 @@
 // fall back across providers. Returns { text, provider } or { text:'', error }.
 const { pcmToWav } = require('./wav');
 
-async function transcribeOpenAI(apiKey, wav, model) {
+async function transcribeOpenAI(apiKey, wav, model, baseURL) {
   const OpenAI = require('openai');
   const toFile = OpenAI.toFile || require('openai/uploads').toFile;
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, baseURL });
   const file = await toFile(wav, 'audio.wav', { type: 'audio/wav' });
   const res = await client.audio.transcriptions.create({ file, model: model || 'whisper-1' });
   return (res.text || '').trim();
@@ -29,6 +29,7 @@ function createSTT(settings) {
   const keys = settings.apiKeys || {};
   const chain = [];
   if (keys.openai) chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, settings.sttModel) });
+  if (keys.groq) chain.push({ p: 'groq', fn: (wav) => transcribeOpenAI(keys.groq, wav, 'whisper-large-v3-turbo', 'https://api.groq.com/openai/v1') });
   if (keys.gemini) chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
   if (keys.openai && chain.length > 1) chain.unshift(chain.splice(chain.findIndex((c) => c.p === 'openai'), 1)[0]);
 
@@ -51,8 +52,11 @@ function createSTT(settings) {
           lastProvider = c.p;
           return { text, provider: c.p };
         } catch (e) {
-          lastErr = { status: e && e.status, code: e && e.code, message: (e && e.message) || String(e), provider: c.p };
-          if ((e && e.status === 429) || (e && e.code === 'RESOURCE_EXHAUSTED')) {
+          let msg = (e && e.message) || String(e);
+          const isQuota = (e && e.status === 429) || (e && e.code === 'RESOURCE_EXHAUSTED') || msg.includes('Quota exceeded');
+          if (isQuota) msg = 'Quota exceeded. Check your plan and billing details.';
+          lastErr = { status: e && e.status, code: e && e.code, message: msg, provider: c.p };
+          if (isQuota) {
             lastProvider = c.p;
             disabledUntil = now + 30000;
             break;

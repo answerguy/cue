@@ -226,10 +226,11 @@ function handleSttError(err, settings) {
     context: { provider: err.provider, status: err.status || null, alreadyDisabled: sttDisabled },
   });
   if (sttDisabled) return;
-  const noAccess = err.status === 403 || err.status === 401 || err.code === 'model_not_found';
+  const isQuota = err.status === 429 || err.code === 'RESOURCE_EXHAUSTED' || (err.message && err.message.includes('Quota exceeded'));
+  const noAccess = err.status === 403 || err.status === 401 || err.code === 'model_not_found' || isQuota;
   sttDisabled = true; // stop hammering the API every few seconds
   if (noAccess) {
-    send('status', { message: 'Transcription off: your ' + err.provider + ' key has no access to a speech-to-text model (403). Screen + LeetCode still work. To enable listening: give the key Whisper/transcription access, or add a Gemini key in Settings and reopen.' });
+    send('status', { message: `Transcription off: your ${err.provider} key was rejected or hit a quota limit. Update your key in Settings to resume.` });
   } else {
     send('status', { message: 'Transcription error (' + err.provider + '): ' + err.message });
   }
@@ -384,7 +385,7 @@ async function runFeature(mode, userText) {
 
     const settingsForPrompt = store.getSettings();
     const contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
-    const system = def.buildSystem ? def.buildSystem(contextBlock) : (def.system || '');
+    const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
     const built = def.build({ transcript, userText: userText || '' });
     await llm.stream({
       system,

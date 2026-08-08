@@ -1,6 +1,9 @@
 // prompts.js — Feature definitions with interview-category-aware system prompts.
 // ctx = { transcript, userText }
-// System prompt receives the interview context block prepended by main.js.
+// System prompt receives the interview context block prepended by main.js,
+// then optionally the user's AI rules appended at the end.
+
+const { appendAiRules } = require('./profile-context');
 
 function formatTranscript(turns, limit) {
   const recent = limit ? turns.slice(-limit) : turns;
@@ -10,6 +13,14 @@ function formatTranscript(turns, limit) {
 function buildSystem(base, contextBlock) {
   if (!contextBlock) return base;
   return contextBlock + '\n\n' + base;
+}
+
+// Apply AI rules to a system prompt if the mode wants them. LeetCode returns
+// the prompt unchanged — code answers should stay strict regardless of how the
+// user wants the AI to chat.
+function applyRules(prompt, aiRules, mode) {
+  if (mode === 'leetcode') return prompt;
+  return appendAiRules(prompt, aiRules);
 }
 
 const BASE_RULES =
@@ -23,8 +34,8 @@ const MODES = {
     userBubble: null,
     small: false,
     resumeMode: 'assist',
-    buildSystem(contextBlock) {
-      return buildSystem(
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
         'You are cue, a discreet real-time copilot overlaid on the user\'s screen during an interview or coding session. ' +
         BASE_RULES +
         'Look at the screenshot and the recent conversation, decide what the user needs RIGHT NOW, and deliver it directly with no preamble.\n\n' +
@@ -38,7 +49,7 @@ const MODES = {
         '• "Any questions for us?": Offer 2–3 of their prepared questions.\n\n' +
         'Write in first person as if the candidate is speaking. No preamble, no "Here\'s what you could say". Just the answer.',
         contextBlock
-      );
+      ), aiRules, 'assist');
     },
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 14);
@@ -52,8 +63,8 @@ const MODES = {
     userBubble: 'What should I say?',
     small: false,
     resumeMode: 'say',
-    buildSystem(contextBlock) {
-      return buildSystem(
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
         'You are cue, whispering the perfect reply to the candidate during a live interview. ' +
         BASE_RULES +
         '"Them" is the interviewer; "You" is the candidate.\n\n' +
@@ -67,7 +78,7 @@ const MODES = {
         '• TECHNICAL: Give a clear, confident explanation. Use analogies for non-technical interviewers.\n\n' +
         'No quotes, no preamble. Write the actual words to say. 2–5 sentences.',
         contextBlock
-      );
+      ), aiRules, 'say');
     },
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 16);
@@ -82,14 +93,14 @@ const MODES = {
     userBubble: 'Follow-up questions',
     small: true,
     resumeMode: 'followup',
-    buildSystem(contextBlock) {
-      return buildSystem(
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
         'You are cue. Suggest 2–4 sharp follow-up questions the candidate could ask the interviewer.\n' +
         'Base them on what was discussed and the candidate\'s background/target role.\n' +
         'Good follow-ups: show genuine curiosity, demonstrate research, highlight the candidate\'s strengths, or uncover role details.\n' +
         'Return as a bullet list only. No preamble.',
         contextBlock
-      );
+      ), aiRules, 'followup');
     },
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 20);
@@ -103,13 +114,13 @@ const MODES = {
     userBubble: 'Recap',
     small: true,
     resumeMode: 'recap',
-    buildSystem(contextBlock) {
-      return buildSystem(
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
         'You are cue. Summarize the interview so far:\n' +
         '• Topics covered\n• Questions asked\n• Key answers given\n• Any red flags or areas to strengthen\n' +
         'Use short bullets under bold headers. Be concise.',
         contextBlock
-      );
+      ), aiRules, 'recap');
     },
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 0);
@@ -123,15 +134,15 @@ const MODES = {
     userBubble: null,
     small: false,
     resumeMode: 'ask',
-    buildSystem(contextBlock) {
-      return buildSystem(
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
         'You are cue, a real-time copilot with access to the candidate\'s screen and live interview. ' +
         BASE_RULES +
         'Answer the question directly and concisely. ' +
         'When the question is about the candidate\'s background, use their actual experience. ' +
         'When the question is conceptual, explain clearly with examples. No preamble.',
         contextBlock
-      );
+      ), aiRules, 'ask');
     },
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 12);
@@ -139,14 +150,15 @@ const MODES = {
     }
   },
 
-  // ── LeetCode: pure coding solver — no personal context ────────────────────
+  // ── LeetCode: pure coding solver — no personal context, no AI rules ─────
   leetcode: {
     needsScreen: true,
     userBubble: 'Solve what\'s on screen',
     small: false,
     resumeMode: 'leetcode',
-    buildSystem(_contextBlock) {
-      // Context block intentionally ignored — personal info is irrelevant here
+    buildSystem(_contextBlock, _aiRules) {
+      // Context block AND aiRules intentionally ignored — code answers must
+      // stay strict regardless of personal style or context.
       return 'You are an expert competitive programmer. The screenshot contains a coding problem. ' +
         'Respond with: (1) a one-line restatement, (2) a short approach, (3) a clean, correct, idiomatic solution in a fenced code block ' +
         '(use the language shown on screen, else Python), (4) time and space complexity. Keep prose tight.';
