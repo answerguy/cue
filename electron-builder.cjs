@@ -61,5 +61,14 @@ module.exports = {
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
+    artifactName: "${productName}-win-${arch}.${ext}",
+  },
+  // A per-user install with a visible directory step: cue is a personal overlay,
+  // not a machine-wide service, so it should never need an elevation prompt.
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+    shortcutName: "cue",
   },
 };
