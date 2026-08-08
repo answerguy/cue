@@ -29,9 +29,9 @@ function stripDataUrl(dataUrl) {
   return m ? { mime: m[1], b64: m[2] } : null;
 }
 
-async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+async function streamOpenAI({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, baseURL }) {
   const OpenAI = require('openai');
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, baseURL });
   const messages = [{ role: 'system', content: system }];
   turns.forEach((t, i) => {
     const last = i === turns.length - 1;
@@ -98,6 +98,72 @@ async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTok
   return full;
 }
 
+async function streamOllama({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+  const baseUrl = apiKey || 'http://localhost:11434';
+  const url = `${baseUrl.replace(/\/$/, '')}/api/chat`;
+
+  const messages = [{ role: 'system', content: system }];
+  turns.forEach((t, i) => {
+    const last = i === turns.length - 1;
+    if (last && imageDataUrl && t.role === 'user') {
+      const img = stripDataUrl(imageDataUrl);
+      if (img) {
+        messages.push({ role: 'user', content: t.text, images: [img.b64] });
+      } else {
+        messages.push({ role: 'user', content: t.text });
+      }
+    } else {
+      messages.push({ role: t.role, content: t.text });
+    }
+  });
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: true })
+    });
+  } catch (err) {
+    throw new Error(`Ollama fetch failed: ${err.message}. Is Ollama running at ${baseUrl}?`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+  }
+
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // keep incomplete line
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line);
+        if (data.message && data.message.content) {
+          full += data.message.content;
+          onToken(data.message.content);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+  if (buffer.trim()) {
+    try {
+      const data = JSON.parse(buffer);
+      if (data.message && data.message.content) {
+        full += data.message.content;
+        onToken(data.message.content);
+      }
+    } catch (e) {}
+  }
+  return full;
+}
+
 function createLLM(settings) {
   const provider = settings.provider;
   const keys = settings.apiKeys || {};
@@ -107,18 +173,26 @@ function createLLM(settings) {
   if (provider === 'gemini' && /^gemini-1\.5\-/.test(model || '')) {
     model = 'gemini-2.0-flash';
   }
-  if (!model) model = provider === 'gemini' ? 'gemini-2.0-flash' : (provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-latest');
+  if (!model) {
+    if (provider === 'gemini') model = 'gemini-2.0-flash';
+    else if (provider === 'openai') model = 'gpt-4o-mini';
+    else if (provider === 'ollama') model = 'llama3.2';
+    else if (provider === 'groq') model = 'llama-3.1-8b-instant';
+    else model = 'claude-3-5-haiku-latest';
+  }
   const maxTokens = settings.smart ? 1400 : 700;
 
   return {
     provider, model, apiKey,
-    ready: !!apiKey && !!model,
+    ready: provider === 'ollama' ? !!model : !!apiKey && !!model,
     async stream(params) {
       const args = { apiKey, model, maxTokens, ...params, turns: sanitizeTurns(params.turns) };
       try {
         if (provider === 'openai') return await streamOpenAI(args);
+        if (provider === 'groq') return await streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
+        if (provider === 'ollama') return await streamOllama(args);
         throw new Error('unknown provider: ' + provider);
       } catch (error) {
         throw new Error(formatProviderErrorMessage(error, provider));
