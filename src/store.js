@@ -15,7 +15,8 @@ const DEFAULTS = {
   smart: false,
   baseUrl: '',
   minimaxRegion: 'global_en',
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' },
+  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' , azure: '' },
+  azureEndpoint: '',
   // Tab 2: Profile
   resumeText: '',
   jobDescription: '',
@@ -42,7 +43,8 @@ const DEFAULTS = {
     custom: { fast: '', smart: '' },
     ollama: { fast: 'llama3.2', smart: 'llama3.3' },
     groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },
-    minimax: { fast: 'MiniMax-M2.7', smart: 'MiniMax-M3' }
+    minimax: { fast: 'MiniMax-M2.7', smart: 'MiniMax-M3' },
+    azure: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }
   }
 };
 

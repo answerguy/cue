@@ -10,11 +10,16 @@ const DEFAULT_MODELS = {
   gemini: 'gemini-2.0-flash',
   ollama: 'llama3.2',
   groq: 'llama-3.1-8b-instant',
-  minimax: 'MiniMax-M2.7'
+  minimax: 'MiniMax-M2.7',
+  azure: 'gpt-4o-mini'
 };
+
+const PROVIDER_LABELS = { azure: 'Azure AI Foundry' };
 
 function normalizeProviderName(provider) {
   if (!provider) return 'provider';
+  if (PROVIDER_LABELS[provider]) return PROVIDER_LABELS[provider];
+  if (PROVIDER_LABELS[provider]) return PROVIDER_LABELS[provider];
   return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
@@ -66,6 +71,56 @@ async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUr
     }
   });
   const stream = await client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens });
+  let full = '';
+  for await (const part of stream) {
+    const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
+    if (d) { full += d; onToken(d); }
+  }
+  return full;
+}
+
+// Azure AI Foundry Models API (cognitiveservices.azure.com hosts) lives under
+// {endpoint}/openai/v1 and authenticates with the `api-key` header.
+function normalizeAzureBaseURL(raw) {
+  let u = String(raw || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+  if (!u) return '';
+  if (/cognitiveservices\.azure\.com/i.test(u) && !/\/openai\/v1$/i.test(u)) {
+    u += '/openai/v1';
+  }
+  return u;
+}
+
+async function streamAzure({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, endpoint }) {
+  const url = normalizeAzureBaseURL(endpoint);
+  if (!url) throw new Error('Missing Azure endpoint. Add your Azure AI Foundry or Azure OpenAI endpoint in Settings.');
+  const messages = [{ role: 'system', content: system }];
+  turns.forEach((t, i) => {
+    const last = i === turns.length - 1;
+    if (last && imageDataUrl && t.role === 'user') {
+      messages.push({ role: 'user', content: [
+        { type: 'text', text: t.text },
+        { type: 'image_url', image_url: { url: imageDataUrl } }
+      ] });
+    } else {
+      messages.push({ role: t.role, content: t.text });
+    }
+  });
+  const OpenAI = require('openai');
+  let client;
+  if (/openai\.azure\.com/i.test(url)) {
+    client = new OpenAI.AzureOpenAI({ endpoint: url.replace(/\/openai$/i, ''), apiKey, apiVersion: '2024-10-21' });
+  } else {
+    // Foundry / OpenAI-compatible base: force the `api-key` header and drop the
+    // Authorization header the SDK adds by default (those hosts don't take a Bearer key).
+    const azureFetch = async (input, init) => {
+      const headers = new Headers(init && init.headers);
+      headers.set('api-key', apiKey);
+      headers.delete('authorization');
+      return fetch(input, { ...init, headers });
+    };
+    client = new OpenAI({ baseURL: url, apiKey, fetch: azureFetch });
+  }
+  const stream = await client.chat.completions.create({ model, messages, stream: true, max_completion_tokens: maxTokens });
   let full = '';
   for await (const part of stream) {
     const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
@@ -199,6 +254,7 @@ function createLLM(settings) {
   }
   if (!model) model = DEFAULT_MODELS[provider] || '';
   const minimaxRegion = settings.minimaxRegion || 'global_en';
+  const endpoint = settings.azureEndpoint || '';
 
   if (provider === CUSTOM_PROVIDER) {
     try {
@@ -216,6 +272,11 @@ function createLLM(settings) {
     configurationError = `Add your ${provider} API key in Settings.`;
   }
 
+  // Azure needs a second credential: the resource endpoint.
+  if (!configurationError && provider === 'azure' && !endpoint) {
+    configurationError = 'Add your Azure AI Foundry endpoint in Settings.';
+  }
+
   const ready = !configurationError && !!model;
   const maxTokens = settings.smart ? 1400 : 700;
 
@@ -225,7 +286,7 @@ function createLLM(settings) {
     configurationError,
     async stream(params) {
       if (!ready) throw new Error(configurationError || `Complete the ${provider} provider settings.`);
-      const args = { apiKey, baseURL, model, maxTokens, ...params, turns: sanitizeTurns(params.turns) };
+      const args = { apiKey, baseURL, endpoint, model, maxTokens, ...params, turns: sanitizeTurns(params.turns) };
       try {
         if (provider === 'openai') return await streamOpenAI(args);
         if (provider === CUSTOM_PROVIDER) return await streamOpenAI(args);
@@ -234,6 +295,7 @@ function createLLM(settings) {
         if (provider === 'minimax') return await streamOpenAI({ ...args, baseURL: MINIMAX_BASE_URLS[minimaxRegion] || MINIMAX_BASE_URLS.global_en });
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
+        if (provider === 'azure') return await streamAzure(args);
         throw new Error('unknown provider: ' + provider);
       } catch (error) {
         throw new Error(formatProviderErrorMessage(error, provider));
