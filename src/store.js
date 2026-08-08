@@ -45,7 +45,7 @@ const DEFAULTS = {
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
-    gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' },
+    gemini: { fast: 'gemini-3.5-flash', smart: 'gemini-3.5-flash' },
     custom: { fast: '', smart: '' },
     ollama: { fast: 'llama3.2', smart: 'llama3.3' },
     groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog, systemPreferences } = require('electron');
 const path = require('path');
 const os = require('os');
 const store = require('./src/store');
@@ -45,6 +45,8 @@ function getWindowsBuild() {
 }
 const WIN_BUILD = getWindowsBuild();
 const WIN_SUPPORTS_CONTENT_PROTECTION = !isWindows || WIN_BUILD >= 19041;
+
+let permWin = null;
 
 // -------- capture / transcript state --------
 const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
@@ -625,6 +627,7 @@ ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('yo
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('them', arrayBuffer); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
+ipcMain.on('app:quit', () => app.quit());
 ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
 // -------- resume / job-description file import --------
 // The dialog runs in MAIN and is filtered to pdf/docx; the renderer never supplies a path.
@@ -653,6 +656,17 @@ ipcMain.on('app:quit', () => app.quit());
 ipcMain.handle('applink:state', () => appLinkConsentState());
 ipcMain.handle('applink:revoke', (_e, callerId) => revokeAppLinkCaller(callerId));
 
+// -------- permissions IPC --------
+ipcMain.handle('permissions:check', () => getPermissionStatus());
+ipcMain.handle('permissions:request', () => requestPermissions());
+ipcMain.on('permissions:continue', async () => {
+  const status = await getPermissionStatus();
+  if (status.mic === 'granted' && status.screen === 'granted') {
+    if (permWin) { permWin.close(); permWin = null; }
+    launchApp();
+  }
+});
+
 // -------- shortcuts --------
 function registerShortcuts() {
   shortcutState.assist = globalShortcut.register('CommandOrControl+Return', () => runFeature('assist', ''));
@@ -667,13 +681,88 @@ function registerShortcuts() {
   }
 }
 
-// -------- lifecycle --------
-app.whenReady().then(() => {
-  app.setName('MicrosoftEdgeUpdate');
-  if (isWindows) {
-    process.title = 'MicrosoftEdgeUpdate';
+// -------- permissions --------
+// systemPreferences.getMediaAccessStatus('screen') is unreliable: it can return
+// 'not-determined' or 'denied' even after the user has granted Screen Recording,
+// especially in dev mode (unsigned / no proper app bundle).  As a fallback we
+// actually attempt a capture and inspect the thumbnail — if it contains any
+// non-zero pixel data, macOS is giving us real screen content, i.e. granted.
+async function verifyScreenAccess() {
+  const sysStatus = systemPreferences.getMediaAccessStatus('screen');
+  if (sysStatus === 'granted') return 'granted';
+
+  // Fallback: try an actual capture and check the thumbnail for real pixels.
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 16, height: 16 },
+    });
+    if (sources.length > 0) {
+      const bmp = sources[0].thumbnail.toBitmap();
+      // toBitmap() returns raw RGBA bytes; any non-zero byte means real content
+      if (bmp && bmp.some(byte => byte !== 0)) return 'granted';
+    }
+  } catch (_) {}
+
+  return sysStatus;  // return the original system status if fallback didn't help
+}
+
+async function getPermissionStatus() {
+  if (process.platform !== 'darwin') return { mic: 'granted', screen: 'granted' };
+  return {
+    mic: systemPreferences.getMediaAccessStatus('microphone'),
+    screen: await verifyScreenAccess(),
+  };
+}
+
+async function requestPermissions() {
+  if (process.platform !== 'darwin') return true;
+
+  // Trigger the macOS microphone permission dialog (first-use only)
+  const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+  if (micStatus !== 'granted') {
+    await systemPreferences.askForMediaAccess('microphone');
   }
 
+  // Trigger the macOS screen-recording permission dialog (first-use only).
+  // There is no askForMediaAccess('screen'), but attempting to enumerate
+  // sources via desktopCapturer will cause macOS to prompt the user.
+  const screenStatus = await verifyScreenAccess();
+  if (screenStatus !== 'granted') {
+    try { await desktopCapturer.getSources({ types: ['screen'] }); } catch (_) {}
+  }
+
+  const status = await getPermissionStatus();
+  return status.mic === 'granted' && status.screen === 'granted';
+}
+
+function createPermissionsWindow() {
+  const { workArea } = screen.getPrimaryDisplay();
+  const W = 500, H = 540;
+  permWin = new BrowserWindow({
+    width: W,
+    height: H,
+    x: Math.round(workArea.x + (workArea.width - W) / 2),
+    y: Math.round(workArea.y + (workArea.height - H) / 2),
+    frame: false,
+    transparent: true,
+    hasShadow: true,
+    resizable: false,
+    skipTaskbar: false,
+    fullscreenable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    }
+  });
+  permWin.loadFile(path.join(__dirname, 'renderer', 'permissions.html'));
+  permWin.webContents.on('did-finish-load', () => permWin.show());
+}
+
+// -------- launch (called after permissions are confirmed) --------
+function launchApp() {
   if (isMac && app.dock) app.dock.hide();
 
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
@@ -712,7 +801,26 @@ app.whenReady().then(() => {
 
   createWindow();
   registerShortcuts();
+}
 
+// -------- lifecycle --------
+app.whenReady().then(async () => {
+  app.setName('MicrosoftEdgeUpdate');
+  if (isWindows) {
+    process.title = 'MicrosoftEdgeUpdate';
+  }
+
+  if (isMac) {
+    const allGranted = await requestPermissions();
+    if (!allGranted) {
+      // Show the permissions gate — the dock stays visible so the user can find the app
+      createPermissionsWindow();
+      app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createPermissionsWindow(); });
+      return;
+    }
+  }
+
+  launchApp();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
@@ -729,3 +837,10 @@ app.on('will-quit', () => {
   if (localWhisperTranscriber) localWhisperTranscriber.forceStop().catch(() => {});
 });
 app.on('window-all-closed', () => app.quit());
+
+app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('window-all-closed', (e) => {
+  // Don't quit while the permissions window is open — the user may be in System Settings
+  if (permWin) { e.preventDefault(); return; }
+  app.quit();
+});
