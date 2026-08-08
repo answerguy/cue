@@ -101,6 +101,7 @@
           <button data-provider="anthropic">Anthropic</button>
           <button data-provider="gemini">Gemini</button>
           <button data-provider="custom">Custom</button>
+          <button data-provider="ollama">Ollama</button>
         </div>
 
         <label class="s-label">API keys <span class="s-hint">stored locally in cue-data.json</span></label>
@@ -115,6 +116,7 @@
           <div class="s-field"><span>Base URL</span><input id="base-url" type="url" placeholder="http://127.0.0.1:18789/v1" autocomplete="off" spellcheck="false" /></div>
           <div class="s-help">Your Custom key and LLM requests are sent to this URL. Speech-to-text continues to use Deepgram, OpenAI, or Gemini.</div>
         </div>
+        <div class="s-field"><span>Ollama URL</span><input id="key-ollama" type="text" placeholder="http://localhost:11434" autocomplete="off" /></div>
 
         <label class="s-label">Models <span class="s-hint">fast = Smart off · smart = Smart on</span></label>
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>

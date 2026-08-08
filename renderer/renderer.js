@@ -597,6 +597,7 @@
     $('#key-custom').value = settings.apiKeys.custom || '';
     $('#base-url').value = settings.baseUrl || '';
     updateCustomProviderFields();
+    $('#key-ollama').value = settings.apiKeys.ollama || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     fillAppLinkCallers();
@@ -652,7 +653,7 @@
 
   function statusText() {
     const k = settings.apiKeys;
-    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram'].filter(Boolean);
+    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram', k.ollama && 'Ollama'].filter(Boolean);
     const stt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.gemini ? 'Gemini (batch)' : 'none'));
     const ready = [
       settings.resumeText ? '✓ resume' : null,
@@ -681,6 +682,7 @@
     settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
     settings.apiKeys.custom = $('#key-custom').value.trim();
     settings.baseUrl = $('#base-url').value.trim();
+    settings.apiKeys.ollama = $('#key-ollama').value.trim();
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();

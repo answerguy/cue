@@ -10,7 +10,7 @@ const DEFAULTS = {
   provider: 'openai',
   smart: false,
   baseUrl: '',
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '' },
+  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '' },
   // Tab 2: Profile
   resumeText: '',
   jobDescription: '',
@@ -29,7 +29,8 @@ const DEFAULTS = {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
     gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' },
-    custom: { fast: '', smart: '' }
+    custom: { fast: '', smart: '' },
+    ollama: { fast: 'llama3.2', smart: 'llama3.3' }
   }
 };
 
@@ -51,6 +52,8 @@ function load() {
   if (data) return data;
   try { data = deepMerge(DEFAULTS, JSON.parse(fs.readFileSync(FILE, 'utf8'))); }
   catch { data = deepMerge(DEFAULTS, {}); }
+
+
   return data;
 }
 function save() { try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2)); } catch (e) { /* ignore */ } }

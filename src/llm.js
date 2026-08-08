@@ -7,7 +7,8 @@ const CUSTOM_PROVIDER = 'custom';
 const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-latest',
-  gemini: 'gemini-2.0-flash'
+  gemini: 'gemini-2.0-flash',
+  ollama: 'llama3.2'
 };
 
 function normalizeProviderName(provider) {
@@ -132,7 +133,8 @@ function createLLM(settings) {
     if (!model && !configurationError) {
       configurationError = 'Set a Fast or Smart model for the Custom provider.';
     }
-  } else if (!apiKey) {
+  } else if (provider !== 'ollama' && !apiKey) {
+    // Ollama is a local server: the field holds a URL, and no key is required.
     configurationError = `Add your ${provider} API key in Settings.`;
   }
 
@@ -149,6 +151,12 @@ function createLLM(settings) {
       try {
         if (provider === 'openai') return await streamOpenAI(args);
         if (provider === CUSTOM_PROVIDER) return await streamOpenAI(args);
+        if (provider === 'ollama') {
+          // For Ollama, the 'apiKey' field holds the URL (e.g. http://localhost:11434/v1)
+          let baseURL = apiKey || 'http://localhost:11434';
+          if (!baseURL.endsWith('/v1')) baseURL = baseURL.replace(/\/+$/, '') + '/v1';
+          return await streamOpenAI({ ...args, apiKey: 'ollama', baseURL });
+        }
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
         throw new Error('unknown provider: ' + provider);
