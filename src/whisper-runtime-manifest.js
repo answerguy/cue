@@ -3,6 +3,11 @@ const path = require('path');
 const WHISPER_CPP_VERSION = '1.9.1';
 const RELEASE_BASE_URL = `https://github.com/ggml-org/whisper.cpp/releases/download/v${WHISPER_CPP_VERSION}`;
 const SOURCE_ARCHIVE_URL = `https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v${WHISPER_CPP_VERSION}.zip`;
+// NOTE: this pins a GitHub auto-generated source archive, which is not
+// byte-stable — GitHub may recompress it, invalidating the hash without any
+// upstream release change. If the macOS source build starts failing with
+// "Artifact checksum verification failed", that is why. The Windows/Linux
+// targets use release assets instead and do not have this problem.
 const SOURCE_ARCHIVE_SHA256 = 'e684d836a67616c0d51c9239245a46ee6a7203258b2b3354e456af5039482d13';
 
 const RUNTIME_TARGETS = Object.freeze({
