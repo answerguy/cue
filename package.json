@@ -12,7 +12,8 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder --mac zip",
     "dist:mac": "electron-builder --mac zip",
-    "dist:win": "electron-builder --win zip"
+    "dist:win": "electron-builder --win",
+    "pack:win": "electron-builder --win --dir"
   },
   "keywords": [
     "electron",
@@ -24,7 +25,7 @@
   ],
   "devDependencies": {
     "electron": "33.2.1",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "^26.15.3",
     "resedit": "^3.0.2"
   },
   "engines": {

@@ -23,12 +23,12 @@ cue floats a small glass panel on top of everything. It takes **three separate i
 
 | Feature | How to trigger | What it uses |
 |---|---|---|
-| **Assist** | `⌘` `↵` or the *Assist* button | your screen + recent conversation |
+| **Assist** | `⌘` `↵` (macOS) or `Ctrl` `Enter` (Windows), configurable | your screen + recent conversation |
 | **What should I say?** | button | meeting audio + your mic |
 | **Follow-up questions** | button | the whole conversation |
 | **Recap** | button | the whole conversation |
 | **Ask anything** | type + `↵` | your screen + conversation |
-| **Solve a coding problem** | `⌘` `H` | your screen only |
+| **Solve a coding problem** | `⌘` `H` (macOS) or `Ctrl` `H` (Windows) | your screen only |
 | **Smart** toggle | pill in the box | switches to a smarter (slower) model |
 
 It's a copilot for **live meetings** ("what do I say to that?") and **coding problems** (screenshot → full solution), and it's designed to be **invisible in screen shares** so it stays your private assistant.
@@ -39,24 +39,25 @@ It's a copilot for **live meetings** ("what do I say to that?") and **coding pro
 |---|---|---|
 | Screen + coding help | ✅ | ✅ |
 | Your mic (the **You** channel) | ✅ | ✅ |
-| Meeting audio (the **Them** channel) | ❌ **unsupported** | ✅ |
+| Meeting audio (the **Them** channel) | ✅ macOS 14.4+ | ✅ |
 | Hidden from screen shares | ⚠️ best-effort, weaker on macOS 15.4+ | ✅ `WDA_EXCLUDEFROMCAPTURE` |
 | Permissions to grant | Microphone **and** Screen Recording | Microphone only |
 
 > [!NOTE]
-> **Meeting audio is Windows-only.** Chromium implements loopback (system) audio capture [only on Windows](https://www.electronjs.org/docs/latest/api/session#sessetdisplaymediarequesthandlerhandler-opts), so the features that depend on hearing the *other* person — **What should I say?**, **Follow-up questions**, and **Recap** — need Windows. On macOS cue still sees your screen and hears **you**, but the *Them* channel stays silent.
+> **Meeting audio needs macOS 14.4+.** Capturing the *other* person — what powers **What should I say?**, **Follow-up questions**, and **Recap** — uses system-audio loopback. On Windows that works out of the box. On macOS it relies on ScreenCaptureKit, which cue enables through Chromium's `MacLoopbackAudioForScreenShare` and `MacSckSystemAudioLoopbackOverride` switches; on older macOS the *Them* channel stays silent while your screen and the **You** channel keep working.
 
 ---
 
 ## Install
 
-**On Windows, use Option B** — the prebuilt release is macOS-only for now. If you're not a developer and you're on a Mac, use Option A.
+Option A is the easiest on both platforms. Use Option B if you'd rather run from source.
 
 ### Option A — Download the app (easiest)
 
-1. Go to the [**Releases**](../../releases) page and download the build for your platform.
-2. Extract the archive and run the app from the extracted folder.
-3. On macOS, you may need to right-click the app and choose **Open** the first time if Gatekeeper blocks it.
+Go to the [**Releases**](../../releases) page, then choose your platform:
+
+- **Windows 10/11 (x64):** download **`cue-win-x64.exe`**, run it, and launch cue from the Start menu. The installer is unsigned, so Windows SmartScreen may show an **Unknown publisher** warning.
+- **macOS (Apple silicon):** download **`cue-…-arm64-mac.zip`**, unzip it, drag **`cue.app`** into **Applications**, and open it.
 
 ### Option B — Run from source (macOS or Windows)
 
@@ -74,8 +75,9 @@ That's the whole setup on Windows. There's no permission dance — grant the mic
 To build a standalone app:
 ```bash
 npm run pack        # unpacked app in dist/ (either OS)
-npm run dist:mac    # macOS zip         -> dist/
-npm run dist:win    # Windows installer -> dist/cue-win-x64.exe
+npm run pack:win    # unpacked Windows app -> dist/win-unpacked/cue.exe
+npm run dist:mac    # macOS zip            -> dist/
+npm run dist:win    # Windows installer    -> dist/cue-win-x64.exe
 ```
 > **macOS note:** the packaged app is **ad-hoc signed** unless a Developer ID certificate is configured. macOS ties permission grants to the exact build, so **rebuilding resets the mic/screen permissions** — you'll grant them again. For everyday use, build once and keep it. Windows has no equivalent problem.
 
@@ -94,9 +96,11 @@ When cue opens the first time, a **built-in tutorial** walks you through everyth
 
 **On Windows — one grant.** Only the microphone needs permission. Settings → **Privacy & security** → **Microphone** → turn on **Microphone access** *and* **Let desktop apps access your microphone**. Screenshots and meeting audio need **no permission at all** on Windows — they work immediately.
 
+**Windows:** no Screen Recording grant is normally required. If microphone capture is blocked, open **Settings → Privacy & security → Microphone**, turn on **Microphone access**, and allow desktop apps to access the microphone. System/meeting audio uses Windows loopback capture.
+
 ### Step 2 — Add your AI key (bring your own)
 
-cue uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). Click the **`...`** button in the input box (or press `⌘` `,`) to open **Settings**, pick a provider, and paste your key:
+cue uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). Click the **`...`** button in the input box (or press `⌘` `,` on macOS / `Ctrl` `,` on Windows) to open **Settings**, pick a provider, and paste your key:
 
 | Provider | Get a key | Notes |
 |---|---|---|
@@ -126,12 +130,12 @@ cue is hidden from most screen-share tools automatically — **Google Meet, Micr
 
 > On Windows, press **`Ctrl`** wherever **`⌘`** appears below. cue's own UI relabels the keys to match your OS.
 
-- **`⌘` `↵` — Assist.** The do-the-smart-thing key. On a coding problem it solves it; in a conversation it tells you what to say. Works from anywhere.
+- **`⌘` `↵` — Assist.** The do-the-smart-thing key. On a coding problem it solves it; in a conversation it tells you what to say. Works from anywhere. Change it under **Settings → Keyboard shortcuts**.
 - **`⌘` `H` — Solve what's on screen.** Screenshots a coding problem and returns the approach, code, and time/space complexity.
 - **The `▢` button** (top bar) — start/stop **listening** to a meeting. The green dot means it's live.
 - **Type a question** in the box and press `↵` to ask about your screen or conversation.
 - **Smart** — flip it on for a smarter, more thorough model; off for fast and cheap.
-- **Hide** collapses the panel to just the top bar. Drag cue around by the **top pill**. Quit with `⌘` `⇧` `X`.
+- **Hide** collapses the panel to just the top bar. Drag cue around by the **top pill**. Quit with `⌘` `⇧` `X` on macOS or `Ctrl` `Shift` `X` on Windows.
 
 The panel is see-through and click-through — the empty space around it never blocks the app behind it.
 
