@@ -2,13 +2,15 @@
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
+const { normalizeBaseUrl } = require('./openai-compatible');
 
 const FILE = path.join(app.getPath('userData'), 'cue-data.json');
 
 const DEFAULTS = {
   provider: 'openai',
   smart: false,
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '' },
+  baseUrl: '',
+  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '' },
   // Tab 2: Profile
   resumeText: '',
   jobDescription: '',
@@ -26,7 +28,8 @@ const DEFAULTS = {
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
-    gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' }
+    gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' },
+    custom: { fast: '', smart: '' }
   }
 };
 
@@ -54,5 +57,12 @@ function save() { try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2)); }
 
 module.exports = {
   getSettings() { return load(); },
-  setSettings(patch) { load(); data = deepMerge(data, patch || {}); save(); return data; }
+  setSettings(patch) {
+    load();
+    const nextSettings = deepMerge(data, patch || {});
+    nextSettings.baseUrl = normalizeBaseUrl(nextSettings.baseUrl);
+    data = nextSettings;
+    save();
+    return data;
+  }
 };

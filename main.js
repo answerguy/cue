@@ -360,7 +360,8 @@ async function runFeature(mode, userText) {
     send('llm:start', { userBubble, small: !!def.small, category });
 
     if (!llm.ready) {
-      send('llm:error', { message: 'Add your ' + settings.provider + ' API key in Settings (gear icon) to start. Model: ' + (llm.model || 'unset') + '.' });
+      const message = llm.configurationError || ('Complete the ' + settings.provider + ' provider settings. Model: ' + (llm.model || 'unset') + '.');
+      send('llm:error', { message });
       return;
     }
 

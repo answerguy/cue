@@ -4,7 +4,7 @@
 
 **An open-source AI copilot that floats over your screen — sees what you see, hears your meetings, and stays hidden from screen shares.**
 
-A free, self-hosted alternative to Cluely. Bring your own AI key (OpenAI · Anthropic · Google Gemini).
+A free, self-hosted alternative to Cluely. Bring your own AI key (OpenAI · Anthropic · Google Gemini · OpenAI-compatible endpoints).
 
 <img src="docs/tutorial.png" width="620" alt="cue first-run tutorial" />
 
@@ -89,14 +89,11 @@ When cue opens the first time, a **built-in tutorial** walks you through everyth
 
 ### Step 1 — Grant permissions
 
-**On macOS — two grants.** cue can't help until macOS lets it see and hear. When you first use a feature, macOS will prompt you — click **Allow**. If a prompt doesn't appear, add cue manually:
+cue can't help until your OS lets it see and hear. When you first use a feature you'll usually be prompted — click **Allow**. If no prompt appears, grant access manually.
 
-- **Windows:** Settings → **Privacy & security** → **Microphone** → allow **cue**; also enable **Screen recording** for screen capture and meeting-audio capture.
-- **macOS:** System Settings → **Privacy & Security** → **Microphone** and **Screen Recording** → turn on **cue**. macOS may ask you to **quit & reopen** cue — let it.
+**On macOS — two grants.** System Settings → **Privacy & Security** → **Microphone** and **Screen Recording** → turn on **cue**. macOS may ask you to **quit & reopen** cue — let it. Screen Recording covers both the screenshot features and meeting-audio capture.
 
-**On Windows — one grant.** Only the microphone needs permission. Settings → **Privacy & security** → **Microphone** → turn on **Microphone access** *and* **Let desktop apps access your microphone**. Screenshots and meeting audio need **no permission at all** on Windows — they work immediately.
-
-**Windows:** no Screen Recording grant is normally required. If microphone capture is blocked, open **Settings → Privacy & security → Microphone**, turn on **Microphone access**, and allow desktop apps to access the microphone. System/meeting audio uses Windows loopback capture.
+**On Windows — one grant.** Only the microphone needs permission: Settings → **Privacy & security** → **Microphone** → turn on **Microphone access** *and* **Let desktop apps access your microphone**. Screenshots and meeting audio need no permission at all — they work immediately, using Windows loopback capture.
 
 ### Step 2 — Add your AI key (bring your own)
 
@@ -107,6 +104,14 @@ cue uses **your own** API key, so it's free to run (you only pay your AI provide
 | **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | One key does everything — **but** for the *listening* features the key must have **Whisper / audio** access (a "restricted" project key that only allows chat will give a 403 on transcription). |
 | **Anthropic (Claude)** | [console.anthropic.com](https://console.anthropic.com) | Great for screen & coding help. Claude has no speech-to-text, so add an OpenAI or Gemini key too if you want the listening features. |
 | **Google Gemini** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | One key does chat + transcription. |
+| **Custom** | Your endpoint or gateway | Any OpenAI-compatible Chat Completions endpoint. The API key is optional for unauthenticated local servers. |
+
+To use an OpenAI-compatible endpoint, select **Custom** and configure its Base URL, API key, and Fast/Smart model IDs. Custom endpoints handle LLM requests only; listening continues to use Deepgram, OpenAI, or Gemini credentials.
+
+| Example | Base URL | Model |
+|---|---|---|
+| OpenClaw local gateway | `http://127.0.0.1:18789/v1` | `openclaw/default` |
+| Ollama | `http://127.0.0.1:11434/v1` | An installed Ollama model ID |
 
 Your key is stored **only on your computer** (in `cue-data.json`) and is sent **only** to that provider. cue has no server and collects nothing.
 
@@ -163,7 +168,7 @@ It's the same mechanism DRM apps and Zoom's own toolbar use. It is **not** a GPU
 main process ──┬─ overlay window (frameless, transparent, always-on-top, content-protected)
                ├─ screenshot capture (desktopCapturer)
                ├─ speech-to-text (Whisper / Gemini)      ── "You" + "Them" channels
-               └─ LLM streaming (OpenAI / Anthropic / Gemini)
+               └─ LLM streaming (OpenAI / Anthropic / Gemini / Custom)
 renderer ──────┴─ the glass UI + mic capture + system-audio loopback
 ```
 
@@ -189,6 +194,9 @@ Your API key is restricted. Most often it's an OpenAI **project key that only al
 **Listening does nothing / no transcript.**
 Check Settings shows a transcription-capable key (OpenAI with Whisper, or Gemini). On macOS, also make sure Screen Recording is granted (meeting audio needs it). On Windows, make sure **Let desktop apps access your microphone** is on — the top-level Microphone toggle alone isn't enough.
 
+**A Custom provider request cannot connect.**
+Confirm the Base URL includes the endpoint's `/v1` path when required, the selected model ID exists on that endpoint, and the local gateway is running. Custom provider credentials are intentionally not reused for speech-to-text.
+
 **cue shows up in my Zoom share.**
 Set Zoom's **Screen capture mode** to *"Advanced capture with window filtering"* (see Step 3). And remember: on macOS 15.4+ this can still fail — it's best-effort.
 
@@ -201,6 +209,7 @@ Run `xattr -cr /Applications/cue.app` in Terminal once (see Install → Option A
 
 - No accounts, no servers, no telemetry. cue collects nothing.
 - Your API keys live in a local file (`cue-data.json`) and are sent only to the provider you chose.
+- When Custom is selected, its API key and LLM request data are sent to the Base URL you configured.
 - Your optional résumé text also lives in `cue-data.json` and is sent with each model request to your selected AI provider. It is stored as plain text; clear it in Settings to remove it.
 - Screenshots and audio are sent to your AI provider only when a feature runs, and are not stored by cue beyond the current session's transcript (kept in memory).
 
