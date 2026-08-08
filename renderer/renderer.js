@@ -96,7 +96,15 @@
     aiEl = null; caretEl = null;
   }
 
-  function setBusy(v) { busy = v; $('#send-btn').classList.toggle('busy', v); }
+  let busyFailsafe = null;
+  function setBusy(v) {
+    busy = v;
+    $('#send-btn').classList.toggle('busy', v);
+    clearTimeout(busyFailsafe);
+    // Failsafe: main has a 25s stream watchdog that always sends llm:done/llm:error, but if a
+    // terminal event is ever lost the whole UI stays frozen — self-clear after a generous window.
+    if (v) busyFailsafe = setTimeout(() => { busy = false; $('#send-btn').classList.toggle('busy', false); }, 40000);
+  }
 
   // ---- transcript helpers ------------------------------------------------
   // NOTE: The old transcript-list element was renamed to ts-list.
@@ -541,11 +549,13 @@
   });
 
   // Hide / collapse
-  $('#hide-btn').addEventListener('click', () => {
+  function toggleHide() {
     const collapsed = $('#panel').classList.toggle('collapsed');
     $('#hide-btn').classList.toggle('collapsed', collapsed);
     $('#live-dot').style.display = collapsed ? 'none' : '';
-  });
+  }
+  $('#hide-btn').addEventListener('click', toggleHide);
+  cue.on('hide:toggle', toggleHide);
 
   // Stop = start/stop listening. Kick off system-audio capture straight from the click so
   // the user-gesture is fresh for getDisplayMedia (loopback capture needs it).
@@ -648,9 +658,13 @@
   }
 
   // ---- capture: system/meeting audio (getDisplayMedia loopback, in cue's process) ----
-  let sysStream = null, sysCtx = null, sysWorklet = null;
+  let sysStream = null, sysCtx = null, sysWorklet = null, sysStarting = false;
   async function startSystemAudio() {
-    if (sysStream) return;
+    // Called both from the stop-btn click (fresh user gesture for getDisplayMedia) and from the
+    // capture:state handler. getDisplayMedia is async, so `if (sysStream) return` alone loses the
+    // race and can open a second loopback stream that is then orphaned.
+    if (sysStream || sysStarting) return;
+    sysStarting = true;
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
       cue.log('system audio unavailable: getDisplayMedia not supported');
       showStatus('Meeting audio capture is not available on this device build.');
@@ -701,6 +715,8 @@
       const message = err && err.message ? err.message : String(err);
       cue.log('system audio error: ' + message);
       showStatus('Meeting audio could not be started. Grant screen/audio access to cue and try again.');
+    } finally {
+      sysStarting = false;
     }
   }
   function stopSystemAudio() {
@@ -1213,6 +1229,23 @@
       host.append(row);
     }
   }
+
+  const uploadResumeBtn = document.getElementById('upload-resume-btn');
+  if (uploadResumeBtn) uploadResumeBtn.addEventListener('click', async () => {
+    const res = await cue.pickProfileDocument();
+    if (!res || res.canceled) return;
+    if (res.error) { showStatus('Resume import failed: ' + res.error); return; }
+    $('#resume-text').value = res.text || '';
+    showStatus('Imported ' + res.fileName + ' — press Save to keep it.');
+  });
+  const uploadJdBtn = document.getElementById('upload-jd-btn');
+  if (uploadJdBtn) uploadJdBtn.addEventListener('click', async () => {
+    const res = await cue.pickProfileDocument();
+    if (!res || res.canceled) return;
+    if (res.error) { showStatus('Job description import failed: ' + res.error); return; }
+    $('#job-description').value = res.text || '';
+    showStatus('Imported ' + res.fileName + ' — press Save to keep it.');
+  });
 
   function statusText() {
     const k = settings.apiKeys;

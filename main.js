@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog } = require('electron');
 const path = require('path');
 const os = require('os');
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
+const { parseDocumentFile } = require('./src/resume');
 const { createLLM } = require('./src/llm');
 const { MODES } = require('./src/prompts');
 const { rms16 } = require('./src/wav');
@@ -48,6 +49,7 @@ const buffers = { you: [], them: [] };
 const transcript = []; // { channel, text, ts } — capped at MAX_TRANSCRIPT_TURNS
 const MAX_TRANSCRIPT_TURNS = 200; // ~30–40 minutes of conversation at normal pace
 const FLUSH_MS = 900;
+const STREAM_INACTIVITY_MS = 25000; // abort a stalled LLM stream so state.busy can't wedge forever
 const MIN_BYTES = Math.floor(16000 * 2 * 0.12); // ~0.12s
 const RMS_GATE = 180;
 let flushTimer = null;
@@ -353,6 +355,7 @@ async function runFeature(mode, userText) {
   const def = MODES[mode];
   if (!def) return;
   state.busy = true;
+  let streamSettled = false; // drop stray tokens from a stream we've already abandoned
   try {
     const settings = store.getSettings();
     const llm = createLLM(settings);
@@ -389,17 +392,38 @@ async function runFeature(mode, userText) {
     const contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
     const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
     const built = def.build({ transcript, userText: userText || '' });
-    await llm.stream({
-      system,
-      turns: [{ role: 'user', text: built }],
-      imageDataUrl,
-      onToken: (t) => send('llm:token', { text: t })
+
+    // Watchdog: a provider that stalls mid-stream would otherwise hang the await forever,
+    // leaving state.busy = true and wedging every later question until an app restart.
+    let watchdog = null;
+    let rearm = () => {};
+    const stalled = new Promise((_res, reject) => {
+      rearm = () => {
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => reject(new Error('the model stopped responding (timed out). Please try again.')), STREAM_INACTIVITY_MS);
+      };
+      rearm();
     });
+    try {
+      await Promise.race([
+        llm.stream({
+          system,
+          turns: [{ role: 'user', text: built }],
+          imageDataUrl,
+          onToken: (t) => { if (streamSettled) return; rearm(); send('llm:token', { text: t }); }
+        }),
+        stalled
+      ]);
+    } finally {
+      streamSettled = true;
+      clearTimeout(watchdog);
+    }
     send('llm:done', {});
   } catch (e) {
     recordEvent({ level: 'error', event: 'llm_failed', msg: e && e.message ? e.message : String(e), frame: 'runFeature', context: { mode, provider: store.getSettings().provider } });
     send('llm:error', { message: e && e.message ? e.message : String(e) });
   } finally {
+    streamSettled = true;
     state.busy = false;
   }
 }
@@ -424,6 +448,30 @@ ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio(
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
 ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
+// -------- resume / job-description file import --------
+// The dialog runs in MAIN and is filtered to pdf/docx; the renderer never supplies a path.
+// The parsed text is RETURNED to the renderer, which drops it into the existing
+// #resume-text / #job-description textareas so settings keep a single source of truth.
+async function pickAndParseDocument() {
+  const res = await dialog.showOpenDialog(win, {
+    properties: ['openFile'],
+    filters: [{ name: 'Resume / Job description', extensions: ['pdf', 'docx'] }]
+  });
+  if (res.canceled || !res.filePaths.length) return null;
+  const filePath = res.filePaths[0];
+  const text = await parseDocumentFile(filePath);
+  return { fileName: path.basename(filePath), text };
+}
+ipcMain.handle('profile:pickDocument', async () => {
+  try {
+    const picked = await pickAndParseDocument();
+    if (!picked) return { canceled: true };
+    return { canceled: false, fileName: picked.fileName, text: picked.text };
+  } catch (e) {
+    return { canceled: false, error: (e && e.message) || String(e) };
+  }
+});
+ipcMain.on('app:quit', () => app.quit());
 ipcMain.handle('applink:state', () => appLinkConsentState());
 ipcMain.handle('applink:revoke', (_e, callerId) => revokeAppLinkCaller(callerId));
 
@@ -432,6 +480,7 @@ function registerShortcuts() {
   shortcutState.assist = globalShortcut.register('CommandOrControl+Return', () => runFeature('assist', ''));
   shortcutState.say = globalShortcut.register('CommandOrControl+Shift+Return', () => runFeature('say', ''));
   shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
+  shortcutState.hide = globalShortcut.register('CommandOrControl+Shift+/', () => send('hide:toggle', {}));
   shortcutState.quit = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
   for (const [name, wasRegistered] of Object.entries(shortcutState)) {
     if (!wasRegistered) {
