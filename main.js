@@ -16,7 +16,7 @@ const { startAppLink, stopAppLink, recordEvent, appLinkConsentState, revokeAppLi
 // start on Electron 31–38 unless these Chromium features are enabled; without
 // them getDisplayMedia rejects with "Error starting capture" and meeting audio
 // silently never works. Electron 39+ wires this up itself, where this is a
-// harmless no-op. Must run before app is ready. (Ref: electron-audio-loopback.)
+// harmless no-op. Must run before app is ready.
 if (process.platform === 'darwin') {
   app.commandLine.appendSwitch('enable-features', 'MacLoopbackAudioForScreenShare,MacSckSystemAudioLoopbackOverride');
 }
@@ -200,7 +200,7 @@ async function flushChannel(channel) {
       handleSttError(res.error, settings);
       return;
     }
-    if (res.text && res.text.trim()) {
+    if (res.text && res.text.trim() && res.text.trim().length > 1 && !/^[?!.,;:\-…]+$/.test(res.text.trim())) {
       const turn = { channel, text: res.text.trim(), ts: Date.now() };
       pushTranscript(turn);
       send('transcript', turn);
@@ -356,7 +356,9 @@ async function runFeature(mode, userText) {
   try {
     const settings = store.getSettings();
     const llm = createLLM(settings);
-    const userBubble = def.userBubble !== null ? def.userBubble : (mode === 'ask' ? userText : null);
+    const userBubble = def.userBubble !== null
+      ? def.userBubble
+      : (mode === 'ask' ? userText : mode === 'answerThis' ? `"${(userText || '').slice(0, 60)}${userText && userText.length > 60 ? '…' : ''}"` : null);
     const category = mode !== 'leetcode' ? detectCategory(transcript) : null;
     send('llm:start', { userBubble, small: !!def.small, category });
 

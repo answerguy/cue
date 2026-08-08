@@ -17,8 +17,6 @@
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
   $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
   $('#send-btn').innerHTML = icon('play', { size: 15 });
-  const transcriptIC = document.querySelector('#transcript-toggle-btn .ic');
-  if (transcriptIC) transcriptIC.innerHTML = icon('file-text', { size: 15 });
   const clearIC = document.querySelector('#clear-transcript-btn .ic');
   if (clearIC) clearIC.innerHTML = icon('trash-2', { size: 15 });
 
@@ -83,7 +81,12 @@
     const span = document.createElement('span');
     span.className = 'w';
     span.textContent = t;
-    aiEl.insertBefore(span, caretEl);
+    // Guard: caretEl must be a child of aiEl
+    if (caretEl && caretEl.parentNode === aiEl) {
+      aiEl.insertBefore(span, caretEl);
+    } else {
+      aiEl.appendChild(span);
+    }
   }
 
   function finalizeAi() {
@@ -96,36 +99,12 @@
   function setBusy(v) { busy = v; $('#send-btn').classList.toggle('busy', v); }
 
   // ---- transcript helpers ------------------------------------------------
-  let transcriptOpen = false;
+  // NOTE: The old transcript-list element was renamed to ts-list.
+  // These helpers are now deprecated but kept for compatibility.
+  // The main sidebar uses appendTranscriptHistoryTurn() instead.
   let transcriptInterimEl = null;
 
-  function appendTranscriptTurn(channel, text, isInterim) {
-    const list = document.getElementById('transcript-list');
-    if (!list) return;
-    const ph = list.querySelector('.transcript-placeholder');
-    if (ph) ph.remove();
-    if (isInterim) {
-      if (!transcriptInterimEl) {
-        transcriptInterimEl = document.createElement('div');
-        transcriptInterimEl.className = 'tc-turn tc-interim';
-        list.appendChild(transcriptInterimEl);
-      }
-      transcriptInterimEl.textContent = (channel === 'them' ? 'Them: ' : 'You: ') + text;
-    } else {
-      const div = document.createElement('div');
-      div.className = 'tc-turn tc-' + channel;
-      div.textContent = (channel === 'them' ? 'Them: ' : 'You: ') + text;
-      list.appendChild(div);
-    }
-    if (transcriptOpen) {
-      const wrap = document.getElementById('transcript-wrap');
-      if (wrap) wrap.scrollTop = wrap.scrollHeight;
-    }
-  }
-
-  function updateTranscriptInterim(channel, text) {
-    appendTranscriptTurn(channel, text, true);
-  }
+  // FIX #1: Updated to use ts-list instead of non-existent transcript-list
 
   function clearTranscriptInterim() {
     if (transcriptInterimEl) {
@@ -135,7 +114,9 @@
   }
 
   // ---- toast helper ------------------------------------------------------
+  // FIX #7: Toast queue system — ensures latest toast wins cleanly without stacking
   let toastTimer = null;
+  let toastFadeTimer = null;
   function showToast(message, ms) {
     let el = document.getElementById('toast');
     if (!el) {
@@ -143,10 +124,15 @@
       el.id = 'toast';
       document.getElementById('app').appendChild(el);
     }
+    // Clear any pending timers to prevent overlap
+    clearTimeout(toastTimer);
+    clearTimeout(toastFadeTimer);
+    // Immediately update content (no stacking)
     el.textContent = message;
     el.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+    toastTimer = setTimeout(() => {
+      el.classList.remove('show');
+    }, ms);
   }
 
   // ---- actions -----------------------------------------------------------
@@ -164,12 +150,320 @@
   const placeholder = $('#placeholder');
   const composer = $('#composer');
 
+  // ========== SMART AUTO-FILL SYSTEM ==========
+  // Track whether the current input text came from STT auto-fill (Them channel)
+  let inputFromSTT = false;
+  let sttFillTimer = null;
+  let questionFinalizeTimer = null;
+  let softClearTimer = null;
+  let userSpeechStart = null;
+
+  // Question history for undo (Ctrl+Z)
+  const questionHistory = [];
+  const MAX_QUESTION_HISTORY = 10;
+
+  // ---- Question completeness detection ----
+  function isLikelyCompleteQuestion(text) {
+    const trimmed = (text || '').trim();
+    
+    // Must be substantial (not just filler words)
+    if (trimmed.length < 12) return false;
+    
+    // High confidence: ends with question mark
+    if (/\?$/.test(trimmed)) return true;
+    
+    // High confidence: behavioral interview patterns (these are complete even without ?)
+    const behavioralPatterns = [
+      /tell me about a time/i,
+      /give me an example/i,
+      /describe a (situation|time|project|challenge)/i,
+      /walk me through/i,
+      /can you (tell|describe|explain|share)/i,
+      /what (was|were|is|are) your/i,
+      /how (did|do|would) you/i,
+      /why (did|do|are|should)/i,
+      /what (did|do|would) you/i,
+      /tell me about yourself/i,
+      /tell me about your/i,
+      /what.{1,30}(biggest|greatest|most|hardest|proudest)/i,
+      /have you ever/i
+    ];
+    if (behavioralPatterns.some(p => p.test(trimmed))) return true;
+    
+    // Medium confidence: question starters with substantial content
+    const questionStarters = /^(what|how|why|when|where|who|which|tell|describe|explain|can|could|would|should|have|did|do|is|are|was|were)/i;
+    if (questionStarters.test(trimmed) && trimmed.length > 25) return true;
+    
+    // Medium confidence: ends with common question endings
+    if (/(about that|for us|to us|with you|for you|about it|to share|you handle|you approach|your experience|your background)\s*$/i.test(trimmed)) return true;
+    
+    return false;
+  }
+
+  // ---- Get question confidence level ----
+  function getQuestionConfidence(text) {
+    const trimmed = (text || '').trim();
+    if (trimmed.length < 8) return 'low';
+    if (/\?$/.test(trimmed)) return 'high';
+    if (isLikelyCompleteQuestion(trimmed)) return 'medium';
+    if (trimmed.length > 20) return 'accumulating';
+    return 'low';
+  }
+
+  // ---- Update visual state based on question readiness ----
+  // FIX #8: Batch class updates to avoid flicker
+  function updateQuestionReadyState() {
+    const text = input.value;
+    const confidence = getQuestionConfidence(text);
+    
+    // Batch the class changes to minimize repaints
+    const shouldBeReady = confidence === 'high' || confidence === 'medium';
+    const shouldBeAccumulating = confidence === 'accumulating';
+    
+    // Only update if state actually changed
+    const isReady = composer.classList.contains('stt-ready');
+    const isAccumulating = composer.classList.contains('stt-accumulating');
+    
+    if (shouldBeReady !== isReady || shouldBeAccumulating !== isAccumulating) {
+      composer.classList.remove('stt-ready', 'stt-accumulating');
+      if (shouldBeReady) {
+        composer.classList.add('stt-ready');
+      } else if (shouldBeAccumulating) {
+        composer.classList.add('stt-accumulating');
+      }
+    }
+    
+    updateSendButtonState(); // FIX #9: Keep send button in sync
+  }
+  
+  // FIX #9: Send button visual "ready" state
+  function updateSendButtonState() {
+    const sendBtn = document.getElementById('send-btn');
+    if (!sendBtn) return;
+    
+    const hasText = input.value.trim().length > 0;
+    const isReady = composer.classList.contains('stt-ready');
+    
+    sendBtn.classList.toggle('ready', hasText && isReady);
+    sendBtn.classList.toggle('has-text', hasText);
+  }
+
+  // ---- Save question to history for undo ----
+  function saveToQuestionHistory(text) {
+    if (!text || text.trim().length < 5) return;
+    
+    // Don't save duplicates
+    const last = questionHistory[questionHistory.length - 1];
+    if (last && last.text === text.trim()) return;
+    
+    questionHistory.push({
+      text: text.trim(),
+      timestamp: Date.now()
+    });
+    
+    // Keep only recent history
+    while (questionHistory.length > MAX_QUESTION_HISTORY) {
+      questionHistory.shift();
+    }
+    
+    updateHistoryBadge(); // FIX #14: Update badge when history changes
+  }
+  
+  // FIX #14: History button badge showing count
+  function updateHistoryBadge() {
+    const historyBtn = document.getElementById('history-btn');
+    if (!historyBtn) return;
+    
+    // Remove existing badge if any
+    let badge = historyBtn.querySelector('.history-badge');
+    
+    const count = questionHistory.length;
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'history-badge';
+        historyBtn.appendChild(badge);
+      }
+      badge.textContent = count > 9 ? '9+' : count;
+      badge.style.display = '';
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
+  }
+
+  // ---- Restore last question from history (Ctrl+Z) ----
+  function restoreLastQuestion() {
+    const last = questionHistory.pop();
+    if (last) {
+      input.value = last.text;
+      inputFromSTT = true;
+      lastSTTValue = last.text; // FIX #8: Track restored value for edit detection
+      composer.classList.add('stt-filling');
+      updateQuestionReadyState();
+      syncPlaceholder();
+      updateHistoryBadge(); // Update badge after removing from history
+      showToast('Question restored', 1500);
+      return true;
+    }
+    showToast('No question to restore', 1500);
+    return false;
+  }
+
+  // ---- Auto-fill the input box with transcribed speech from interviewer ----
+  function autoFillInputFromSTT(text) {
+    // If user has manually typed something different, don't overwrite
+    if (!inputFromSTT && input.value.trim().length > 0) return;
+
+    // Cancel any pending soft-clear (interviewer is still talking)
+    clearTimeout(softClearTimer);
+    composer.classList.remove('stt-dimmed');
+
+    const current = input.value.trim();
+    const newText = current ? current + ' ' + text : text;
+    input.value = newText;
+    inputFromSTT = true;
+    lastSTTValue = newText; // FIX #6: Track the STT value for edit detection
+    syncPlaceholder();
+
+    // Show filling state
+    composer.classList.add('stt-filling');
+    updateQuestionReadyState();
+    updateSendButtonState(); // FIX #9: Update send button state
+
+    // Reset the idle timer — after 2s of silence, check if question is complete
+    clearTimeout(questionFinalizeTimer);
+    questionFinalizeTimer = setTimeout(() => {
+      if (isLikelyCompleteQuestion(input.value)) {
+        composer.classList.add('stt-ready');
+        updateSendButtonState(); // FIX #9: Update send button when ready
+        // Subtle notification that question is ready
+        showToast('Press Enter to answer', 2500);
+      }
+    }, 1800);
+
+    // After 8s of no new words, save to history and keep stable
+    clearTimeout(sttFillTimer);
+    sttFillTimer = setTimeout(() => {
+      saveToQuestionHistory(input.value);
+      composer.classList.remove('stt-filling');
+      // Keep stt-ready if applicable
+      updateQuestionReadyState();
+      updateSendButtonState(); // FIX #9
+    }, 8000);
+  }
+
+  // ---- Soft clear: don't immediately wipe question when user speaks ----
+  function softClearSTTFill() {
+    // When the user speaks (You channel), don't immediately clear
+    // Instead, dim the input and wait — they might just be acknowledging
+    if (!inputFromSTT) return;
+    
+    // FIX #3: Reset userSpeechStart at the beginning before setting new timestamp
+    // This ensures we always track from fresh when a new soft-clear cycle begins
+    const now = Date.now();
+    if (!userSpeechStart) {
+      userSpeechStart = now;
+    }
+
+    // Dim the input to show it's in "pending clear" state
+    composer.classList.add('stt-dimmed');
+    
+    // Clear the finalization timer (user is responding)
+    clearTimeout(questionFinalizeTimer);
+
+    // Re-armed on every 'you' final, so this fires ~800ms after the user stops.
+    // The 2s test below is measured from the FIRST final of this cycle, so a brief
+    // acknowledgement ("mm-hm") leaves the question on screen while a sustained
+    // answer clears it. Firing at 2.5s instead would make that test always true.
+    clearTimeout(softClearTimer);
+    softClearTimer = setTimeout(() => {
+      const speechDuration = userSpeechStart ? Date.now() - userSpeechStart : 0;
+      if (speechDuration > 2000) {
+        // User has been speaking for a while — they're answering, clear the box
+        saveToQuestionHistory(input.value);
+        input.value = '';
+        inputFromSTT = false;
+        composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
+        syncPlaceholder();
+        updateSendButtonState(); // FIX #9: Update send button state
+        userSpeechStart = null;
+      }
+    }, 800);
+  }
+
+  // ---- Hard clear (called when user explicitly clears or types) ----
+  // FIX #10: Add option to show toast when clearing
+  function hardClearSTTFill(showUndoHint = false) {
+    const hadContent = input.value.trim().length > 0;
+    saveToQuestionHistory(input.value);
+    input.value = '';
+    inputFromSTT = false;
+    lastSTTValue = ''; // FIX #6: Clear the tracked STT value
+    userSpeechStart = null;
+    composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
+    clearTimeout(softClearTimer);
+    clearTimeout(questionFinalizeTimer);
+    clearTimeout(sttFillTimer);
+    clearInputInterim(); // FIX #5: Clear interim when clearing input
+    syncPlaceholder();
+    updateSendButtonState(); // FIX #9
+    updateHistoryBadge(); // FIX #14
+    
+    // FIX #10: Show undo hint when explicitly cleared
+    if (showUndoHint && hadContent) {
+      const undoHint = isWindows ? 'Ctrl+Z to undo' : '⌘Z to undo';
+      showToast(`Cleared · ${undoHint}`, 2000);
+    }
+  }
+
+  // ---- Reset soft-clear state (interviewer spoke again) ----
+  // FIX #16: Reset userSpeechStart properly when cancelSoftClear is called
+  function cancelSoftClear() {
+    userSpeechStart = null; // Reset timestamp so next soft-clear starts fresh
+    clearTimeout(softClearTimer);
+    composer.classList.remove('stt-dimmed');
+  }
+
   function syncPlaceholder() {
     placeholder.classList.toggle('hidden', input.value.length > 0 || document.activeElement === input);
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 140) + 'px';
   }
-  input.addEventListener('input', syncPlaceholder);
+  
+  // FIX #6: Track last STT value to detect substantial edits vs minor corrections
+  let lastSTTValue = '';
+  
+  input.addEventListener('input', () => {
+    const currentValue = input.value;
+    
+    // FIX #5: Clear interim text when user starts typing
+    clearInputInterim();
+    
+    // FIX #6: Only detach from STT mode if edit is substantial
+    // Minor corrections (typo fixes, small additions) should keep STT mode
+    if (inputFromSTT && lastSTTValue) {
+      const lengthDiff = Math.abs(currentValue.length - lastSTTValue.length);
+      const isCleared = currentValue.trim().length === 0;
+      const isSubstantialChange = lengthDiff > lastSTTValue.length * 0.3 || isCleared;
+      
+      if (isSubstantialChange) {
+        // User made a major change — detach from STT mode
+        saveToQuestionHistory(lastSTTValue);
+        inputFromSTT = false;
+        lastSTTValue = '';
+        composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
+        clearTimeout(softClearTimer);
+        clearTimeout(questionFinalizeTimer);
+      }
+      // Minor edits: keep inputFromSTT = true, just update visual state
+    } else if (!inputFromSTT) {
+      // User typing from scratch — standard behavior
+      composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
+    }
+    
+    syncPlaceholder();
+    updateSendButtonState(); // FIX #9: Update send button on input change
+  });
   input.addEventListener('focus', () => { composer.classList.add('focused'); placeholder.classList.add('hidden'); });
   input.addEventListener('blur', () => { composer.classList.remove('focused'); syncPlaceholder(); });
   $('#input-area').addEventListener('click', () => input.focus());
@@ -177,14 +471,66 @@
   function send() {
     const text = input.value.trim();
     if (!text) { runMode('assist', ''); return; }
-    input.value = ''; syncPlaceholder();
-    runMode('ask', text);
+    const wasFromSTT = inputFromSTT;
+    
+    // Save to history before clearing (in case user wants to redo)
+    saveToQuestionHistory(text);
+    
+    input.value = '';
+    inputFromSTT = false;
+    lastSTTValue = ''; // FIX #6: Clear tracked STT value
+    userSpeechStart = null;
+    composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
+    clearTimeout(softClearTimer);
+    clearTimeout(questionFinalizeTimer);
+    clearTimeout(sttFillTimer);
+    syncPlaceholder();
+    updateSendButtonState(); // FIX #9
+    
+    // If text came from STT (interviewer question), use answerThis mode
+    // Otherwise use ask mode (user typed their own question)
+    runMode(wasFromSTT ? 'answerThis' : 'ask', text);
   }
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
+    // Ctrl+Z / Cmd+Z: restore last question if input is empty
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !input.value.trim()) {
+      e.preventDefault();
+      restoreLastQuestion();
+      return;
+    }
+    // Escape: clear the input (with undo hint)
+    if (e.key === 'Escape' && input.value.trim()) {
+      e.preventDefault();
+      hardClearSTTFill(true); // FIX #10: Show undo hint
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); send(); }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runMode('assist', ''); }
   });
+  
+  // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A)
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+Shift+A / Cmd+Shift+A: Force answer current question immediately
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      if (input.value.trim()) {
+        send();
+      } else if (inputFromSTT || composer.classList.contains('stt-filling')) {
+        // Even if question seems incomplete, force send
+        send();
+      } else {
+        showToast('No question to answer', 1500);
+      }
+    }
+  });
+  
+  // FIX #4: Add tooltip with keyboard shortcuts to send button
+  const sendBtn = document.getElementById('send-btn');
+  if (sendBtn) {
+    const forceKey = isWindows ? 'Ctrl+Shift+A' : '⌘⇧A';
+    sendBtn.title = `Send · ${forceKey} to force answer`;
+  }
 
   // Smart toggle
   const smartBtn = $('#smart-toggle');
@@ -206,45 +552,35 @@
   $('#stop-btn').addEventListener('click', async () => {
     const turningOn = !$('#stop-btn').classList.contains('active');
     if (turningOn) {
-      await startSystemAudio();
+      // startSystemAudio may fail (user cancels, no permission) — that's OK,
+      // mic will still work and capture will toggle regardless
+      try { await startSystemAudio(); } catch (_) { /* handled inside startSystemAudio */ }
     }
     await cue.captureToggle();
   });
 
-  // Transcript toggle
-  const transcriptToggleBtn = document.getElementById('transcript-toggle-btn');
-  if (transcriptToggleBtn) {
-    transcriptToggleBtn.addEventListener('click', () => {
-      transcriptOpen = !transcriptOpen;
-      const wrap = document.getElementById('transcript-wrap');
-      if (wrap) {
-        wrap.classList.toggle('hidden', !transcriptOpen);
-        if (transcriptOpen) {
-          const list = document.getElementById('transcript-list');
-          if (list && !list.children.length) {
-            const ph = document.createElement('div');
-            ph.className = 'transcript-placeholder';
-            ph.textContent = 'Nothing heard yet — start listening to begin.';
-            list.appendChild(ph);
-          }
-          if (wrap) wrap.scrollTop = wrap.scrollHeight;
-        }
-      }
-    });
-  }
+  // Transcript toggle removed — sidebar now auto-opens with listening
 
   // Clear transcript
   const clearTranscriptBtn = document.getElementById('clear-transcript-btn');
   if (clearTranscriptBtn) {
     clearTranscriptBtn.addEventListener('click', async () => {
+      // Save current input to history before clearing (for undo)
+      saveToQuestionHistory(input.value);
+      
       await cue.clearTranscript();
       clearMessages();
       // Also clear the floating interim bar
       if (interimEl) { interimEl.textContent = ''; interimEl.classList.remove('show'); }
-      const list = document.getElementById('transcript-list');
-      if (list) list.innerHTML = '';
+      // FIX #1: Use ts-list instead of non-existent transcript-list
+      const list = document.getElementById('ts-list');
+      if (list) list.innerHTML = '<div class="ts-placeholder">Conversation history will appear here when listening.</div>';
       transcriptInterimEl = null;
-      showToast('Transcript cleared', 3000);
+      clearTranscriptSidebar(); // clear the history sidebar too
+      hardClearSTTFill(); // clear the input box too
+      
+      const undoHint = isWindows ? 'Ctrl+Z to undo' : '⌘Z to undo';
+      showToast(`Transcript cleared · ${undoHint}`, 3500);
     });
   }
 
@@ -322,15 +658,15 @@
     }
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+
       stream.getVideoTracks().forEach((t) => t.stop()); // we only want the audio
       const tracks = stream.getAudioTracks();
       if (!tracks.length) {
         cue.log('system audio: no loopback track on this platform');
         stream.getTracks().forEach((t) => t.stop());
-        const msg = isWindows
-          ? 'No system-audio loopback track detected. On Windows, make sure your default audio device is not set to exclusive mode. Go to Sound Settings → your playback device → Properties → Advanced → uncheck "Allow applications to take exclusive control".'
-          : 'No system-audio loopback track was detected.';
-        showStatus(msg);
+        showStatus(cue.platform === 'win32'
+          ? 'No system-audio loopback track detected. Make sure "Share audio" is checked in the screen share dialog, and that your audio device is not in exclusive mode.'
+          : 'No system-audio loopback track detected. Meeting audio needs macOS 14.4+ — your screen and microphone still work.');
         return;
       }
       sysStream = stream;
@@ -412,14 +748,165 @@
     label.className = 'stt-status stt-' + sttState;
   }
 
+  // ---- transcript history sidebar (hidden by default, manual toggle) ----
+  let tsSidebarInterimEl = null;
+  let sidebarOpen = false;
+  // Track last committed row per channel — all chunks from same speaker go in one row
+  const tsLastRow = { you: null, them: null };
+  const tsRowTimer = { you: null, them: null };
+  const TS_SENTENCE_GAP_MS = 10000; // 10s silence = new row
+
+  function showSidebar() {
+    const sidebar = document.getElementById('transcript-sidebar');
+    const historyBtn = document.getElementById('history-btn');
+    if (sidebar) sidebar.classList.remove('hidden');
+    if (historyBtn) historyBtn.classList.add('active');
+    const panelWrap = document.getElementById('panel-wrap');
+    if (panelWrap) panelWrap.classList.add('sidebar-open');
+    sidebarOpen = true;
+  }
+
+  function hideSidebar() {
+    const sidebar = document.getElementById('transcript-sidebar');
+    const historyBtn = document.getElementById('history-btn');
+    if (sidebar) sidebar.classList.add('hidden');
+    if (historyBtn) historyBtn.classList.remove('active');
+    const panelWrap = document.getElementById('panel-wrap');
+    if (panelWrap) panelWrap.classList.remove('sidebar-open');
+    sidebarOpen = false;
+  }
+
+  function toggleSidebar() {
+    if (sidebarOpen) {
+      hideSidebar();
+    } else {
+      showSidebar();
+      // FIX #7: Scroll to bottom when opening sidebar
+      const list = document.getElementById('ts-list');
+      if (list) {
+        requestAnimationFrame(() => {
+          list.scrollTop = list.scrollHeight;
+        });
+      }
+    }
+  }
+
+  // History button toggle
+  const historyBtn = document.getElementById('history-btn');
+  if (historyBtn) {
+    historyBtn.innerHTML = icon('message-square-text', { size: 15 });
+    historyBtn.addEventListener('click', toggleSidebar);
+  }
+
+  // Close sidebar button
+  const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+  if (closeSidebarBtn) {
+    closeSidebarBtn.addEventListener('click', hideSidebar);
+  }
+
+  function appendTranscriptHistoryTurn(channel, text, isInterim) {
+    const list = document.getElementById('ts-list');
+    if (!list) return;
+
+    // Remove placeholder on first real turn
+    const ph = list.querySelector('.ts-placeholder');
+    if (ph) ph.remove();
+
+    if (isInterim) {
+      // Update the single floating interim row
+      if (!tsSidebarInterimEl) {
+        tsSidebarInterimEl = document.createElement('div');
+        tsSidebarInterimEl.className = 'ts-turn ts-' + channel + ' ts-interim-row';
+        const chLabel = document.createElement('span');
+        chLabel.className = 'ts-channel';
+        chLabel.textContent = channel === 'them' ? 'Them' : 'You';
+        const txt = document.createElement('span');
+        txt.className = 'ts-text ts-interim';
+        tsSidebarInterimEl.appendChild(chLabel);
+        tsSidebarInterimEl.appendChild(txt);
+        list.appendChild(tsSidebarInterimEl);
+      }
+      tsSidebarInterimEl.querySelector('.ts-text').textContent = text;
+    } else {
+      // Remove interim row
+      if (tsSidebarInterimEl) { tsSidebarInterimEl.remove(); tsSidebarInterimEl = null; }
+
+      const existingRow = tsLastRow[channel];
+      const useExisting = existingRow && existingRow.isConnected;
+
+      if (useExisting) {
+        // Append to existing row — accumulates sentence fragments
+        const txt = existingRow.querySelector('.ts-text');
+        if (txt) {
+          txt.textContent = txt.textContent ? txt.textContent + ' ' + text : text;
+        }
+      } else {
+        // Start a new row (no buttons — just clean history view)
+        const row = document.createElement('div');
+        row.className = 'ts-turn ts-' + channel;
+
+        const chLabel = document.createElement('span');
+        chLabel.className = 'ts-channel';
+        chLabel.textContent = channel === 'them' ? 'Them' : 'You';
+
+        const txt = document.createElement('span');
+        txt.className = 'ts-text';
+        txt.textContent = text;
+
+        row.appendChild(chLabel);
+        row.appendChild(txt);
+        list.appendChild(row);
+        tsLastRow[channel] = row;
+      }
+
+      // Reset silence timer
+      clearTimeout(tsRowTimer[channel]);
+      tsRowTimer[channel] = setTimeout(() => { tsLastRow[channel] = null; }, TS_SENTENCE_GAP_MS);
+
+      // When THIS channel speaks, reset the OTHER channel's row
+      const other = channel === 'you' ? 'them' : 'you';
+      clearTimeout(tsRowTimer[other]);
+      tsLastRow[other] = null;
+
+      list.scrollTop = list.scrollHeight;
+    }
+  }
+
+  function clearTranscriptSidebar() {
+    const list = document.getElementById('ts-list');
+    if (list) list.innerHTML = '<div class="ts-placeholder">Conversation history will appear here when listening.</div>';
+    tsSidebarInterimEl = null;
+    tsLastRow.you = null; tsLastRow.them = null;
+    clearTimeout(tsRowTimer.you); clearTimeout(tsRowTimer.them);
+  }
+
   // ---- events from main --------------------------------------------------
   cue.on('capture:state', ({ active, streaming }) => {
     setLiveDotState(active ? 'idle' : 'off');
     $('#stop-btn').classList.toggle('active', active);
+    // FIX #4: Add .listening class to composer when capture is active
+    composer.classList.toggle('listening', active);
+    // Update history button to show active state when listening
+    const historyBtn = document.getElementById('history-btn');
+    if (historyBtn) {
+      historyBtn.classList.toggle('listening', active);
+    }
     // startSystemAudio() is called directly from the stop-button click handler
     // so that the getDisplayMedia request has a fresh user gesture.
     // Here we only start the mic (no gesture required) and stop everything on deactivate.
-    if (active) { startMic(); } else { stopMic(); stopSystemAudio(); }
+    if (active) {
+      startMic();
+      // Don't auto-open sidebar — user can toggle it manually
+    } else {
+      stopMic();
+      stopSystemAudio();
+      // FIX #2: Clear interim element when capture stops
+      if (interimEl) {
+        interimEl.textContent = '';
+        interimEl.classList.remove('show');
+      }
+      // Don't auto-close sidebar — let user keep it open if they want
+    }
     updateSttStatus({ active, streaming });
   });
 
@@ -429,25 +916,58 @@
     if (!interimEl) {
       interimEl = document.createElement('div');
       interimEl.className = 'interim-transcript';
-      const panel = document.getElementById('panel');
+      // Insert into panel-main (the left column), before the action row
+      const panelMain = document.getElementById('panel-main');
       const actionRow = document.getElementById('action-row');
-      panel.insertBefore(interimEl, actionRow);
+      if (panelMain && actionRow && actionRow.parentNode === panelMain) {
+        panelMain.insertBefore(interimEl, actionRow);
+      } else if (panelMain) {
+        panelMain.appendChild(interimEl);
+      } else {
+        document.getElementById('panel').appendChild(interimEl);
+      }
     }
     return interimEl;
   }
+  // FIX #12: Show interim text in input box (grayed/italic) before final arrives
+  let inputInterimEl = null;
+  function showInterimInInput(text) {
+    if (!inputInterimEl) {
+      inputInterimEl = document.createElement('span');
+      inputInterimEl.className = 'input-interim';
+      // FIX #2: Insert into composer (not input-area) for correct positioning
+      composer.appendChild(inputInterimEl);
+    }
+    inputInterimEl.textContent = text;
+    inputInterimEl.style.display = text ? 'block' : 'none';
+  }
+  function clearInputInterim() {
+    if (inputInterimEl) {
+      inputInterimEl.textContent = '';
+      inputInterimEl.style.display = 'none';
+    }
+  }
+  
   cue.on('stt:interim', ({ channel, text }) => {
     setLiveDotState('transcribing');
     const el = getOrCreateInterimEl();
     const label = channel === 'them' ? 'Them' : 'You';
     el.textContent = `${label}: ${text}`;
     el.classList.add('show');
-    updateTranscriptInterim(channel, text);
+    appendTranscriptHistoryTurn(channel, text, true); // update sidebar interim
+    
+    // FIX #12: Show interviewer's interim speech in input area
+    if (channel === 'them' && !input.value.trim()) {
+      showInterimInInput(text);
+    }
   });
   cue.on('stt:final', ({ channel, text }) => {
     setLiveDotState('idle');
     // Clear interim when we get a final
     if (interimEl) { interimEl.textContent = ''; interimEl.classList.remove('show'); }
     clearTranscriptInterim();
+    clearInputInterim(); // FIX #12: Clear interim text from input area
+    // sidebar: the final turn is added via the 'transcript' event below
   });
   cue.on('stt:status', ({ channel, status }) => {
     cue.log(`[stt] ${channel} ${status}`);
@@ -493,7 +1013,10 @@
     aiEl.appendChild(caretEl);
     group.appendChild(aiEl);
     messages.appendChild(group);
-    sep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Use requestAnimationFrame so the DOM is fully updated before scrolling
+    requestAnimationFrame(() => {
+      if (sep && sep.isConnected) sep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     setBusy(true);
   });
   cue.on('llm:token', ({ text }) => appendToken(text));
@@ -503,7 +1026,16 @@
     aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
   });
   cue.on('transcript', ({ channel, text }) => {
-    appendTranscriptTurn(channel, text, false);
+    if (!text || text.trim().length < 2 || /^[?!.,;:\-…]+$/.test(text.trim())) return;
+    appendTranscriptHistoryTurn(channel, text, false);
+    // Auto-fill the input box with Them (interviewer) speech
+    if (channel === 'them') {
+      cancelSoftClear(); // Interviewer is speaking, cancel any pending clear
+      autoFillInputFromSTT(text);
+    } else {
+      // User spoke — soft clear (don't immediately wipe, wait to see if they're really answering)
+      softClearSTTFill();
+    }
   });
   let statusTimer = null;
   function showStatus(message) {
@@ -511,8 +1043,16 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'cue-status';
-      const panel = document.getElementById('panel');
-      panel.insertBefore(el, document.getElementById('action-row'));
+      // Insert into panel-main before the action row
+      const panelMain = document.getElementById('panel-main');
+      const actionRow = document.getElementById('action-row');
+      if (panelMain && actionRow && actionRow.parentNode === panelMain) {
+        panelMain.insertBefore(el, actionRow);
+      } else if (panelMain) {
+        panelMain.appendChild(el);
+      } else {
+        document.getElementById('panel').appendChild(el);
+      }
     }
     el.textContent = message;
     el.classList.add('show');
@@ -765,7 +1305,7 @@
   function setIgnore(v) { if (v !== ignoring) { ignoring = v; cue.setIgnoreMouse(v); } }
   document.addEventListener('mousemove', (e) => {
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #consent-scrim'));
+    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #settings-scrim, #onboard-scrim, #consent-scrim'));
     setIgnore(!overUI);
   });
   setIgnore(true); // start fully click-through; hovering the panel re-enables it
@@ -906,6 +1446,8 @@
     smartBtn.classList.toggle('on', !!settings.smart);
     showExample();
     syncPlaceholder();
+    updateHistoryBadge(); // FIX #3: Initialize badge on boot
+    updateSendButtonState(); // Initialize send button state
 
     // Fix placeholder shortcut hint to match platform
     if (isWindows) {
