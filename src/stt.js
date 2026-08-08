@@ -59,11 +59,18 @@ async function transcribeGemini(apiKey, wav) {
 
 function createSTT(settings) {
   const keys = settings.apiKeys || {};
+  const selectedProvider = settings.sttProvider || 'auto';
   const vocabPrompt = buildVocabPrompt(settings);
   const chain = [];
-  if (keys.openai) chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, settings.sttModel, undefined, vocabPrompt) });
-  if (keys.groq) chain.push({ p: 'groq', fn: (wav) => transcribeOpenAI(keys.groq, wav, 'whisper-large-v3-turbo', 'https://api.groq.com/openai/v1', vocabPrompt) });
-  if (keys.gemini) chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
+  if ((selectedProvider === 'auto' || selectedProvider === 'openai') && keys.openai) {
+    chain.push({ p: 'openai', fn: (wav) => transcribeOpenAI(keys.openai, wav, settings.sttModel, undefined, vocabPrompt) });
+  }
+  if ((selectedProvider === 'auto' || selectedProvider === 'groq') && keys.groq) {
+    chain.push({ p: 'groq', fn: (wav) => transcribeOpenAI(keys.groq, wav, 'whisper-large-v3-turbo', 'https://api.groq.com/openai/v1', vocabPrompt) });
+  }
+  if ((selectedProvider === 'auto' || selectedProvider === 'gemini') && keys.gemini) {
+    chain.push({ p: 'gemini', fn: (wav) => transcribeGemini(keys.gemini, wav) });
+  }
   if (keys.openai && chain.length > 1) chain.unshift(chain.splice(chain.findIndex((c) => c.p === 'openai'), 1)[0]);
 
   let disabledUntil = 0;

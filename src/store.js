@@ -12,6 +12,12 @@ const MAX_AI_RULES_CHARS = 2000;
 
 const DEFAULTS = {
   provider: 'openai',
+  sttProvider: 'auto',
+  localWhisper: {
+    modelId: 'base.en',
+    language: 'auto',
+    threads: 0
+  },
   smart: false,
   baseUrl: '',
   minimaxRegion: 'global_en',

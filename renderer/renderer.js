@@ -22,6 +22,7 @@
 
   // ---- state -------------------------------------------------------------
   let settings = null;
+  let whisperOverview = null;
   let busy = false;
   let aiEl = null;       // current streaming <div class="ai-text">
   let caretEl = null;
@@ -566,7 +567,8 @@
       // mic will still work and capture will toggle regardless
       try { await startSystemAudio(); } catch (_) { /* handled inside startSystemAudio */ }
     }
-    await cue.captureToggle();
+    const active = await cue.captureToggle();
+    if (turningOn && !active) stopSystemAudio();
   });
 
   // Transcript toggle removed — sidebar now auto-opens with listening
@@ -897,7 +899,7 @@
   }
 
   // ---- events from main --------------------------------------------------
-  cue.on('capture:state', ({ active, streaming }) => {
+  cue.on('capture:state', ({ active, streaming, mode }) => {
     setLiveDotState(active ? 'idle' : 'off');
     $('#stop-btn').classList.toggle('active', active);
     // FIX #4: Add .listening class to composer when capture is active
@@ -924,6 +926,14 @@
       // Don't auto-close sidebar — let user keep it open if they want
     }
     updateSttStatus({ active, streaming });
+    if (active) { startMic(); } else { stopMic(); stopSystemAudio(); }
+    if (active && mode === 'local') {
+      sttState = 'local';
+      const label = document.getElementById('stt-status');
+      if (label) { label.textContent = 'local'; label.className = 'stt-status stt-local'; }
+    } else {
+      updateSttStatus({ active, streaming });
+    }
   });
 
   // ---- real-time transcript display (interim + final) ----
@@ -985,8 +995,30 @@
     clearInputInterim(); // FIX #12: Clear interim text from input area
     // sidebar: the final turn is added via the 'transcript' event below
   });
-  cue.on('stt:status', ({ channel, status }) => {
-    cue.log(`[stt] ${channel} ${status}`);
+  cue.on('stt:status', ({ channel, status, provider }) => {
+    cue.log(`[stt] ${provider || channel || 'unknown'} ${status}`);
+    if (provider === 'local') {
+      const label = document.getElementById('stt-status');
+      const localLabels = {
+        loading: 'loading local',
+        ready: 'local',
+        transcribing: 'local',
+        stopping: 'stopping',
+        off: 'off',
+        error: 'error'
+      };
+      sttState = status === 'ready' || status === 'transcribing' ? 'local' : status;
+      if (label) {
+        label.textContent = localLabels[status] || status;
+        label.className = 'stt-status stt-' + sttState;
+      }
+      if (status === 'loading') $('#stop-btn').classList.add('active');
+      if (status === 'off' || status === 'error') $('#stop-btn').classList.remove('active');
+      if (status === 'loading' || status === 'transcribing' || status === 'stopping') setLiveDotState('transcribing');
+      if (status === 'ready') setLiveDotState('idle');
+      if (status === 'off') setLiveDotState('off');
+      return;
+    }
     if (status === 'connected') {
       sttState = 'streaming';
       const label = document.getElementById('stt-status');
@@ -1137,6 +1169,12 @@
   async function closeSettings() {
     if (await saveSettings()) scrim.classList.add('hidden');
   }
+  function openSettings() {
+    fillSettings();
+    scrim.classList.remove('hidden');
+    refreshWhisperModels();
+  }
+  function closeSettings() { saveSettings(); scrim.classList.add('hidden'); }
   $('#more-btn').addEventListener('click', openSettings);
   $('#s-close').addEventListener('click', () => { void closeSettings(); });
   scrim.addEventListener('click', (e) => { if (e.target === scrim) void closeSettings(); });
@@ -1178,6 +1216,13 @@
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     fillAppLinkCallers();
     $('#s-status').textContent = statusText();
+    // Transcription tab
+    document.querySelectorAll('#stt-provider-seg button').forEach((button) => {
+      button.classList.toggle('on', button.dataset.sttProvider === (settings.sttProvider || 'auto'));
+    });
+    const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
+    $('#whisper-language').value = localWhisper.language || 'auto';
+    $('#whisper-threads').value = Number(localWhisper.threads) || 0;
     // Profile tab
     $('#resume-text').value = settings.resumeText || '';
     $('#job-description').value = settings.jobDescription || '';
@@ -1251,7 +1296,11 @@
     const k = settings.apiKeys;
     const labels = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepgram: 'Deepgram', custom: 'Custom', ollama: 'Ollama', groq: 'Groq', minimax: 'MiniMax', azure: 'Azure AI Foundry' };
     const has = Object.keys(labels).filter((p) => k[p]).map((p) => labels[p]);
-    const stt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : (k.gemini ? 'Gemini (batch)' : 'none')));
+    // 'auto' walks the same fallback chain src/stt.js builds; an explicit choice
+    // is reported as-is so the status line matches what will actually be used.
+    const selectedSttProvider = settings.sttProvider || 'auto';
+    const automaticStt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : (k.gemini ? 'Gemini (batch)' : 'none')));
+    const stt = selectedSttProvider === 'auto' ? automaticStt : selectedSttProvider;
     const ready = [
       settings.resumeText ? '✓ resume' : null,
       settings.jobDescription ? '✓ JD' : null,
@@ -1274,6 +1323,155 @@
     settings.minimaxRegion = b.dataset.region;
     document.querySelectorAll('#minimax-region-seg button').forEach((x) => x.classList.toggle('on', x === b));
   }));
+
+  document.querySelectorAll('#stt-provider-seg button').forEach((button) => button.addEventListener('click', () => {
+    settings.sttProvider = button.dataset.sttProvider;
+    document.querySelectorAll('#stt-provider-seg button').forEach((candidate) => {
+      candidate.classList.toggle('on', candidate === button);
+    });
+    $('#s-status').textContent = statusText();
+  }));
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / (1024 ** unitIndex);
+    return `${value >= 10 || unitIndex < 2 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+  }
+
+  function getSelectedWhisperModel() {
+    if (!whisperOverview) return null;
+    return whisperOverview.models.find((model) => model.id === $('#whisper-model').value) || null;
+  }
+
+  function renderWhisperModelState() {
+    const model = getSelectedWhisperModel();
+    if (!model) return;
+    const language = model.englishOnly ? 'English only' : 'Multilingual';
+    const recommendation = model.recommended ? ' · recommended default' : '';
+    const partial = model.partialBytes > 0 && !model.installed
+      ? ` · ${formatBytes(model.partialBytes)} ready to resume`
+      : '';
+    $('#whisper-model-detail').textContent = `${formatBytes(model.bytes)} · ${language} · ${model.quantization} · ${model.hardwareTier}${recommendation}${partial}`;
+
+    const progressWrap = $('#whisper-progress-wrap');
+    const progressPercent = model.bytes > 0 ? Math.floor((model.partialBytes / model.bytes) * 100) : 0;
+    progressWrap.classList.toggle('hidden', !model.downloading);
+    $('#whisper-progress').value = progressPercent;
+    $('#whisper-progress-label').textContent = `${progressPercent}%`;
+    $('#whisper-download').disabled = model.installed || model.downloading;
+    $('#whisper-download').textContent = model.installed ? 'Installed' : (model.partialBytes ? 'Resume' : 'Download');
+    $('#whisper-cancel').classList.toggle('hidden', !model.downloading);
+    $('#whisper-import').disabled = model.downloading;
+    $('#whisper-delete').disabled = (model.installedBytes === 0 && model.partialBytes === 0) || model.downloading;
+  }
+
+  async function refreshWhisperModels() {
+    const status = $('#whisper-status');
+    try {
+      const previousSelection = $('#whisper-model').value || settings.localWhisper?.modelId || 'base.en';
+      whisperOverview = await cue.whisperModels();
+      const runtimeBadge = $('#whisper-runtime-status');
+      runtimeBadge.classList.toggle('ready', whisperOverview.runtime.available);
+      runtimeBadge.classList.toggle('error', !whisperOverview.runtime.available);
+      runtimeBadge.textContent = whisperOverview.runtime.available
+        ? `Ready · v${whisperOverview.runtime.version} · ${whisperOverview.runtime.target}`
+        : 'Not prepared';
+      runtimeBadge.title = whisperOverview.runtime.message || '';
+
+      const select = $('#whisper-model');
+      select.innerHTML = '';
+      for (const model of whisperOverview.models) {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = `${model.label} — ${formatBytes(model.bytes)}${model.recommended ? ' (recommended)' : ''}${model.installed ? ' ✓' : ''}`;
+        select.appendChild(option);
+      }
+      const selectionExists = whisperOverview.models.some((model) => model.id === previousSelection);
+      select.value = selectionExists ? previousSelection : 'base.en';
+      if (!settings.localWhisper) settings.localWhisper = {};
+      settings.localWhisper.modelId = select.value;
+      status.textContent = whisperOverview.runtime.available
+        ? 'Model files are verified before they can be loaded.'
+        : whisperOverview.runtime.message;
+      renderWhisperModelState();
+    } catch (error) {
+      status.textContent = `Could not load local model information: ${error.message}`;
+    }
+  }
+
+  $('#whisper-model').addEventListener('change', () => {
+    if (!settings.localWhisper) settings.localWhisper = {};
+    settings.localWhisper.modelId = $('#whisper-model').value;
+    renderWhisperModelState();
+  });
+
+  $('#whisper-download').addEventListener('click', async () => {
+    const model = getSelectedWhisperModel();
+    if (!model) return;
+    model.downloading = true;
+    renderWhisperModelState();
+    $('#whisper-status').textContent = `Downloading ${model.id}. You can cancel and resume later.`;
+    try {
+      await cue.whisperModelDownload(model.id);
+      $('#whisper-status').textContent = `${model.id} downloaded and verified.`;
+    } catch (error) {
+      $('#whisper-status').textContent = error.message.includes('cancelled')
+        ? `${model.id} download paused. Progress was kept.`
+        : `Download failed: ${error.message}`;
+    } finally {
+      await refreshWhisperModels();
+    }
+  });
+
+  $('#whisper-cancel').addEventListener('click', async () => {
+    const model = getSelectedWhisperModel();
+    if (model) await cue.whisperModelCancel(model.id);
+  });
+
+  $('#whisper-import').addEventListener('click', async () => {
+    const model = getSelectedWhisperModel();
+    if (!model) return;
+    $('#whisper-status').textContent = `Verifying imported ${model.id}…`;
+    try {
+      const result = await cue.whisperModelImport(model.id);
+      $('#whisper-status').textContent = result.cancelled ? 'Import cancelled.' : `${model.id} imported and verified.`;
+    } catch (error) {
+      $('#whisper-status').textContent = `Import failed: ${error.message}`;
+    } finally {
+      await refreshWhisperModels();
+    }
+  });
+
+  $('#whisper-delete').addEventListener('click', async () => {
+    const model = getSelectedWhisperModel();
+    if (!model || !window.confirm(`Delete the ${model.id} model (${formatBytes(model.bytes)}) from this computer?`)) return;
+    try {
+      await cue.whisperModelDelete(model.id);
+      $('#whisper-status').textContent = `${model.id} deleted.`;
+    } catch (error) {
+      $('#whisper-status').textContent = `Delete failed: ${error.message}`;
+    } finally {
+      await refreshWhisperModels();
+    }
+  });
+
+  cue.on('whisper:download-progress', (progress) => {
+    if (!whisperOverview) return;
+    const model = whisperOverview.models.find((candidate) => candidate.id === progress.modelId);
+    if (!model) return;
+    model.partialBytes = progress.receivedBytes;
+    model.downloading = true;
+    if ($('#whisper-model').value === progress.modelId) {
+      $('#whisper-progress-wrap').classList.remove('hidden');
+      $('#whisper-progress').value = progress.percent;
+      $('#whisper-progress-label').textContent = `${progress.percent}%`;
+      $('#whisper-model-detail').textContent = `${formatBytes(progress.receivedBytes)} of ${formatBytes(progress.totalBytes)}`;
+    }
+  });
+  cue.on('whisper:models-changed', () => refreshWhisperModels());
+
   async function saveSettings() {
     // Keys
     settings.apiKeys.openai = $('#key-openai').value.trim();
@@ -1290,6 +1488,11 @@
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
+    // Transcription
+    if (!settings.localWhisper) settings.localWhisper = {};
+    settings.localWhisper.modelId = $('#whisper-model').value || settings.localWhisper.modelId || 'base.en';
+    settings.localWhisper.language = $('#whisper-language').value || 'auto';
+    settings.localWhisper.threads = Math.max(0, Math.min(64, Number.parseInt($('#whisper-threads').value, 10) || 0));
     // Profile
     settings.resumeText = $('#resume-text').value.trim();
     settings.jobDescription = $('#job-description').value.trim();

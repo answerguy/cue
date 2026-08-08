@@ -430,9 +430,9 @@ button:focus { outline: none; }
 .s-close { border: none; background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; padding: 6px 14px; border-radius: var(--r-pill); cursor: pointer; }
 
 /* Tab bar */
-.s-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-shrink: 0; }
+.s-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-shrink: 0; overflow-x: auto; }
 .s-tab {
-  flex: 1; padding: 7px 4px; border-radius: var(--r-8);
+  flex: 1; min-width: 72px; padding: 7px 4px; border-radius: var(--r-8);
   border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.03);
   color: var(--tx-mut); font-size: 12px; font-weight: 500; font-family: var(--font);
   cursor: pointer; transition: all 140ms ease; white-space: nowrap;
@@ -448,6 +448,8 @@ button:focus { outline: none; }
 .s-label { color: var(--tx-2); font-size: 13px; font-weight: 600; margin-top: 6px; flex-shrink: 0; }
 .s-hint { color: var(--tx-mut); font-weight: 400; font-size: 11px; margin-left: 6px; }
 .s-seg { display: flex; gap: 6px; }
+.s-seg-wrap { flex-wrap: wrap; }
+.s-seg-wrap button { min-width: 76px; }
 .s-seg button { flex: 1; padding: 8px; border-radius: var(--r-8); border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); color: var(--tx-2); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 140ms ease; }
 .s-seg button.on { border-color: var(--accent); color: #fff; background: rgba(60,131,245,0.16); }
 .s-field { display: flex; align-items: center; gap: 10px; }
@@ -455,6 +457,38 @@ button:focus { outline: none; }
 .s-field input { flex: 1; padding: 8px 10px; border-radius: var(--r-8); border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.25); color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none; }
 .s-field input:focus { border-color: var(--accent); }
 .s-help { color: var(--tx-mut); font-size: 11px; line-height: 1.4; margin: 4px 0 2px 88px; }
+.s-select {
+  width: 100%; padding: 8px 10px; border-radius: var(--r-8);
+  border: 1px solid rgba(255,255,255,0.14); background: #17191f;
+  color: var(--tx-1); font-size: 13px; font-family: var(--font); outline: none;
+}
+.s-select:focus { border-color: var(--accent); }
+.s-select.compact { flex: 1; width: auto; }
+.s-note { color: var(--tx-mut); font-size: 11.5px; line-height: 1.45; }
+.whisper-card {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 12px;
+  border: 1px solid rgba(255,255,255,0.10); border-radius: 12px;
+  background: rgba(0,0,0,0.18);
+}
+.whisper-runtime-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.whisper-runtime-row .s-label { margin: 0; }
+.whisper-badge {
+  padding: 3px 8px; border-radius: var(--r-pill); color: var(--tx-mut);
+  border: 1px solid rgba(255,255,255,0.12); font-size: 10.5px; white-space: nowrap;
+}
+.whisper-badge.ready { color: #86efac; border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.08); }
+.whisper-badge.error { color: #fca5a5; border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.08); }
+.whisper-progress-wrap { display: flex; align-items: center; gap: 8px; }
+.whisper-progress-wrap progress { flex: 1; height: 8px; accent-color: var(--accent); }
+.whisper-progress-wrap span { width: 42px; color: var(--tx-mut); font-size: 11px; text-align: right; }
+.whisper-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.s-action {
+  padding: 6px 10px; border-radius: var(--r-8); border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05); color: var(--tx-2); font: 500 12px var(--font); cursor: pointer;
+}
+.s-action:hover:not(:disabled) { color: #fff; background: rgba(255,255,255,0.09); }
+.s-action:disabled { opacity: 0.4; cursor: default; }
+.s-action.danger:hover:not(:disabled) { color: #fca5a5; border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.08); }
 /* Textareas inside settings */
 #settings textarea {
   width: 100%; padding: 8px 10px; border-radius: var(--r-8);
@@ -730,6 +764,9 @@ button:focus { outline: none; }
 .stt-disconnected { color: rgba(255,255,255,0.25); }
 .stt-connecting   { color: #facc15; }
 .stt-streaming    { color: var(--live); }
+.stt-local        { color: var(--live); }
+.stt-loading      { color: #facc15; }
+.stt-stopping     { color: #facc15; }
 .stt-batch        { color: rgba(160,210,255,0.7); }
 .stt-error        { color: #fca5a5; }
 
