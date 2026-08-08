@@ -9,7 +9,8 @@ const DEFAULT_MODELS = {
   anthropic: 'claude-3-5-haiku-latest',
   gemini: 'gemini-2.0-flash',
   ollama: 'llama3.2',
-  groq: 'llama-3.1-8b-instant'
+  groq: 'llama-3.1-8b-instant',
+  minimax: 'MiniMax-M2.7'
 };
 
 function normalizeProviderName(provider) {
@@ -34,6 +35,13 @@ function sanitizeTurns(turns) {
   const valid = new Set(['user', 'assistant']);
   return (turns || []).filter(t => valid.has(t.role)).map(t => ({ role: t.role, text: String(t.text || '') }));
 }
+
+// MiniMax is OpenAI-compatible and exposes two regional gateways. MiniMax-M3
+// accepts image input, so it reuses the OpenAI screenshot path via baseURL.
+const MINIMAX_BASE_URLS = {
+  global_en: 'https://api.minimax.io/v1',
+  cn_zh: 'https://api.minimaxi.com/v1'
+};
 
 function stripDataUrl(dataUrl) {
   const m = /^data:(.+?);base64,(.*)$/s.exec(dataUrl || '');
@@ -190,6 +198,7 @@ function createLLM(settings) {
     model = 'gemini-2.0-flash';
   }
   if (!model) model = DEFAULT_MODELS[provider] || '';
+  const minimaxRegion = settings.minimaxRegion || 'global_en';
 
   if (provider === CUSTOM_PROVIDER) {
     try {
@@ -222,6 +231,7 @@ function createLLM(settings) {
         if (provider === CUSTOM_PROVIDER) return await streamOpenAI(args);
         if (provider === 'ollama') return await streamOllama(args);
         if (provider === 'groq') return await streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });
+        if (provider === 'minimax') return await streamOpenAI({ ...args, baseURL: MINIMAX_BASE_URLS[minimaxRegion] || MINIMAX_BASE_URLS.global_en });
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
         throw new Error('unknown provider: ' + provider);

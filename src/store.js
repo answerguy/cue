@@ -14,7 +14,8 @@ const DEFAULTS = {
   provider: 'openai',
   smart: false,
   baseUrl: '',
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '' },
+  minimaxRegion: 'global_en',
+  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' },
   // Tab 2: Profile
   resumeText: '',
   jobDescription: '',
@@ -40,7 +41,8 @@ const DEFAULTS = {
     gemini: { fast: 'gemini-2.0-flash', smart: 'gemini-2.0-flash' },
     custom: { fast: '', smart: '' },
     ollama: { fast: 'llama3.2', smart: 'llama3.3' },
-    groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' }
+    groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },
+    minimax: { fast: 'MiniMax-M2.7', smart: 'MiniMax-M3' }
   }
 };
 

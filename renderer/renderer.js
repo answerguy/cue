@@ -614,6 +614,8 @@
     updateCustomProviderFields();
     $('#key-ollama').value = settings.apiKeys.ollama || '';
     $('#key-groq').value = settings.apiKeys.groq || '';
+    $('#key-minimax').value = settings.apiKeys.minimax || '';
+    document.querySelectorAll('#minimax-region-seg button').forEach((b) => b.classList.toggle('on', b.dataset.region === (settings.minimaxRegion || 'global_en')));
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     fillAppLinkCallers();
@@ -672,7 +674,7 @@
 
   function statusText() {
     const k = settings.apiKeys;
-    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram', k.ollama && 'Ollama', k.groq && 'Groq'].filter(Boolean);
+    const has = [k.openai && 'OpenAI', k.anthropic && 'Anthropic', k.gemini && 'Gemini', k.deepgram && 'Deepgram', k.ollama && 'Ollama', k.groq && 'Groq', k.minimax && 'MiniMax'].filter(Boolean);
     const stt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : (k.gemini ? 'Gemini (batch)' : 'none')));
     const ready = [
       settings.resumeText ? '✓ resume' : null,
@@ -692,7 +694,10 @@
     $('#s-status').textContent = statusText();
     updateSmartTooltip();
   }));
-
+  document.querySelectorAll('#minimax-region-seg button').forEach((b) => b.addEventListener('click', () => {
+    settings.minimaxRegion = b.dataset.region;
+    document.querySelectorAll('#minimax-region-seg button').forEach((x) => x.classList.toggle('on', x === b));
+  }));
   async function saveSettings() {
     // Keys
     settings.apiKeys.openai = $('#key-openai').value.trim();
@@ -703,6 +708,7 @@
     settings.baseUrl = $('#base-url').value.trim();
     settings.apiKeys.ollama = $('#key-ollama').value.trim();
     settings.apiKeys.groq = $('#key-groq').value.trim();
+    settings.apiKeys.minimax = $('#key-minimax').value.trim();
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
