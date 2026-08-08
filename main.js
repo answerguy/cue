@@ -12,6 +12,15 @@ const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
 const { buildInterviewContext, detectCategory } = require('./src/interview-context');
 const { startAppLink, stopAppLink, recordEvent, appLinkConsentState, revokeAppLinkCaller } = require('./src/applink');
 
+// macOS system-audio loopback (the "them" channel via getDisplayMedia) does not
+// start on Electron 31–38 unless these Chromium features are enabled; without
+// them getDisplayMedia rejects with "Error starting capture" and meeting audio
+// silently never works. Electron 39+ wires this up itself, where this is a
+// harmless no-op. Must run before app is ready. (Ref: electron-audio-loopback.)
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('enable-features', 'MacLoopbackAudioForScreenShare,MacSckSystemAudioLoopbackOverride');
+}
+
 let win = null;
 // Which global shortcuts cue actually holds. `globalShortcut.register` returns
 // false when another application already owns the combination, and nothing used
