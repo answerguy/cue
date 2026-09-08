@@ -14,9 +14,10 @@
 //     diagnostic fact about it.
 //   • Whether an API key is set is a diagnosis. The key is a liability.
 
-function describeState({ state, transcript, settings, sttDisabled, shortcuts, windowAlive }) {
+function describeState({ state, transcript, settings, sttDisabled, shortcuts, windowAlive, slides }) {
   const keys = (settings && settings.apiKeys) || {};
   const turns = transcript || [];
+  const slideList = Array.isArray(slides) ? slides : [];
   return {
     capturing: state.capturing,
     busy: state.busy,
@@ -28,6 +29,10 @@ function describeState({ state, transcript, settings, sttDisabled, shortcuts, wi
 
     transcriptTurns: turns.length,
     lastTurnAt: turns.length ? new Date(turns[turns.length - 1].ts).toISOString() : null,
+
+    // Slides: counts only, never captions — same rule as transcript.
+    slideCount: slideList.length,
+    lastSlideAt: slideList.length ? new Date(slideList[slideList.length - 1].ts).toISOString() : null,
 
     provider: settings.provider,
     smart: !!settings.smart,

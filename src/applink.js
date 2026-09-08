@@ -128,6 +128,22 @@ function startAppLink(deps) {
     },
   });
 
+  // Forward-only slide access: captions leave only via this consented action,
+  // never via get_state (which stays counts-only). No images are ever returned.
+  link.action('get_slides', {
+    description: 'List auto-captured slide captions for this meeting (memory-only)',
+    inputSchema: { type: 'object', properties: {} },
+    handler: (_args, { caller }) => {
+      const slides = typeof deps.getSlides === 'function' ? deps.getSlides() : [];
+      link.record({
+        level: 'info',
+        event: 'applink_get_slides',
+        msg: `${caller.name} read ${slides.length} slide captions`,
+      });
+      return { count: slides.length, slides };
+    },
+  });
+
   link.start().catch((error) => {
     // A link that will not start must never stop cue from starting. The app
     // worked without this yesterday.

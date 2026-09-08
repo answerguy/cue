@@ -39,6 +39,13 @@ const DEFAULTS = {
   // points", "casual tone". Applied to every LLM mode EXCEPT LeetCode (kept
   // strict for coding problems).
   aiRules: '',
+  // Slides: opt-in auto slide tracking (memory-only, forwarded, never written to disk).
+  slides: {
+    enabled: false,
+    intervalMs: 3000,
+    threshold: 5,
+    maxSlides: 50
+  },
   // Window position
   windowX: null,
   windowY: null,

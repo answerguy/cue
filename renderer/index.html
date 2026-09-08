@@ -212,6 +212,11 @@
         </div>
 
         <div class="s-status" id="whisper-status"></div>
+
+        <label class="s-label">Meeting slides <span class="s-hint">opt-in · auto-captions while listening · memory-only</span></label>
+        <div class="s-field"><span>Track slides</span><input id="slides-enabled" type="checkbox" style="width:auto;" /></div>
+        <div class="s-field"><span>Check every (ms)</span><input id="slides-interval" type="number" min="1500" max="15000" step="500" value="3000" /></div>
+        <div class="s-note">Captures a tiny hash every few seconds, captions only on stable change with your chat model. No images stored; clear with transcript.</div>
       </div>
 
       <!-- Tab: Profile -->
