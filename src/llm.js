@@ -213,7 +213,26 @@ async function streamAnthropic({ apiKey, model, system, turns, imageDataUrl, max
   return full;
 }
 
-async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
+// Gemini 3.x counts its internal "thinking" tokens against maxOutputTokens, so
+// a 700-token cap was mostly eaten by reasoning and the visible answer came
+// back truncated mid-sentence (measured: 3.8-flash spends ~390 thinking tokens
+// on a short notes prompt by default). Fast tier: thinkingLevel "low", which
+// on flash means no thinking at all (0 thought tokens, ~3x faster). Smart tier:
+// leave the model's default reasoning alone. Either way, give the cap headroom
+// for thoughts so the visible budget is what maxTokens says.
+// (thinkingBudget: 0 is rejected by pro models and "minimal" by flash, so
+// "low" is the one setting that works across the family.)
+const GEMINI_THINKING_HEADROOM = { fast: 1024, smart: 4096 };
+function geminiGenerationConfig({ system, maxTokens, thinking }) {
+  const config = {
+    systemInstruction: system,
+    maxOutputTokens: maxTokens + (thinking ? GEMINI_THINKING_HEADROOM.smart : GEMINI_THINKING_HEADROOM.fast)
+  };
+  if (!thinking) config.thinkingConfig = { thinkingLevel: 'low' };
+  return config;
+}
+
+async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTokens, thinking, onToken }) {
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
   const contents = turns.map((t, i) => {
@@ -225,9 +244,17 @@ async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTok
     }
     return { role: t.role === 'assistant' ? 'model' : 'user', parts };
   });
-  const stream = await ai.models.generateContentStream({
-    model, contents, config: { systemInstruction: system, maxOutputTokens: maxTokens }
-  });
+  const config = geminiGenerationConfig({ system, maxTokens, thinking });
+  let stream;
+  try {
+    stream = await ai.models.generateContentStream({ model, contents, config });
+  } catch (e) {
+    // A model that predates thinkingLevel (or a custom id that rejects it)
+    // should still answer: retry once without the thinking setting.
+    if (!config.thinkingConfig || !/thinking/i.test((e && e.message) || '')) throw e;
+    delete config.thinkingConfig;
+    stream = await ai.models.generateContentStream({ model, contents, config });
+  }
   let full = '';
   for await (const chunk of stream) {
     const t = chunk && chunk.text;
@@ -348,7 +375,7 @@ function createLLM(settings) {
     configurationError,
     async stream(params) {
       if (!ready) throw new Error(configurationError || `Complete the ${provider} provider settings.`);
-      const args = { apiKey, baseURL, endpoint, model, maxTokens, ...params, turns: sanitizeTurns(params.turns) };
+      const args = { apiKey, baseURL, endpoint, model, maxTokens, thinking: !!settings.smart, ...params, turns: sanitizeTurns(params.turns) };
       try {
         if (provider === 'openai') return await streamOpenAI(args);
         if (provider === CUSTOM_PROVIDER) return await streamOpenAI(args);
@@ -366,4 +393,4 @@ function createLLM(settings) {
   };
 }
 
-module.exports = { createLLM, formatProviderErrorMessage, isQuotaError, isNotFoundError, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL, GEMINI_TRANSCRIBE_LIVE_MODEL };
+module.exports = { createLLM, formatProviderErrorMessage, isQuotaError, isNotFoundError, geminiGenerationConfig, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL, GEMINI_TRANSCRIBE_LIVE_MODEL };
