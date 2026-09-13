@@ -60,21 +60,33 @@ function extractGeminiTranscript(res) {
   return out.trim();
 }
 
-async function transcribeGemini(apiKey, wav) {
-  const { GoogleGenAI } = require('@google/genai');
-  const ai = new GoogleGenAI({ apiKey });
+// gemini-3.5-transcribe is capped at 10 requests/min per model on free-tier
+// keys, and flushChannel in main.js sends a clip every ~900ms per channel
+// while someone is talking — so a 429 from it is routine, not a dead key.
+// Park the model for a minute and use the chat model (far higher per-minute
+// quota) for the same clip, instead of letting the error reach main.js's
+// handleSttError, which switches transcription off for the whole session.
+const TRANSCRIBE_MODEL_COOLDOWN_MS = 60000;
+let transcribeModelDownUntil = 0;
+
+// Split from transcribeGemini so tests can pass a fake client.
+async function transcribeGeminiWith(ai, wav, now = Date.now()) {
   const audio = { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } };
-  try {
-    // The dedicated transcription model needs no instruction prompt.
-    const res = await ai.models.generateContent({
-      model: GEMINI_TRANSCRIBE_MODEL,
-      contents: [{ role: 'user', parts: [audio] }]
-    });
-    return extractGeminiTranscript(res);
-  } catch (e) {
-    // Same key, same provider — only the model id changed, so a retired
-    // transcribe model degrades to the chat model rather than to a 404 loop.
-    if (!isNotFoundError(e)) throw e;
+  if (now >= transcribeModelDownUntil) {
+    try {
+      // The dedicated transcription model needs no instruction prompt.
+      const res = await ai.models.generateContent({
+        model: GEMINI_TRANSCRIBE_MODEL,
+        contents: [{ role: 'user', parts: [audio] }]
+      });
+      return extractGeminiTranscript(res);
+    } catch (e) {
+      // Same key, same provider — only the model id changes, so a retired or
+      // rate-limited transcribe model degrades to the chat model rather than
+      // to a 404/429 loop. Anything else (bad key, network) still propagates.
+      if (!isNotFoundError(e) && !isQuotaError(e)) throw e;
+      transcribeModelDownUntil = now + TRANSCRIBE_MODEL_COOLDOWN_MS;
+    }
   }
   const res = await ai.models.generateContent({
     model: CURRENT_GEMINI_DEFAULT,
@@ -84,6 +96,11 @@ async function transcribeGemini(apiKey, wav) {
     ] }]
   });
   return extractGeminiTranscript(res);
+}
+
+async function transcribeGemini(apiKey, wav) {
+  const { GoogleGenAI } = require('@google/genai');
+  return transcribeGeminiWith(new GoogleGenAI({ apiKey }), wav);
 }
 
 function createSTT(settings) {
@@ -140,4 +157,4 @@ function createSTT(settings) {
   };
 }
 
-module.exports = { createSTT, looksLikeHallucination, buildVocabPrompt, transcribeGemini, extractGeminiTranscript };
+module.exports = { createSTT, looksLikeHallucination, buildVocabPrompt, transcribeGemini, transcribeGeminiWith, extractGeminiTranscript };
