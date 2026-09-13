@@ -143,6 +143,10 @@ Local mode is independent from the chat provider, so you can use local speech-to
 - Local mode never silently sends audio to a cloud fallback. A local failure is reported without sending the audio elsewhere.
 - Models are stored under Cue's Electron user-data directory and can be imported or deleted from Settings.
 
+### Optional — word-by-word transcription with only a Gemini key
+
+Deepgram and OpenAI keys stream transcripts word by word automatically. A Gemini key transcribes sentence by sentence unless you pick **Gemini** explicitly under **Settings → Audio**, which switches it to the `gemini-3.5-transcribe-live` streaming model (its running hypothesis gets revised as you speak, which some people find jumpy — that's why it's opt-in).
+
 ### Optional — tailor answers to your background
 
 In **Settings**, paste your résumé or professional background into **Résumé / professional background**. cue uses it as the factual reference for career-related answers and says when the résumé does not provide a detail. You can clear it anytime.

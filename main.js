@@ -343,17 +343,25 @@ function initStreamingSTT() {
   streamingMode = false;
 
   ['you', 'them'].forEach((channel) => {
+    let instance = null; // set below; lets the callbacks tell a stale instance from the live one
     const sttInstance = createStreamingSTT(settings, channel, {
       onTranscript: (ch, text) => {
+        if (instance && streamingSTT[ch] !== instance) return; // stale instance after a stop/start
+
         const turn = { channel: ch, text, ts: Date.now() };
         pushTranscript(turn);
         send('transcript', turn);
         send('stt:final', { channel: ch, text });
       },
       onInterim: (ch, text) => {
+        if (instance && streamingSTT[ch] !== instance) return;
         send('stt:interim', { channel: ch, text });
       },
       onError: (err) => {
+        // A socket torn down by a quick stop/start can still report an error a
+        // moment later; acting on it would kill the sessions that replaced it
+        // and start the batch loop alongside them (double transcription).
+        if (instance && streamingSTT[channel] !== instance) return;
         console.log('[streaming-stt] error', err.provider, err.message);
         const batchFallbackAvailable = createSTT(settings).available;
         stopStreamingSTT(); // close WebSockets and clear keep-alive intervals
@@ -375,9 +383,10 @@ function initStreamingSTT() {
     });
 
     if (sttInstance.type === 'streaming' && sttInstance.instance) {
+      instance = sttInstance.instance;
       streamingMode = true;
-      streamingSTT[channel] = sttInstance.instance;
-      sttInstance.instance.connect();
+      streamingSTT[channel] = instance;
+      instance.connect();
     }
   });
 

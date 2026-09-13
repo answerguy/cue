@@ -15,6 +15,10 @@ const CURRENT_GEMINI_DEFAULT = 'gemini-3.8-flash';
 // (see extractGeminiTranscript in stt.js). Falls back to
 // CURRENT_GEMINI_DEFAULT if Google ever retires it.
 const GEMINI_TRANSCRIBE_MODEL = 'gemini-3.5-transcribe';
+// Streaming counterpart over the Live API (bidiGenerateContent): word-by-word
+// interim hypotheses plus a final on each pause. Used by GeminiLiveSTT in
+// stt-streaming.js; the batch model above is the fallback when it fails.
+const GEMINI_TRANSCRIBE_LIVE_MODEL = 'gemini-3.5-transcribe-live';
 const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-latest',
@@ -362,4 +366,4 @@ function createLLM(settings) {
   };
 }
 
-module.exports = { createLLM, formatProviderErrorMessage, isQuotaError, isNotFoundError, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL };
+module.exports = { createLLM, formatProviderErrorMessage, isQuotaError, isNotFoundError, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL, GEMINI_TRANSCRIBE_LIVE_MODEL };
