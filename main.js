@@ -12,6 +12,8 @@ const { createStreamingSTT } = require('./src/stt-streaming');
 const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
 const { buildInterviewContext, detectCategory } = require('./src/interview-context');
 const { startAppLink, stopAppLink, recordEvent, appLinkConsentState, revokeAppLinkCaller } = require('./src/applink');
+const { createMeetingStore } = require('./src/meetings');
+const { createMeetingMemory } = require('./src/meeting-memory');
 
 // macOS system-audio loopback (the "them" channel via getDisplayMedia) does not
 // start on Electron 31–38 unless these Chromium features are enabled; without
@@ -54,6 +56,8 @@ let sttDisabled = false; // set when the key can't reach any speech model (stops
 const buffers = { you: [], them: [] };
 const transcript = []; // { channel, text, ts } — capped at MAX_TRANSCRIPT_TURNS
 const MAX_TRANSCRIPT_TURNS = 200; // ~30–40 minutes of conversation at normal pace
+let meetingMemory = null; // persists the transcript per meeting + notes; see src/meeting-memory.js
+let restoredTurns = []; // turns of an interrupted meeting resumed at launch, replayed to the renderer once
 const FLUSH_MS = 900;
 const STREAM_INACTIVITY_MS = 25000; // abort a stalled LLM stream so state.busy can't wedge forever
 const MIN_BYTES = Math.floor(16000 * 2 * 0.12); // ~0.12s
@@ -93,6 +97,7 @@ const ringBuffers = {
 function pushTranscript(turn) {
   transcript.push(turn);
   if (transcript.length > MAX_TRANSCRIPT_TURNS) transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
+  if (meetingMemory) meetingMemory.onTurn(turn);
 }
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
@@ -259,6 +264,15 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     win.showInactive();
     win.setTitle('Microsoft Edge Update');
+    if (restoredTurns.length) {
+      // A meeting was in progress when cue last exited: put its transcript back
+      // in the sidebar so Recap / Follow-up pick up where the conversation was.
+      const turns = restoredTurns;
+      restoredTurns = [];
+      send('transcript:restore', { turns });
+      const ageMin = Math.max(1, Math.round((Date.now() - turns[turns.length - 1].ts) / 60000));
+      send('status', { message: `Resumed your meeting from ${ageMin} min ago (${turns.length} turns restored).` });
+    }
     // Warn about missing content protection on old Windows builds
     if (isWindows && shouldProtect && !WIN_SUPPORTS_CONTENT_PROTECTION) {
       send('status', {
@@ -493,6 +507,13 @@ async function setCapturing(active) {
   state.capturing = false;
   stopFlushLoop();
   stopStreamingSTT();
+  if (meetingMemory) {
+    // Write/refresh the notes for this meeting in the background so the
+    // summary survives even if cue is closed before the meeting formally ends.
+    meetingMemory.refreshNotes().then((notes) => {
+      if (notes) send('status', { message: `Meeting notes saved (${transcript.length} turns).` });
+    }).catch(() => {});
+  }
   buffers.you = []; buffers.them = [];
   vad.you.reset(); vad.them.reset();
   ringBuffers.you.clear(); ringBuffers.them.clear();
@@ -564,7 +585,11 @@ async function runFeature(mode, userText) {
     }
 
     const settingsForPrompt = store.getSettings();
-    const contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
+    let contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
+    // Summaries of the last few meetings, so "what did we agree last time?"
+    // has something to draw on. Never the current meeting, never leetcode.
+    const memoryBlock = mode !== 'leetcode' && meetingMemory ? meetingMemory.memoryBlock() : null;
+    if (memoryBlock) contextBlock = contextBlock ? contextBlock + '\n\n' + memoryBlock : memoryBlock;
     const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
     const built = def.build({ transcript, userText: userText || '' });
 
@@ -660,6 +685,7 @@ ipcMain.handle('platform:info', () => ({
   winSupportsContentProtection: WIN_SUPPORTS_CONTENT_PROTECTION
 }));
 ipcMain.handle('transcript:clear', () => {
+  if (meetingMemory) meetingMemory.end().catch(() => {}); // it stays in history with its notes
   transcript.splice(0, transcript.length);
   return { ok: true };
 });
@@ -808,6 +834,15 @@ function launchApp() {
 
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
 
+  meetingMemory = createMeetingMemory({
+    store: createMeetingStore({ file: path.join(app.getPath('userData'), 'meetings.json'), debounceMs: 1500 }),
+    llmFactory: () => createLLM(store.getSettings()),
+    log: (msg) => console.log('[meetings]', msg)
+  });
+  restoredTurns = meetingMemory.resumeOpen();
+  if (restoredTurns.length) transcript.push(...restoredTurns.slice(-MAX_TRANSCRIPT_TURNS));
+  meetingMemory.catchUp().then((n) => { if (n) console.log(`[meetings] wrote notes for ${n} earlier meeting(s)`); }).catch(() => {});
+
   const allowMedia = (permission) => permission === 'media' || permission === 'microphone' || permission === 'audioCapture' || permission === 'display-capture' || permission === 'screen';
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowMedia(permission)));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
@@ -867,6 +902,10 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  // Quitting mid-meeting is a pause, not an end: the meeting stays open on disk
+  // so a relaunch within the resume window picks it back up (a stale one is
+  // closed and its notes written at the next launch). Just get the bytes down.
+  if (meetingMemory) meetingMemory.flush();
   // Best effort, deliberately not blocking the quit: the library also removes
   // the instance file from a `process.on('exit')` handler, and a file left
   // behind is harmless anyway because readers check whether the PID is alive.

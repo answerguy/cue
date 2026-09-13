@@ -1126,6 +1126,14 @@
       softClearSTTFill();
     }
   });
+  // Transcript of a meeting resumed at launch: sidebar rows only — no
+  // auto-fill of the input box, which is for live speech.
+  cue.on('transcript:restore', ({ turns }) => {
+    for (const t of turns || []) {
+      if (!t || !t.text || t.text.trim().length < 2) continue;
+      appendTranscriptHistoryTurn(t.channel, t.text, false);
+    }
+  });
   let statusTimer = null;
   function showStatus(message) {
     let el = document.getElementById('cue-status');

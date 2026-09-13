@@ -30,10 +30,35 @@ function saveMeetingsFile(file, meetings) {
 function createMeetingStore(opts = {}) {
   const file = opts.file;
   let meetings = file ? loadMeetingsFile(file) : [];
+  // addTurn fires every few seconds during a meeting; with `debounceMs` set the
+  // writes are coalesced so the whole file isn't rewritten per turn. Callers
+  // that need the bytes on disk now (quit) call flush().
+  const debounceMs = opts.debounceMs || 0;
+  let saveTimer = null;
+  function save() {
+    if (!file) return;
+    if (!debounceMs) { saveMeetingsFile(file, meetings); return; }
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => { saveTimer = null; saveMeetingsFile(file, meetings); }, debounceMs);
+  }
 
   return {
     file,
     list() { return meetings; },
+
+    flush() {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      if (file) saveMeetingsFile(file, meetings);
+    },
+
+    // Keep the newest `max` meetings; returns how many were dropped.
+    prune(max) {
+      if (!(max > 0) || meetings.length <= max) return 0;
+      const dropped = meetings.length - max;
+      meetings = meetings.slice(-max);
+      save();
+      return dropped;
+    },
 
     add() {
       const m = {
@@ -50,7 +75,7 @@ function createMeetingStore(opts = {}) {
         context: ''
       };
       meetings.push(m);
-      if (file) saveMeetingsFile(file, meetings);
+      save();
       return m;
     },
 
@@ -62,7 +87,7 @@ function createMeetingStore(opts = {}) {
       const m = this.get(id);
       if (!m) return null;
       Object.assign(m, patch);
-      if (file) saveMeetingsFile(file, meetings);
+      save();
       return m;
     },
 
@@ -70,7 +95,7 @@ function createMeetingStore(opts = {}) {
       const m = this.get(id);
       if (!m) return null;
       m.transcript.push(turn);
-      if (file) saveMeetingsFile(file, meetings);
+      save();
       return m;
     },
 
@@ -96,7 +121,7 @@ function createMeetingStore(opts = {}) {
     remove(id) {
       const before = meetings.length;
       meetings = meetings.filter((m) => m.id !== id);
-      if (file) saveMeetingsFile(file, meetings);
+      save();
       return meetings.length < before;
     },
 
