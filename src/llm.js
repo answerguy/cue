@@ -6,10 +6,15 @@ const { createCompatibleClientOptions } = require('./openai-compatible');
 const CUSTOM_PROVIDER = 'custom';
 // gemini-2.0-flash was Google's default here until it was deprecated (Feb 2026)
 // and fully retired (Mar 3 2026) — every request against it now 404s with a
-// generic "exception parsing response" body. gemini-2.5-flash is the model
-// Google's own SDK examples standardize on and is documented as free-tier
-// available, so it is the single default used everywhere in this file.
-const CURRENT_GEMINI_DEFAULT = 'gemini-2.5-flash';
+// generic "exception parsing response" body. gemini-3.8-flash is the current
+// Flash release (Aug 2026), so it is the single default used everywhere in
+// this file and for Gemini transcription in stt.js / stt-streaming.js.
+const CURRENT_GEMINI_DEFAULT = 'gemini-3.8-flash';
+// Purpose-built speech-to-text model: no thinking tokens, returns nothing on
+// silence, and answers with an `audioTranscription` part instead of `text`
+// (see extractGeminiTranscript in stt.js). Falls back to
+// CURRENT_GEMINI_DEFAULT if Google ever retires it.
+const GEMINI_TRANSCRIBE_MODEL = 'gemini-3.5-transcribe';
 const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-latest',
@@ -20,11 +25,12 @@ const DEFAULT_MODELS = {
   azure: 'gpt-4o-mini'
 };
 
-// Gemini model ids that Google has since deprecated/retired. A settings file
-// saved before this fix can still have one of these persisted on disk, so
-// createLLM migrates them at read time rather than only fixing the default —
-// otherwise an existing user would keep re-hitting the same 404 forever.
-const DEAD_GEMINI_MODEL_RE = /^gemini-(1\.0|1\.5|2\.0)(?:-|$)/i;
+// Gemini model ids that Google has since deprecated/retired (the 2.5 family
+// went "no longer available to new users" in Sep 2026). A settings file saved
+// before this fix can still have one of these persisted on disk, so createLLM
+// migrates them at read time rather than only fixing the default — otherwise
+// an existing user would keep re-hitting the same 404 forever.
+const DEAD_GEMINI_MODEL_RE = /^gemini-(1\.0|1\.5|2\.0|2\.5)(?:-|$)/i;
 
 const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax' };
 
@@ -356,4 +362,4 @@ function createLLM(settings) {
   };
 }
 
-module.exports = { createLLM, formatProviderErrorMessage, isQuotaError, CURRENT_GEMINI_DEFAULT };
+module.exports = { createLLM, formatProviderErrorMessage, isQuotaError, isNotFoundError, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL };

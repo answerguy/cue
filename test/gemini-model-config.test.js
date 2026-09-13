@@ -12,7 +12,7 @@ const { CURRENT_GEMINI_DEFAULT } = require('../src/llm');
 // Gemini model id (two still pointing at the dead one), so this scans every
 // source file that talks to the Gemini API and fails if a known-retired id
 // or a hardcoded id that has drifted from the shared default sneaks back in.
-const DEAD_MODEL_IDS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+const DEAD_MODEL_IDS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
 
 const FILES_THAT_CALL_GEMINI = [
   'src/llm.js',
@@ -35,10 +35,12 @@ for (const relPath of FILES_THAT_CALL_GEMINI) {
   });
 }
 
-test('store.js default Gemini models match the shared current default', () => {
+test('store.js default Gemini fast model matches the shared current default', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'src/store.js'), 'utf8');
   const match = /gemini:\s*\{\s*fast:\s*'([^']+)',\s*smart:\s*'([^']+)'/.exec(source);
   assert.ok(match, 'could not find the gemini default models block in store.js');
   assert.equal(match[1], CURRENT_GEMINI_DEFAULT);
-  assert.equal(match[2], CURRENT_GEMINI_DEFAULT);
+  // smart may be a heavier model than the shared default, but never a dead one.
+  assert.ok(match[2], 'store.js smart Gemini default is empty');
+  assert.ok(!DEAD_MODEL_IDS.includes(match[2]), `${match[2]} is on the known-dead list`);
 });

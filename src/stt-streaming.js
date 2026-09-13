@@ -4,9 +4,8 @@
 // This module manages a persistent WebSocket connection for real-time transcription
 // with sub-200ms latency, interim results, and automatic reconnection.
 
-const { looksLikeHallucination } = require('./stt');
+const { looksLikeHallucination, transcribeGemini } = require('./stt');
 const { pcmToWav } = require('./wav');
-const { CURRENT_GEMINI_DEFAULT } = require('./llm');
 
 // ============================================================================
 // OpenAI Realtime Transcription Session (WebSocket)
@@ -385,18 +384,8 @@ async function transcribeBatchOpenAI(apiKey, wav, model) {
   return (typeof res === 'string' ? res : res.text || '').trim();
 }
 
-async function transcribeBatchGemini(apiKey, wav) {
-  const { GoogleGenAI } = require('@google/genai');
-  const ai = new GoogleGenAI({ apiKey });
-  const res = await ai.models.generateContent({
-    model: CURRENT_GEMINI_DEFAULT,
-    contents: [{ role: 'user', parts: [
-      { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
-      { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } }
-    ] }]
-  });
-  return ((res && res.text) || '').trim();
-}
+// Shared with the batch path in stt.js so both use the transcribe model.
+const transcribeBatchGemini = transcribeGemini;
 
 // ============================================================================
 // Unified Streaming STT Factory

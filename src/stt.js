@@ -2,7 +2,7 @@
 // no audio API — we transcribe with whatever audio-capable key is available, and
 // fall back across providers. Returns { text, provider } or { text:'', error }.
 const { pcmToWav } = require('./wav');
-const { formatProviderErrorMessage, isQuotaError, CURRENT_GEMINI_DEFAULT } = require('./llm');
+const { formatProviderErrorMessage, isQuotaError, isNotFoundError, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL } = require('./llm');
 
 const BASE_VOCAB = 'CI/CD, Docker, Kubernetes, Terraform, Jenkins, AWS, Azure, GCP, ' +
   'CodeCommit, CodePipeline, CodeBuild, CodeDeploy, DevOps, SRE, microservices, deployment, ' +
@@ -45,17 +45,45 @@ async function transcribeOpenAI(apiKey, wav, model, baseURL, prompt) {
   return (res.text || '').trim();
 }
 
+// gemini-*-transcribe models answer with { audioTranscription: { text } } parts,
+// which the SDK's res.text getter ignores (it only concatenates `text` parts),
+// so read both shapes off the raw candidate. Silence comes back as no parts.
+function extractGeminiTranscript(res) {
+  const parts = (res && res.candidates && res.candidates[0] && res.candidates[0].content &&
+    res.candidates[0].content.parts) || [];
+  let out = '';
+  for (const part of parts) {
+    if (!part || part.thought) continue;
+    if (part.audioTranscription && typeof part.audioTranscription.text === 'string') out += part.audioTranscription.text;
+    else if (typeof part.text === 'string') out += part.text;
+  }
+  return out.trim();
+}
+
 async function transcribeGemini(apiKey, wav) {
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
+  const audio = { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } };
+  try {
+    // The dedicated transcription model needs no instruction prompt.
+    const res = await ai.models.generateContent({
+      model: GEMINI_TRANSCRIBE_MODEL,
+      contents: [{ role: 'user', parts: [audio] }]
+    });
+    return extractGeminiTranscript(res);
+  } catch (e) {
+    // Same key, same provider — only the model id changed, so a retired
+    // transcribe model degrades to the chat model rather than to a 404 loop.
+    if (!isNotFoundError(e)) throw e;
+  }
   const res = await ai.models.generateContent({
     model: CURRENT_GEMINI_DEFAULT,
     contents: [{ role: 'user', parts: [
       { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
-      { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } }
+      audio
     ] }]
   });
-  return ((res && res.text) || '').trim();
+  return extractGeminiTranscript(res);
 }
 
 function createSTT(settings) {
@@ -112,4 +140,4 @@ function createSTT(settings) {
   };
 }
 
-module.exports = { createSTT, looksLikeHallucination, buildVocabPrompt };
+module.exports = { createSTT, looksLikeHallucination, buildVocabPrompt, transcribeGemini, extractGeminiTranscript };
