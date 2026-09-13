@@ -404,8 +404,28 @@ function stopStreamingSTT() {
 }
 
 // -------- audio routing (streaming or batch) --------
+// Per-channel level report every few seconds while capturing, so "cue never
+// hears me" reports can be told apart: no chunks (capture never reached the
+// main process), chunks but rms≈0 (a silent/muted device), or healthy audio
+// that the transcriber is dropping.
+const AUDIO_LEVEL_LOG_MS = 5000;
+const audioLevels = { you: { chunks: 0, peakRms: 0 }, them: { chunks: 0, peakRms: 0 }, lastLog: 0 };
+function noteAudioLevel(channel, buf) {
+  const lv = audioLevels[channel];
+  lv.chunks++;
+  if (buf.length >= 2) lv.peakRms = Math.max(lv.peakRms, rms16(buf));
+  const now = Date.now();
+  if (now - audioLevels.lastLog < AUDIO_LEVEL_LOG_MS) return;
+  audioLevels.lastLog = now;
+  const fmt = (c) => `${c}: chunks=${audioLevels[c].chunks} peakRms=${Math.round(audioLevels[c].peakRms)}`;
+  console.log(`[audio] ${fmt('you')} | ${fmt('them')} (gate=${RMS_GATE}, mode=${localWhisperTranscriber ? 'local' : streamingMode ? 'streaming' : 'batch'})`);
+  audioLevels.you = { chunks: 0, peakRms: 0 };
+  audioLevels.them = { chunks: 0, peakRms: 0 };
+}
+
 function routeAudio(channel, pcmBuffer) {
   const buf = Buffer.from(pcmBuffer);
+  noteAudioLevel(channel, buf);
 
   if (localWhisperTranscriber) {
     localWhisperTranscriber.push(channel, buf);
