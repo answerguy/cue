@@ -551,6 +551,18 @@ async function runFeature(mode, userText) {
       }
     }
 
+    // Follow-up / Recap have nothing to work with before anything was heard —
+    // sent to the model anyway, it fabricates plausible generic output that
+    // looks like a canned preset. Say so instead, and log how much context
+    // every feature actually ran with.
+    console.log(`[llm] mode=${mode} transcriptTurns=${transcript.length} capturing=${state.capturing}`);
+    if (def.transcriptRequired && transcript.length === 0) {
+      send('llm:error', { message: state.capturing
+        ? 'Nothing has been transcribed yet — say something (or let the other side talk) and try again.'
+        : 'Nothing captured yet — press the listen button first so cue can hear the conversation.' });
+      return;
+    }
+
     const settingsForPrompt = store.getSettings();
     const contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
     const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');

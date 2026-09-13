@@ -29,6 +29,34 @@ test('followup mode returns a bullet list', () => {
   assert.match(system, /bullet list|bullets/i);
 });
 
+test('followup and recap are grounded in the transcript and do not presume an interview', () => {
+  for (const name of ['followup', 'recap']) {
+    const system = MODES[name].buildSystem(null);
+    assert.match(system, /actually said|only what is in the transcript/i, `${name} must be grounded in the transcript`);
+    assert.match(system, /generic/i, `${name} must forbid generic filler`);
+    // The only mention of interviews allowed is the conditional "if the context block says so".
+    const unconditional = system.replace(/If the context block shows this is a job interview[^\n]*/g, '');
+    assert.ok(!/\binterview/i.test(unconditional), `${name} must not assume the conversation is an interview`);
+    assert.equal(MODES[name].transcriptRequired, true, `${name} needs a transcript to be meaningful`);
+  }
+  // Modes that also take a screenshot can run on an empty transcript.
+  assert.ok(!MODES.assist.transcriptRequired);
+  assert.ok(!MODES.ask.transcriptRequired);
+  assert.ok(!MODES.leetcode.transcriptRequired);
+});
+
+test('followup and recap user turns carry the real conversation', () => {
+  const transcript = [
+    { channel: 'them', text: 'We shipped the Terraform pipeline on Tuesday.', ts: 1 },
+    { channel: 'you', text: 'How long did the deploy take?', ts: 2 }
+  ];
+  for (const name of ['followup', 'recap']) {
+    const turn = MODES[name].build({ transcript, userText: '' });
+    assert.match(turn, /Them: We shipped the Terraform pipeline on Tuesday\./);
+    assert.match(turn, /You: How long did the deploy take\?/);
+  }
+});
+
 test('all modes have a build function', () => {
   for (const [name, mode] of Object.entries(MODES)) {
     assert.equal(typeof mode.build, 'function', `${name}.build must be a function`);
