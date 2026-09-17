@@ -153,6 +153,43 @@ test('falls back to the global endpoint for an unknown region', async () => {
   assert.equal(capturedClientOptions.baseURL, 'https://api.minimax.io/v1');
 });
 
+// ---- DeepSeek ---------------------------------------------------------------
+// DeepSeek is OpenAI-compatible with a single fixed endpoint, so this asserts
+// the model/readiness plumbing and the baseURL used to reach it.
+
+function deepseekSettings(overrides) {
+  return Object.assign({
+    provider: 'deepseek',
+    smart: true,
+    apiKeys: { deepseek: 'test-key' },
+    models: { deepseek: { fast: 'deepseek-chat', smart: 'deepseek-reasoner' } }
+  }, overrides || {});
+}
+
+test('selects the DeepSeek model for the active tier and reports readiness', () => {
+  const smart = createLLM(deepseekSettings({ smart: true }));
+  assert.equal(smart.provider, 'deepseek');
+  assert.equal(smart.model, 'deepseek-reasoner');
+  assert.equal(smart.ready, true);
+
+  const fast = createLLM(deepseekSettings({ smart: false }));
+  assert.equal(fast.model, 'deepseek-chat');
+});
+
+test('routes DeepSeek to its OpenAI-compatible endpoint', async () => {
+  capturedClientOptions = null;
+  const llm = createLLM(deepseekSettings());
+  await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} });
+  assert.equal(capturedClientOptions.baseURL, 'https://api.deepseek.com');
+  assert.equal(capturedClientOptions.apiKey, 'test-key');
+});
+
+test('reports a configuration error when the DeepSeek key is missing', () => {
+  const llm = createLLM(deepseekSettings({ apiKeys: { deepseek: '' } }));
+  assert.equal(llm.ready, false);
+  assert.match(llm.configurationError, /Add your deepseek API key/);
+});
+
 // ---- Gemini 404/429 error mapping ------------------------------------------
 // Reproduces the exact bug-report clusters: "Error: got status: 404 Not Found.
 // {"error":{"message":"exception parsing response","code":404,"status":"Not

@@ -17,6 +17,7 @@ const DEFAULT_MODELS = {
   ollama: 'llama3.2',
   groq: 'llama-3.1-8b-instant',
   minimax: 'MiniMax-M2.7',
+  deepseek: 'deepseek-chat',
   azure: 'gpt-4o-mini'
 };
 
@@ -26,7 +27,10 @@ const DEFAULT_MODELS = {
 // otherwise an existing user would keep re-hitting the same 404 forever.
 const DEAD_GEMINI_MODEL_RE = /^gemini-(1\.0|1\.5|2\.0)(?:-|$)/i;
 
-const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax' };
+const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax', deepseek: 'DeepSeek' };
+
+// DeepSeek is OpenAI-compatible and reuses the OpenAI screenshot/streaming path via baseURL.
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 
 function normalizeProviderName(provider) {
   if (!provider) return 'provider';
@@ -345,6 +349,7 @@ function createLLM(settings) {
         if (provider === 'ollama') return await streamOllama(args);
         if (provider === 'groq') return await streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });
         if (provider === 'minimax') return await streamOpenAI({ ...args, baseURL: MINIMAX_BASE_URLS[minimaxRegion] || MINIMAX_BASE_URLS.global_en });
+        if (provider === 'deepseek') return await streamOpenAI({ ...args, baseURL: DEEPSEEK_BASE_URL });
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
         if (provider === 'azure') return await streamAzure(args);
