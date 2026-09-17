@@ -17,7 +17,10 @@ const DEFAULT_MODELS = {
   ollama: 'llama3.2',
   groq: 'llama-3.1-8b-instant',
   minimax: 'MiniMax-M2.7',
-  deepseek: 'deepseek-chat',
+  // deepseek-chat/deepseek-reasoner were retired 2026-07-24 and now 404; the
+  // replacement aliases are deepseek-flash (non-thinking) and deepseek-v4-pro
+  // (thinking), so those are the defaults used everywhere in this file.
+  deepseek: 'deepseek-flash',
   azure: 'gpt-4o-mini'
 };
 
@@ -26,6 +29,12 @@ const DEFAULT_MODELS = {
 // createLLM migrates them at read time rather than only fixing the default —
 // otherwise an existing user would keep re-hitting the same 404 forever.
 const DEAD_GEMINI_MODEL_RE = /^gemini-(1\.0|1\.5|2\.0)(?:-|$)/i;
+
+// Same story for DeepSeek's retired chat/reasoner aliases — map each to its
+// closest current replacement rather than collapsing both to one default.
+const DEAD_DEEPSEEK_MODEL_RE = /^deepseek-(chat|reasoner)$/i;
+const CURRENT_DEEPSEEK_FAST_DEFAULT = 'deepseek-flash';
+const CURRENT_DEEPSEEK_SMART_DEFAULT = 'deepseek-v4-pro';
 
 const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax', deepseek: 'DeepSeek' };
 
@@ -307,6 +316,9 @@ function createLLM(settings) {
   let model = (models[provider] || {})[tier];
   if (provider === 'gemini' && DEAD_GEMINI_MODEL_RE.test(model || '')) {
     model = CURRENT_GEMINI_DEFAULT;
+  }
+  if (provider === 'deepseek' && DEAD_DEEPSEEK_MODEL_RE.test(model || '')) {
+    model = /reasoner/i.test(model) ? CURRENT_DEEPSEEK_SMART_DEFAULT : CURRENT_DEEPSEEK_FAST_DEFAULT;
   }
   if (!model) model = DEFAULT_MODELS[provider] || '';
   const minimaxRegion = settings.minimaxRegion || 'global_en';

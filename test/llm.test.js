@@ -162,18 +162,34 @@ function deepseekSettings(overrides) {
     provider: 'deepseek',
     smart: true,
     apiKeys: { deepseek: 'test-key' },
-    models: { deepseek: { fast: 'deepseek-chat', smart: 'deepseek-reasoner' } }
+    models: { deepseek: { fast: 'deepseek-flash', smart: 'deepseek-v4-pro' } }
   }, overrides || {});
 }
 
 test('selects the DeepSeek model for the active tier and reports readiness', () => {
   const smart = createLLM(deepseekSettings({ smart: true }));
   assert.equal(smart.provider, 'deepseek');
-  assert.equal(smart.model, 'deepseek-reasoner');
+  assert.equal(smart.model, 'deepseek-v4-pro');
   assert.equal(smart.ready, true);
 
   const fast = createLLM(deepseekSettings({ smart: false }));
-  assert.equal(fast.model, 'deepseek-chat');
+  assert.equal(fast.model, 'deepseek-flash');
+});
+
+// deepseek-chat/deepseek-reasoner were retired 2026-07-24 and now 404; a
+// settings file saved before this fix can still have one persisted on disk.
+test('self-heals a settings file saved with the retired deepseek-chat/deepseek-reasoner aliases', () => {
+  const fast = createLLM(deepseekSettings({
+    smart: false,
+    models: { deepseek: { fast: 'deepseek-chat', smart: 'deepseek-reasoner' } }
+  }));
+  assert.equal(fast.model, 'deepseek-flash');
+
+  const smart = createLLM(deepseekSettings({
+    smart: true,
+    models: { deepseek: { fast: 'deepseek-chat', smart: 'deepseek-reasoner' } }
+  }));
+  assert.equal(smart.model, 'deepseek-v4-pro');
 });
 
 test('routes DeepSeek to its OpenAI-compatible endpoint', async () => {

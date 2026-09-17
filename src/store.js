@@ -53,7 +53,9 @@ const DEFAULTS = {
     ollama: { fast: 'llama3.2', smart: 'llama3.3' },
     groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },
     minimax: { fast: 'MiniMax-M2.7', smart: 'MiniMax-M3' },
-    deepseek: { fast: 'deepseek-chat', smart: 'deepseek-reasoner' },
+    // deepseek-chat/deepseek-reasoner were retired 2026-07-24; deepseek-flash
+    // (non-thinking) and deepseek-v4-pro (thinking) are the current aliases.
+    deepseek: { fast: 'deepseek-flash', smart: 'deepseek-v4-pro' },
     azure: { fast: 'gpt-4o-mini', smart: 'gpt-4o' }
   }
 };
