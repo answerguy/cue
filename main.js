@@ -697,8 +697,11 @@ function publikScheduleWalletRefresh() {
 // same install_id; reprovision:false (removed from the dashboard) → stay
 // disconnected until the user presses Reconnect.
 function publikHandleRevoked(e) {
-  const silent = e && e.type === 'key_revoked' && e.reprovision === true;
-  store.setPublik({ revoked: true, disconnected: !silent, lastError: '' });
+  const revokedType = !!(e && e.type === 'key_revoked');
+  const silent = revokedType && e.reprovision === true;
+  // "disconnected" is the dashboard/uninstaller removal only; a plain 401
+  // (invalid_api_key) just asks for Reconnect.
+  store.setPublik({ revoked: true, disconnected: revokedType && !silent, lastError: '' });
   if (silent) publikProvision().catch(() => {});
 }
 function publikHandleErrorAction(action) {

@@ -111,7 +111,27 @@ cue can't help until your OS lets it see and hear. When you first use a feature 
 
 **On Windows — one grant.** Only the microphone needs permission: Settings → **Privacy & security** → **Microphone** → turn on **Microphone access** *and* **Let desktop apps access your microphone**. Screenshots and meeting audio need no permission at all — they work immediately, using Windows loopback capture.
 
-### Step 2 — Add your AI key (bring your own)
+### Step 2 — Pick how cue answers: publik API (default) or your own key
+
+The packaged builds from the Releases page run on **publik API** by default: no
+account and no key needed. The first-run guide shows a short disclosure — every
+request is priced per use at 50% of the model's published list price, from a
+publik balance that starts with a small free amount; most people spend under $2
+a month; your prompts and screenshots go through publik's servers to a shared
+model account, and publik never trains on them. Nothing is set up until you
+press **Continue with publik API**. Settings → Keys shows the balance line and a
+**Link this computer to your publik account** button (that is where you add
+credit once the free balance is used up). **Use my own key instead** switches to
+any of the providers below at any time; a key you have already entered is never
+replaced.
+
+A build from source has no publik app token unless you export
+`PUBLIK_APP_TOKEN`; without one the publik option does not appear and cue works
+exactly as before. The release workflow embeds the token from the
+`PUBLIK_APP_TOKEN` repository secret (it is a publishable identifier that lets
+the gateway attribute installs to cue — it holds no balance and is not a key).
+
+### Step 2 (alternative) — Add your AI key (bring your own)
 
 cue uses **your own** API key, so it's free to run (you only pay your AI provider for what you use). Click the **`...`** button in the input box (or press `⌘` `,` on macOS / `Ctrl` `,` on Windows) to open **Settings**, pick a provider, and paste your key:
 
