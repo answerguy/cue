@@ -36,6 +36,27 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Embed publik app token
+        # The token is a publishable identifier (it ships in the binary); it lets
+        # the publik API gateway attribute this install to cue and rate-limit
+        # minting. It is NOT a pk_ key and holds no balance. Written into src/,
+        # which the electron-builder.cjs files allowlist already packages.
+        # Fails closed: a release without it would ship a build whose provider
+        # picker silently lacks the publik option.
+        shell: bash
+        env:
+          PUBLIK_APP_TOKEN: ${{ secrets.PUBLIK_APP_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$PUBLIK_APP_TOKEN" || { echo "PUBLIK_APP_TOKEN secret is not set"; exit 1; }
+          node -e '
+            const fs = require("fs"); const p = "src/publik-build.json";
+            const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+            cfg.appToken = process.env.PUBLIK_APP_TOKEN;
+            fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
+          '
+          node -e 'const c = require("./src/publik-build.json"); if (!c.appToken) process.exit(1); console.log("publik app token embedded for", c.appSlug)'
+
       - name: Build macOS
         if: matrix.os == 'macos-latest'
         run: npm run dist
