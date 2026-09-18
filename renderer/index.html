@@ -117,6 +117,7 @@
       <div class="s-body s-tab-pane" data-pane="keys">
         <label class="s-label">Provider</label>
         <div class="s-seg" id="provider-seg">
+          <button data-provider="publik" id="provider-publik" class="hidden">publik API <span class="s-default-badge">default</span></button>
           <button data-provider="openai">OpenAI</button>
           <button data-provider="anthropic">Anthropic</button>
           <button data-provider="gemini">Gemini</button>
@@ -145,6 +146,23 @@
           <label class="s-label" for="base-url">Custom endpoint <span class="s-hint">OpenAI-compatible chat API</span></label>
           <div class="s-field"><span>Base URL</span><input id="base-url" type="url" placeholder="http://127.0.0.1:18789/v1" autocomplete="off" spellcheck="false" /></div>
           <div class="s-help">Your Custom key and LLM requests are sent to this URL. Speech-to-text continues to use Deepgram, OpenAI, or Gemini.</div>
+        </div>
+
+        <!-- publik API: the packaged-build default. Text and buttons are filled by
+             renderPublikBlock() from publik:state so the copy has one source. -->
+        <div id="publik-settings" class="publik-card hidden">
+          <div class="publik-line" id="publik-status-note">Not connected</div>
+          <div class="s-note" id="publik-cost-note"></div>
+          <div class="s-note" id="publik-data-note"></div>
+          <div class="whisper-actions">
+            <button id="publik-setup" class="s-action hidden">Set up publik API</button>
+            <button id="publik-link" class="s-action hidden">Link this computer to your publik account</button>
+            <button id="publik-add-credit" class="s-action hidden">Add credit</button>
+            <button id="publik-reconnect" class="s-action hidden">Reconnect</button>
+            <button id="publik-pricing" class="s-action">How pricing works</button>
+            <button id="publik-byo" class="s-action">Use my own key instead</button>
+            <button id="publik-disconnect" class="s-action danger hidden">Disconnect publik API</button>
+          </div>
         </div>
         <div class="s-field"><span>Ollama URL</span><input id="key-ollama" type="text" placeholder="http://localhost:11434" autocomplete="off" /></div>
         <div class="s-field"><span>Groq</span><input id="key-groq" type="password" placeholder="gsk_..." autocomplete="off" /></div>
