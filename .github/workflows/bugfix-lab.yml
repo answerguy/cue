@@ -1,0 +1,35 @@
+name: bugfix-lab oracle (cue-mic-not-detected-gemini)
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_ref:
+        description: "Commit SHA or ref of cue to run the oracle against"
+        required: true
+
+jobs:
+  oracle:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout tooling (this branch — oracle harness + ps1)
+        uses: actions/checkout@v4
+        with:
+          path: tooling
+
+      - name: Checkout target ref under test
+        uses: actions/checkout@v4
+        with:
+          path: target
+          ref: ${{ inputs.test_ref }}
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run oracle
+        shell: pwsh
+        run: |
+          pwsh -File tooling/scripts/bugfix-lab/cue-mic-not-detected-gemini.ps1 `
+            -TargetDir "${{ github.workspace }}/target"
