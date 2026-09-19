@@ -229,17 +229,20 @@ test('402 insufficient_credit renders the message plus exactly one link: top_up_
     claim_state: 'anonymous', top_up_url: 'https://publikhq.com/claim/HK7F-2QWD',
     claim_url: 'https://publikhq.com/claim/HK7F-2QWD', add_credit_url: 'https://publikhq.com/dashboard/api/add', plans_url: 'https://publikhq.com/developers#plans'
   } });
-  assert.match(anon.message, /^publik API needs credit\. Your free credit is used up\./);
-  assert.match(anon.message, /or use your own key in Settings\.$/);
-  assert.deepEqual(anon.action, { kind: 'link', label: 'Link now', url: 'https://publikhq.com/claim/HK7F-2QWD' });
+  // The response's own message is rendered as-is (CONTRACT §12.3): it carries the justification.
+  assert.equal(anon.message, 'Not enough publik credit for this request.');
+  assert.equal(anon.fromResponse, true);
+  assert.deepEqual(anon.action, { kind: 'link', label: 'Link this computer & pick a plan', url: 'https://publikhq.com/claim/HK7F-2QWD' });
   assert.equal((anon.message.match(/https?:\/\//g) || []).length, 0, 'the message carries no URL of its own');
 
   const claimed = publik.describeGatewayError({ status: 402, body: {
     type: 'insufficient_credit', available_micros: 0, claim_state: 'claimed',
     top_up_url: 'https://publikhq.com/dashboard/api/add', claim_url: null, add_credit_url: 'https://publikhq.com/dashboard/api/add'
   } });
-  assert.match(claimed.message, /^publik API needs credit\. \$0\.00 left\./);
-  assert.deepEqual(claimed.action, { kind: 'link', label: 'Add credit', url: 'https://publikhq.com/dashboard/api/add' });
+  // No message in the body → a local sentence that says what the link does, still one link.
+  assert.match(claimed.message, /^publik API balance is used up \(\$0\.00 left\)\. Add a plan or a pack at the link below, or use your own key in Settings\.$/);
+  assert.equal(claimed.fromResponse, false);
+  assert.deepEqual(claimed.action, { kind: 'link', label: 'Add a plan or pack', url: 'https://publikhq.com/dashboard/api/add' });
 
   // A top_up_url on a foreign origin is dropped: the message still renders, with no link.
   const hostile = publik.describeGatewayError({ status: 402, body: { type: 'insufficient_credit', top_up_url: 'https://evil.example/x' } });
@@ -289,7 +292,7 @@ test('400 unknown_model, 413, 503 and network failures; anything else falls thro
 
 test('balanceLine renders the anonymous, claimed-with-plan and claimed-no-plan forms', () => {
   assert.equal(publik.balanceLine({ connected: false }), '');
-  assert.equal(publik.balanceLine({ connected: true, claimState: 'anonymous', balanceMicros: 180000, starterMicros: 250000, wallet: { claimState: 'anonymous' } }), 'Ready · $0.18 left of $0.25 free credit');
+  assert.equal(publik.balanceLine({ connected: true, claimState: 'anonymous', balanceMicros: 180000, starterMicros: 250000, wallet: { claimState: 'anonymous' } }), 'Ready · $0.18 left of $0.25 free starter usage');
   assert.equal(publik.balanceLine({ connected: true, balanceMicros: 180000, starterMicros: 0, wallet: { claimState: 'anonymous' } }), 'Ready · $0.18 left');
   const now = Date.parse('2026-09-22T12:00:00Z');
   const plan = publik.balanceLine({ connected: true, balanceMicros: 3120000, wallet: { claimState: 'claimed', weekUsedMicros: 1200000, weekBudgetMicros: 4620000, weekResetsAt: '2026-09-25T17:04:11Z' } }, now);

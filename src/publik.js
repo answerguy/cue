@@ -46,6 +46,21 @@ const COPY = {
     accept: 'Continue with publik API',
     decline: 'Use my own key instead',
     terms: 'By continuing you agree to the publik API terms.'
+  },
+  // CONTRACT §12 (founder, 2026-09-19): the one justification for charging,
+  // from publik's lib/publik-api/why-it-costs.ts. Same sentence under the
+  // first-run card, behind the settings toggle and nowhere else — never a
+  // new pricing claim.
+  whyItCosts: 'A provider charges for every request the app makes; publik pays that bill and passes it on at half the provider\'s list price. Nothing is charged behind your back — usage only draws from a plan or pack you choose to buy.',
+  whyItCostsToggle: 'Why it costs money',
+  cta: {
+    cardTitle: 'publik API is set up',
+    starterSuffix: 'of free starter usage',      // "$0.25 of free starter usage" — the amount comes from the mint response
+    link: 'Link this computer & pick a plan',     // anonymous → claim_url
+    pickPlan: 'Pick a plan',                      // claimed, no plan → dashboard
+    managePlan: 'Manage plan',                    // claimed with a plan → dashboard
+    addPlanOrPack: 'Add a plan or pack',          // claimed → add_credit_url (§12.2)
+    later: 'Later'
   }
 };
 
@@ -294,16 +309,16 @@ function describeGatewayError({ status, body, model, retryAfter } = {}) {
         action: link('Link now', topUp)
       };
     }
-    if (err.claim_state === 'claimed') {
-      return {
-        message: `${PROVIDER_LABEL} needs credit. ${formatMicros(err.available_micros || 0)} left. Add credit to keep going, ${BYO}`,
-        action: link('Add credit', topUp)
-      };
-    }
-    return {
-      message: `${PROVIDER_LABEL} needs credit. Your free credit is used up. Link this computer to your publik account to add credit, ${BYO}`,
-      action: link('Link now', topUp)
-    };
+    // insufficient_credit (CONTRACT §12.3): the response's own message carries
+    // the justification and says what the link does; the app renders it plus
+    // exactly one link, top_up_url. Only when the body has no message does a
+    // local sentence stand in.
+    const claimed = err.claim_state === 'claimed';
+    const fallback = claimed
+      ? `${PROVIDER_LABEL} balance is used up (${formatMicros(err.available_micros || 0)} left). Add a plan or a pack at the link below, ${BYO}`
+      : `${PROVIDER_LABEL}: your free starter usage is used up. Link this computer and pick a plan at the link below, ${BYO}`;
+    const message = typeof err.message === 'string' && err.message.trim() ? err.message.trim() : fallback;
+    return { message, action: link(claimed ? 'Add a plan or pack' : 'Link this computer & pick a plan', topUp), fromResponse: message !== fallback };
   }
   if (status === 401) {
     if (type === 'key_revoked' && err.reprovision === true) {
@@ -369,7 +384,7 @@ function balanceLine(p, now = Date.now()) {
   const left = formatMicros(p.balanceMicros === null || p.balanceMicros === undefined ? w.balanceMicros : p.balanceMicros);
   if (!left) return 'Ready';
   if ((w.claimState || p.claimState) !== 'claimed') {
-    return p.starterMicros > 0 ? `Ready · ${left} left of ${formatMicros(p.starterMicros)} free credit` : `Ready · ${left} left`;
+    return p.starterMicros > 0 ? `Ready · ${left} left of ${formatMicros(p.starterMicros)} free starter usage` : `Ready · ${left} left`;
   }
   const parts = ['Linked to your publik account', `${left} left`];
   if (w.weekBudgetMicros) {
@@ -380,6 +395,105 @@ function balanceLine(p, now = Date.now()) {
     parts.push(`${formatMicros(w.weekUsedMicros)} used this week`);
   }
   return parts.join(' · ');
+}
+
+// ---- CONTRACT §12: the in-app CTA ----------------------------------------
+// Pure views over the redacted publik state (main.js publikState()). The
+// renderer paints exactly what these return, so the copy and the link rules
+// are testable without a DOM.
+
+/** "$0.25 of free starter usage" — from the mint response, never hardcoded. */
+function starterLine(p) {
+  const starter = Number(p && p.starterMicros) || 0;
+  const balance = p && p.balanceMicros !== null && p.balanceMicros !== undefined ? Number(p.balanceMicros) : null;
+  if (starter > 0) {
+    if (balance !== null && Number.isFinite(balance) && balance < starter) {
+      return `${formatMicros(balance)} left of ${formatMicros(starter)} ${COPY.cta.starterSuffix}`;
+    }
+    return `${formatMicros(starter)} ${COPY.cta.starterSuffix}`;
+  }
+  if (balance !== null && Number.isFinite(balance)) return `${formatMicros(balance)} of publik API usage available`;
+  return '';
+}
+
+/**
+ * The first-run card, shown once right after POST /installs succeeds (§12.1):
+ * (a) balance line, (b) the justification, (c) the primary button that opens
+ * claim_url — only a publikhq.com link ever becomes a button — and "Later",
+ * which keeps the free starter and changes nothing else.
+ */
+function ctaView(p) {
+  if (!p || !p.connected) return null;
+  const url = safeLink(p.claimUrl);
+  const claimed = (p.claimState || 'anonymous') === 'claimed';
+  return {
+    title: COPY.cta.cardTitle,
+    balance: starterLine(p),
+    why: COPY.whyItCosts,
+    primary: !claimed && url ? { label: COPY.cta.link, url } : null,
+    secondary: { label: COPY.cta.later }
+  };
+}
+
+/**
+ * The same button on the settings card: anonymous → "Link this computer &
+ * pick a plan" (claim_url); claimed with no plan → "Pick a plan"; claimed with
+ * a plan → "Manage plan" — both on the dashboard. Null when there is nothing
+ * safe to link to.
+ */
+function settingsCta(p) {
+  if (!p || !p.connected || p.revoked) return null;
+  const w = p.wallet || {};
+  const claimed = ((w.claimState || p.claimState) || 'anonymous') === 'claimed';
+  if (!claimed) {
+    const url = safeLink(p.claimUrl);
+    return url ? { label: COPY.cta.link, url } : null;
+  }
+  const hasPlan = !!(w.planId && w.planId !== 'none');
+  return { label: hasPlan ? COPY.cta.managePlan : COPY.cta.pickPlan, url: LINKS.dashboard };
+}
+
+const LOW_STARTER_FRACTION = 0.2;
+
+/**
+ * Below 20% of the starter left, while anonymous and on no plan: one
+ * non-blocking banner, one link (top_up_url). Null otherwise.
+ */
+function lowStarterNotice(p) {
+  if (!p || !p.connected || p.revoked) return null;
+  const w = p.wallet || {};
+  if (((w.claimState || p.claimState) || 'anonymous') === 'claimed') return null;
+  const starter = Number(p.starterMicros) || 0;
+  if (starter <= 0) return null;
+  const remaining = w.starterRemainingMicros !== null && w.starterRemainingMicros !== undefined
+    ? Number(w.starterRemainingMicros)
+    : (p.balanceMicros !== null && p.balanceMicros !== undefined ? Number(p.balanceMicros) : null);
+  if (remaining === null || !Number.isFinite(remaining) || remaining >= starter * LOW_STARTER_FRACTION) return null;
+  const url = safeLink(p.topUpUrl) || safeLink(w.topUpUrl) || safeLink(p.claimUrl);
+  return {
+    message: `${formatMicros(Math.max(0, remaining))} of your ${formatMicros(starter)} free starter usage is left. Link this computer and pick a plan to keep going, ${BYO}`,
+    action: url ? { kind: 'link', label: COPY.cta.link, url } : null,
+    remainingMicros: Math.max(0, remaining)
+  };
+}
+
+/**
+ * What publik:open may hand to the system browser: the requested link when it
+ * is on publikhq.com, else the stored fallback when that is, else nothing.
+ * A link off publikhq.com is dropped, never rewritten to a third origin.
+ */
+function resolveOpenTarget(url, fallback) {
+  return safeLink(url) || safeLink(fallback) || null;
+}
+
+/** "Later" (and the primary button): the card was seen; the key stays put. */
+function markCardSeen(store) {
+  const s = store.getSettings();
+  const before = s.apiKeys.publik;
+  store.setPublik({ cardShown: true });
+  const after = store.getSettings();
+  if (after.apiKeys.publik !== before) throw new Error('markCardSeen must not touch the key');
+  return after;
 }
 
 /**
@@ -415,7 +529,9 @@ async function provisionInstall({ build, store, device = {}, fetchImpl = fetch, 
     store.setPublik({
       apiKey: r.key, installId, keyId: r.keyId, baseUrl: r.baseUrl, claimUrl: r.claimUrl || '', claimCode: r.claimCode,
       claimState: r.claimState, starterMicros: r.starterMicros, balanceMicros: r.balanceMicros, balanceAt: Date.now(),
-      wallet: r.wallet, revoked: false, disconnected: false, lastError: ''
+      wallet: r.wallet, revoked: false, disconnected: false, lastError: '',
+      // A new starter grant must be shown on the card before it is spent (§12.4).
+      ...(r.starterMicros > 0 ? { cardShown: false } : {})
     });
     store.setSettings({ models: { publik: r.models } }); // aliases from the server win over the committed defaults
     log({ level: 'info', event: 'publik_provisioned', msg: r.keyId, context: { replayRecovered: mintedFresh } });
@@ -427,5 +543,6 @@ module.exports = {
   PUBLIK_PROVIDER, PROVIDER_LABEL, DEFAULT_BASE_URL, DEFAULT_MODELS, TIER_NAMES, LINKS, COPY, KEY_RE,
   loadBuildConfig, provision, provisionInstall, fetchWallet, revokeInstall, normalizeWallet, readGatewayHeaders,
   describeGatewayError, balanceLine, isSafePublikLink, formatMicros, formatResetTime, osName, pickModels,
+  starterLine, ctaView, settingsCta, lowStarterNotice, resolveOpenTarget, markCardSeen, LOW_STARTER_FRACTION,
   newInstallId: randomUUID
 };
