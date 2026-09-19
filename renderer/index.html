@@ -175,6 +175,13 @@
         </div>
         <div class="s-note">Local mode keeps microphone and meeting audio on this computer. It never silently falls back to a cloud transcription provider.</div>
 
+        <label class="s-label">Meeting audio <span class="s-hint">transcribe the other side of a call</span></label>
+        <div class="s-seg" id="meeting-audio-seg">
+          <button data-meeting-audio="off">Off</button>
+          <button data-meeting-audio="on">On</button>
+        </div>
+        <div class="s-note" id="meeting-audio-note"></div>
+
         <div class="whisper-card">
           <div class="whisper-runtime-row">
             <span class="s-label">whisper.cpp runtime</span>

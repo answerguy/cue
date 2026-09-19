@@ -694,6 +694,14 @@
     // capture:state handler. getDisplayMedia is async, so `if (sysStream) return` alone loses the
     // race and can open a second loopback stream that is then orphaned.
     if (sysStream || sysStarting) return;
+    // macOS: asking for meeting audio means asking for a display-capture session, and
+    // that session puts the OS screen-recording indicator on the menu bar for the whole
+    // call. Default to staying invisible; the user opts in in Settings > Audio.
+    if (isMac && !(settings && settings.meetingAudio)) {
+      cue.log('system audio: meeting audio is off on macOS -- no display-capture session opened');
+      showStatus('Meeting audio is off, so cue stays invisible. macOS shows a screen-recording indicator whenever an app captures system audio; turn Meeting audio on in Settings \u203a Audio if you want the other side transcribed.');
+      return;
+    }
     sysStarting = true;
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
       cue.log('system audio unavailable: getDisplayMedia not supported');
@@ -1274,6 +1282,15 @@
     fillAppLinkCallers();
     $('#s-status').textContent = statusText();
     // Transcription tab
+    document.querySelectorAll('#meeting-audio-seg button').forEach((button) => {
+      button.classList.toggle('on', (button.dataset.meetingAudio === 'on') === !!settings.meetingAudio);
+    });
+    const meetingAudioNote = $('#meeting-audio-note');
+    if (meetingAudioNote) {
+      meetingAudioNote.textContent = isMac
+        ? 'macOS can only capture system audio through a screen-capture session. While this is on, the menu bar shows the screen-recording indicator and Control Center lists cue under \u201cCurrently Sharing\u201d \u2014 visible to everyone you screen-share with. Off by default; your microphone, screen capture and answers are unaffected.'
+        : 'Transcribes the other participants alongside your microphone. This platform\u2019s loopback capture shows no recording indicator.';
+    }
     document.querySelectorAll('#stt-provider-seg button').forEach((button) => {
       button.classList.toggle('on', button.dataset.sttProvider === (settings.sttProvider || 'auto'));
     });
@@ -1379,6 +1396,13 @@
   document.querySelectorAll('#minimax-region-seg button').forEach((b) => b.addEventListener('click', () => {
     settings.minimaxRegion = b.dataset.region;
     document.querySelectorAll('#minimax-region-seg button').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+
+  document.querySelectorAll('#meeting-audio-seg button').forEach((button) => button.addEventListener('click', () => {
+    settings.meetingAudio = button.dataset.meetingAudio === 'on';
+    document.querySelectorAll('#meeting-audio-seg button').forEach((candidate) => {
+      candidate.classList.toggle('on', candidate === button);
+    });
   }));
 
   document.querySelectorAll('#stt-provider-seg button').forEach((button) => button.addEventListener('click', () => {

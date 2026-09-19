@@ -773,7 +773,18 @@ function launchApp() {
 
   // System-audio loopback for getDisplayMedia: hand back a screen source with 'loopback'
   // audio so the renderer can capture what's playing (Zoom/Meet) using cue's own grant.
+  //
+  // On macOS that grant is not free: the only route to system audio is a
+  // ScreenCaptureKit session over a real display, so for as long as it is held open
+  // macOS paints its screen-recording indicator on the menu bar and names cue under
+  // Control Center's "Currently Sharing" -- pixels that every screen-share viewer
+  // sees. Nothing app-side can suppress it (an audio-only grant is rejected by
+  // Chromium, and a window source lights the same indicator), so the honest answer
+  // is consent: cue never opens that session on macOS unless the user has switched
+  // Meeting audio on in Settings > Audio. This guard is the enforcement point --
+  // it holds even if some other path in the renderer calls getDisplayMedia.
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    if (isMac && !store.getSettings().meetingAudio) return callback();
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       if (!sources.length) return callback();
       const request = { video: sources[0] };
