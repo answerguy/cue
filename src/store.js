@@ -33,7 +33,7 @@ const DEFAULTS = {
     claimUrl: '',             // where "Link this computer" goes until the install is claimed
     claimCode: '',
     claimState: '',           // 'anonymous' | 'claimed' — last seen from the gateway
-    starterMicros: 0,         // granted at mint; shown as "of $X free credit"
+    starterMicros: 0,         // granted at mint; shown as "$X of free starter usage"
     balanceMicros: null,      // last known available balance (headers or GET /wallet)
     balanceAt: 0,
     wallet: null,             // last GET /wallet, normalised (src/publik.js normalizeWallet)
@@ -41,6 +41,7 @@ const DEFAULTS = {
     defaultApplied: false,    // provider was switched to publik once, automatically
     revoked: false,           // last call was 401 → Reconnect re-mints
     disconnected: false,      // 401 key_revoked with reprovision:false → user removed this computer
+    cardShown: false,         // the first-run card (CONTRACT §12.1) was shown for the current starter grant
     lastError: ''
   },
   // Tab 2: Profile

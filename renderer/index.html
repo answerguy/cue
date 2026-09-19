@@ -152,12 +152,17 @@
              renderPublikBlock() from publik:state so the copy has one source. -->
         <div id="publik-settings" class="publik-card hidden">
           <div class="publik-line" id="publik-status-note">Not connected</div>
+          <div class="publik-line warn hidden" id="publik-low-note"></div>
           <div class="s-note" id="publik-cost-note"></div>
+          <details class="publik-why" id="publik-why">
+            <summary id="publik-why-summary">Why it costs money</summary>
+            <div class="s-note" id="publik-why-text"></div>
+          </details>
           <div class="s-note" id="publik-data-note"></div>
           <div class="whisper-actions">
             <button id="publik-setup" class="s-action hidden">Set up publik API</button>
-            <button id="publik-link" class="s-action hidden">Link this computer to your publik account</button>
-            <button id="publik-add-credit" class="s-action hidden">Add credit</button>
+            <button id="publik-link" class="s-action primary hidden">Link this computer &amp; pick a plan</button>
+            <button id="publik-add-credit" class="s-action hidden">Add a plan or pack</button>
             <button id="publik-reconnect" class="s-action hidden">Reconnect</button>
             <button id="publik-pricing" class="s-action">How pricing works</button>
             <button id="publik-byo" class="s-action">Use my own key instead</button>

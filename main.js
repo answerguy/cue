@@ -518,6 +518,15 @@ async function runFeature(mode, userText) {
       send('llm:error', { message });
       return;
     }
+    // Never a silent starter (CONTRACT §12.4): the first-run card — balance,
+    // justification, "Link this computer & pick a plan" / "Later" — is shown
+    // at least once before any starter usage is spent. Normally it appears
+    // right after provisioning; this gate catches a card that was never
+    // acknowledged (e.g. an install provisioned by an earlier release).
+    if (settings.provider === publik.PUBLIK_PROVIDER && settings.apiKeys.publik && !settings.publik.cardShown) {
+      send('llm:error', { message: 'publik API is set up. Take a look at the card, then ask again.', action: { kind: 'card' } });
+      return;
+    }
 
     let imageDataUrl = null;
     if (def.needsScreen) {
@@ -626,10 +635,17 @@ function publikState() {
     disclosureAccepted: p.disclosureAccepted || 0,
     disclosureVersion: publikBuild.disclosureVersion,
     lastError: p.lastError || '',
+    cardShown: !!p.cardShown,
     copy: publik.COPY,
     links: publik.LINKS
   };
   view.line = publik.balanceLine(view);
+  // CONTRACT §12: the first-run card (shown while connected && !cardShown),
+  // the settings button, and the low-starter banner — all computed here so
+  // the renderer only paints.
+  view.card = publik.ctaView(view);
+  view.settingsCta = publik.settingsCta(view);
+  view.lowStarter = publik.lowStarterNotice(view);
   return view;
 }
 function publikPush() { send('publik:state', publikState()); }
@@ -735,11 +751,21 @@ ipcMain.handle('publik:disconnect', async () => {
   publikPush();
   return publikState();
 });
+// "Later" or the primary button on the first-run card: the card was shown for
+// this starter grant. Touches publik.cardShown only — the key stays in place
+// and the free starter is kept (§12.1).
+ipcMain.handle('publik:card-seen', () => {
+  try { publik.markCardSeen(store); } catch (e) { recordEvent({ level: 'error', event: 'publik_card_seen_failed', msg: e.message, frame: 'publik:card-seen', context: {} }); }
+  publikPush();
+  return publikState();
+});
 // The only path a gateway-supplied URL can take out of the app: publikhq.com
-// only, else the stored claim link, else the dashboard.
+// only. A link off that origin is dropped (the stored claim link stands in
+// when it is safe); nothing else is ever handed to the system browser.
 ipcMain.on('publik:open', (_e, url) => {
   const s = store.getSettings();
-  const target = publik.isSafePublikLink(url) ? url : (s.publik.claimUrl || publik.LINKS.dashboard);
+  const target = publik.resolveOpenTarget(url, s.publik.claimUrl);
+  if (!target) { recordEvent({ level: 'warn', event: 'publik_open_dropped', msg: '', frame: 'publik:open', context: {} }); return; }
   shell.openExternal(target).catch(() => {});
 });
 ipcMain.handle('capture:toggle', () => {
