@@ -237,6 +237,65 @@ test('isQuotaError: agrees with formatProviderErrorMessage on what counts as quo
   assert.equal(isQuotaError(new Error('insufficient_quota')), true);
 });
 
+// ---- Anthropic/OpenAI genuine rate limit vs. quota exhaustion --------------
+// Regression coverage for cue-quota-exhausted-429-false-positive: a plain
+// per-minute/RPM rate limit is NOT an account-exhaustion signal and must not
+// be reported to the user as "free-tier quota exhausted". Anthropic's API
+// has no separate "quota" concept at all -- every Anthropic 429 is a
+// rate_limit_error -- so before this fix an Anthropic user could NEVER avoid
+// the false "quota exhausted" message.
+
+function anthropicRateLimitError() {
+  // Shape matches @anthropic-ai/sdk's RateLimitError: status 429, with
+  // error.error holding the parsed {type:'error', error:{type:'rate_limit_error', ...}} envelope.
+  const body = { type: 'error', error: { type: 'rate_limit_error', message: 'Number of request tokens has exceeded your per-minute rate limit.' } };
+  const e = new Error(`429 ${JSON.stringify(body)}`);
+  e.status = 429;
+  e.error = body;
+  return e;
+}
+
+function openaiRateLimitExceededError() {
+  // Shape matches the openai SDK's APIError for an RPM burst on a brand-new
+  // key: code 'rate_limit_exceeded', NOT 'insufficient_quota'.
+  const body = { message: 'Rate limit reached for gpt-4o-mini on requests per min (RPM): Limit 3, Used 3, Requested 1.', type: 'requests', code: 'rate_limit_exceeded' };
+  const e = new Error(`429 ${JSON.stringify({ error: body })}`);
+  e.status = 429;
+  e.code = 'rate_limit_exceeded';
+  e.error = body;
+  return e;
+}
+
+test('isQuotaError: an Anthropic rate_limit_error (per-minute, not account exhaustion) is not quota', () => {
+  assert.equal(isQuotaError(anthropicRateLimitError()), false);
+});
+
+test('isQuotaError: an OpenAI rate_limit_exceeded burst (not insufficient_quota) is not quota', () => {
+  assert.equal(isQuotaError(openaiRateLimitExceededError()), false);
+});
+
+test('formatProviderErrorMessage: an Anthropic rate_limit_error gets its own message, never "quota exhausted"', () => {
+  const message = formatProviderErrorMessage(anthropicRateLimitError(), 'anthropic', 'claude-3-5-haiku-latest');
+  assert.doesNotMatch(message, /free-tier quota exhausted/i);
+  assert.match(message, /rate-limiting/i);
+});
+
+test('formatProviderErrorMessage: an OpenAI rate_limit_exceeded burst gets its own message, never "quota exhausted"', () => {
+  const message = formatProviderErrorMessage(openaiRateLimitExceededError(), 'openai', 'gpt-4o-mini');
+  assert.doesNotMatch(message, /free-tier quota exhausted/i);
+  assert.match(message, /rate-limiting/i);
+});
+
+test('formatProviderErrorMessage: a genuine OpenAI insufficient_quota error still shows quota-exhausted', () => {
+  const body = { message: 'You exceeded your current quota, please check your plan and billing details.', type: 'insufficient_quota', code: 'insufficient_quota' };
+  const e = new Error(`429 ${JSON.stringify({ error: body })}`);
+  e.status = 429;
+  e.code = 'insufficient_quota';
+  e.error = body;
+  const message = formatProviderErrorMessage(e, 'openai', 'gpt-4o-mini');
+  assert.match(message, /OpenAI free-tier quota exhausted/);
+});
+
 // ---- Gemini model selection / self-healing migration -----------------------
 
 function geminiSettings(overrides) {

@@ -34,15 +34,30 @@ function normalizeProviderName(provider) {
   return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
+// A genuine per-minute/RPM rate limit is NOT an account-exhaustion signal.
+// Anthropic's API has no separate "quota" concept at all -- every Anthropic
+// 429 is a rate_limit_error (its JSON envelope is {type:'error',
+// error:{type:'rate_limit_error', message}}, and SDKs expose that whole
+// envelope as error.error, so the real code lives one level deeper at
+// error.error.error.type). OpenAI's rate_limit_exceeded code is likewise a
+// burst/RPM limit distinct from its insufficient_quota ("no credit") code.
+// Neither should ever be reported to the user as quota exhaustion.
+function isRateLimitOnlyError(error) {
+  const code = error && (error.code || error.error?.code);
+  const anthropicErrorType = error && error.error && error.error.error && error.error.error.type;
+  return anthropicErrorType === 'rate_limit_error' || code === 'rate_limit_exceeded';
+}
+
 // Pulled out so both the LLM and STT error paths (llm.js and stt.js) agree on
 // what counts as a rate-limit/quota failure instead of drifting independently.
 function isQuotaError(error) {
+  if (isRateLimitOnlyError(error)) return false;
   const status = error && (error.status || error.statusCode || error.response?.status);
   const code = error && (error.code || error.error?.code);
   const rawMessage = (error && (error.message || String(error))) || '';
   const text = `${rawMessage} ${status || ''} ${code || ''}`.toLowerCase();
-  return status === 429 || code === 429 || code === 'insufficient_quota' || code === 'rate_limit_exceeded' ||
-    code === 'RESOURCE_EXHAUSTED' || /quota|billing|rate limit|exceeded your current quota|resource_exhausted|too many requests/i.test(text);
+  return status === 429 || code === 429 || code === 'insufficient_quota' ||
+    code === 'RESOURCE_EXHAUSTED' || /quota|billing|exceeded your current quota|resource_exhausted/i.test(text);
 }
 
 function isNotFoundError(error) {
@@ -78,6 +93,12 @@ function formatProviderErrorMessage(error, provider, model) {
     const retrySeconds = extractRetryDelaySeconds(rawMessage);
     const waitHint = retrySeconds ? ` Wait about ${formatRetryWait(retrySeconds)}` : ' Wait a moment';
     return `${label} free-tier quota exhausted (429 Too Many Requests).${waitHint} and try again, or add billing to your ${label} account. You can also switch providers or models in Settings.`;
+  }
+
+  if (isRateLimitOnlyError(error)) {
+    const retrySeconds = extractRetryDelaySeconds(rawMessage);
+    const waitHint = retrySeconds ? ` Wait about ${formatRetryWait(retrySeconds)}` : ' Wait a moment';
+    return `${label} is rate-limiting requests right now (429 Too Many Requests).${waitHint} and try again — this is a temporary per-minute/request limit, not your account running out of credit.`;
   }
 
   if (isNotFoundError(error)) {
