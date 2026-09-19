@@ -1,0 +1,29 @@
+name: bugfix-lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_whisper:
+        description: "Set CUE_BUNDLE_WHISPER=1 for the build (opt-in bundling path; used only as a sensitivity/negative-control run, never the default reproduction)"
+        required: false
+        default: "0"
+
+jobs:
+  oracle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run oracle (cue-windows-whisper-runtime-missing)
+        shell: pwsh
+        env:
+          # after-pack.js checks `if (!process.env.CUE_BUNDLE_WHISPER)`, and the
+          # string "0" is truthy in JS -- so the default/off case must leave the
+          # var genuinely empty (falsy), not set it to the literal text "0".
+          CUE_BUNDLE_WHISPER: ${{ github.event.inputs.bundle_whisper == '1' && '1' || '' }}
+        run: |
+          .\scripts\bugfix-lab\cue-windows-whisper-runtime-missing.ps1
