@@ -10,9 +10,16 @@ const CUSTOM_PROVIDER = 'custom';
 // Google's own SDK examples standardize on and is documented as free-tier
 // available, so it is the single default used everywhere in this file.
 const CURRENT_GEMINI_DEFAULT = 'gemini-2.5-flash';
+// claude-3-5-haiku-latest / claude-3-5-sonnet-latest were retired by Anthropic
+// (confirmed absent from GET https://api.anthropic.com/v1/models as of Sep 19
+// 2026 — every claude-2.x and claude-3.x id 404s with not_found_error).
+// claude-haiku-4-5-20251001 / claude-sonnet-4-5-20250929 are current and were
+// live-verified with a real request before shipping this default.
+const CURRENT_ANTHROPIC_DEFAULT_FAST = 'claude-haiku-4-5-20251001';
+const CURRENT_ANTHROPIC_DEFAULT_SMART = 'claude-sonnet-4-5-20250929';
 const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
-  anthropic: 'claude-3-5-haiku-latest',
+  anthropic: CURRENT_ANTHROPIC_DEFAULT_FAST,
   gemini: CURRENT_GEMINI_DEFAULT,
   ollama: 'llama3.2',
   groq: 'llama-3.1-8b-instant',
@@ -25,6 +32,13 @@ const DEFAULT_MODELS = {
 // createLLM migrates them at read time rather than only fixing the default —
 // otherwise an existing user would keep re-hitting the same 404 forever.
 const DEAD_GEMINI_MODEL_RE = /^gemini-(1\.0|1\.5|2\.0)(?:-|$)/i;
+
+// Same self-heal, for Anthropic: matches every retired claude-2.x/claude-3.x
+// id (including the "-latest" aliases), so a settings file saved back when
+// claude-3-5-haiku-latest/claude-3-5-sonnet-latest were the shipped defaults
+// (store.js's DEFAULTS.models.anthropic, before this fix) gets migrated to a
+// live model on next read instead of permanently re-hitting the same 404.
+const DEAD_ANTHROPIC_MODEL_RE = /^claude-(2(?:\.\d+)?(?:-|$)|3-)/i;
 
 const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax' };
 
@@ -304,6 +318,9 @@ function createLLM(settings) {
   if (provider === 'gemini' && DEAD_GEMINI_MODEL_RE.test(model || '')) {
     model = CURRENT_GEMINI_DEFAULT;
   }
+  if (provider === 'anthropic' && DEAD_ANTHROPIC_MODEL_RE.test(model || '')) {
+    model = tier === 'smart' ? CURRENT_ANTHROPIC_DEFAULT_SMART : CURRENT_ANTHROPIC_DEFAULT_FAST;
+  }
   if (!model) model = DEFAULT_MODELS[provider] || '';
   const minimaxRegion = settings.minimaxRegion || 'global_en';
   const endpoint = settings.azureEndpoint || '';
@@ -356,4 +373,11 @@ function createLLM(settings) {
   };
 }
 
-module.exports = { createLLM, formatProviderErrorMessage, isQuotaError, CURRENT_GEMINI_DEFAULT };
+module.exports = {
+  createLLM,
+  formatProviderErrorMessage,
+  isQuotaError,
+  CURRENT_GEMINI_DEFAULT,
+  CURRENT_ANTHROPIC_DEFAULT_FAST,
+  CURRENT_ANTHROPIC_DEFAULT_SMART
+};

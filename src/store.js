@@ -44,7 +44,14 @@ const DEFAULTS = {
   windowY: null,
   models: {
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
-    anthropic: { fast: 'claude-3-5-haiku-latest', smart: 'claude-3-5-sonnet-latest' },
+    // Kept in sync with CURRENT_ANTHROPIC_DEFAULT_FAST/_SMART in src/llm.js —
+    // claude-3-5-haiku-latest/claude-3-5-sonnet-latest (the previous defaults
+    // here) were retired by Anthropic and 404 on every request. This is the
+    // block createLLM() actually reads by default (settings.models[provider],
+    // not src/llm.js's DEFAULT_MODELS, which only backstops a missing entry) —
+    // llm.js's DEAD_ANTHROPIC_MODEL_RE self-heal additionally migrates any
+    // settings file already saved with the old dead ids.
+    anthropic: { fast: 'claude-haiku-4-5-20251001', smart: 'claude-sonnet-4-5-20250929' },
     // Kept in sync with CURRENT_GEMINI_DEFAULT in src/llm.js — gemini-2.0-flash
     // (the previous default here) was retired by Google on 2026-03-03 and 404s
     // on every request. gemini-2.5-flash is current and free-tier available.
