@@ -26,7 +26,7 @@ Module._load = function loadWithOpenAIStub(request, parent, isMain) {
   return originalModuleLoad.call(this, request, parent, isMain);
 };
 
-const { createLLM, formatProviderErrorMessage, isQuotaError, CURRENT_GEMINI_DEFAULT } = require('../src/llm');
+const { createLLM, formatProviderErrorMessage, isQuotaError, isRateLimitError, CURRENT_GEMINI_DEFAULT } = require('../src/llm');
 
 test.after(() => {
   Module._load = originalModuleLoad;
@@ -232,7 +232,13 @@ test('formatProviderErrorMessage: an unrecognized error passes its raw message t
 });
 
 test('isQuotaError: agrees with formatProviderErrorMessage on what counts as quota', () => {
-  assert.equal(isQuotaError(geminiApiError({ status: 429, body: {} })), true);
+  // A 429 whose body says nothing about quota is a rate limit, not exhaustion
+  // (cue-quota-exhausted-429-false-positive): it used to be classified as quota
+  // purely because the status was 429, which is what produced the false
+  // "free-tier quota exhausted" message on accounts that had plenty of credit.
+  assert.equal(isQuotaError(geminiApiError({ status: 429, body: {} })), false);
+  assert.equal(isRateLimitError(geminiApiError({ status: 429, body: {} })), true);
+  assert.equal(isQuotaError(geminiApiError({ status: 429, body: { error: { status: 'RESOURCE_EXHAUSTED' } } })), true);
   assert.equal(isQuotaError(geminiApiError({ status: 404, body: {} })), false);
   assert.equal(isQuotaError(new Error('insufficient_quota')), true);
 });
@@ -339,4 +345,34 @@ test('createLLM: leaves a user-chosen current Gemini model alone', () => {
     models: { gemini: { fast: 'gemini-3.5-flash', smart: 'gemini-3.5-flash' } }
   }));
   assert.equal(llm.model, 'gemini-3.5-flash');
+});
+
+// A 429 carrying NO quota signal at all is the shape most providers send under
+// load, and it is the smallest input that used to produce the false message
+// (REGION.json's minimal_repro for cue-quota-exhausted-429-false-positive).
+test('formatProviderErrorMessage: a bare 429 with no upstream body is a rate limit, not quota exhaustion', () => {
+  const message = formatProviderErrorMessage({ status: 429 }, 'anthropic', 'claude-3-5-haiku-latest');
+  assert.doesNotMatch(message, /free-tier quota exhausted/i);
+  assert.match(message, /rate-limiting/i);
+  assert.equal(isQuotaError({ status: 429 }), false);
+});
+
+test('formatProviderErrorMessage: an Anthropic 429 with a non-rate-limit body is still never quota exhaustion', () => {
+  // Anthropic has no quota concept, so no Anthropic 429 body can justify the
+  // quota copy — not overloaded_error, not an unrecognized future type.
+  const body = { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } };
+  const e = new Error(`429 ${JSON.stringify(body)}`);
+  e.status = 429;
+  e.error = body;
+  const message = formatProviderErrorMessage(e, 'anthropic');
+  assert.doesNotMatch(message, /free-tier quota exhausted/i);
+  assert.match(message, /rate-limiting/i);
+});
+
+test('isRateLimitError: a genuine quota error is never also a rate limit, and non-429s are neither', () => {
+  const quota = new Error('429 You exceeded your current quota, please check your plan and billing details.');
+  assert.equal(isQuotaError(quota), true);
+  assert.equal(isRateLimitError(quota), false);
+  assert.equal(isRateLimitError(new Error('socket hang up')), false);
+  assert.equal(isRateLimitError(geminiApiError({ status: 404, body: {} })), false);
 });
