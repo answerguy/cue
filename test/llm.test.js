@@ -366,10 +366,10 @@ test('formatProviderErrorMessage: publik 402 → Error with a single link action
   assert.equal(isQuotaError(err), true, 'precondition: the generic classifier WOULD misfile this as a quota error');
   const out = formatProviderErrorMessage(err, 'publik', 'publik-fast');
   assert.ok(out instanceof Error);
-  assert.deepEqual(out.action, { kind: 'link', label: 'Link now', url: 'https://publikhq.com/claim/abc' });
-  assert.match(out.message, /publik API needs credit/);
+  assert.deepEqual(out.action, { kind: 'link', label: 'Link this computer & pick a plan', url: 'https://publikhq.com/claim/abc' });
+  // CONTRACT §12.3: the response's own message is what the banner shows.
+  assert.equal(out.message, 'Not enough publik credit for this request. Check billing.');
   assert.doesNotMatch(out.message, /free-tier quota|add billing/);
-  assert.match(out.message, /or use your own key in Settings\.$/);
 });
 
 test('formatProviderErrorMessage: publik 401 key_revoked → reprovision / reconnect; 429 daily cap; 400 unknown_model', () => {
@@ -399,8 +399,10 @@ test('llm.stream on publik rethrows the structured error with its action', async
   fakeCreateError = sdkError(402, { type: 'insufficient_credit', claim_state: 'claimed', top_up_url: 'https://publikhq.com/dashboard/api/add', available_micros: 0 });
   const llm = createLLM(publikSettings());
   await assert.rejects(llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} }), (e) => {
-    assert.equal(e.action.label, 'Add credit');
-    assert.match(e.message, /\$0\.00 left/);
+    assert.equal(e.action.label, 'Add a plan or pack');
+    assert.equal(e.action.url, 'https://publikhq.com/dashboard/api/add');
+    // No message in the body → the local sentence that says what the link does.
+    assert.match(e.message, /^publik API balance is used up \(\$0\.00 left\)\. Add a plan or a pack at the link below, or use your own key in Settings\.$/);
     return true;
   });
 });
