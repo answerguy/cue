@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('cue', {
   publikReconnect: () => ipcRenderer.invoke('publik:reconnect'),
   publikRefresh: () => ipcRenderer.invoke('publik:refresh'),
   publikDisconnect: () => ipcRenderer.invoke('publik:disconnect'),
+  publikCardSeen: () => ipcRenderer.invoke('publik:card-seen'),
   publikOpen: (url) => ipcRenderer.send('publik:open', url),
   appLinkState: () => ipcRenderer.invoke('applink:state'),
   appLinkRevoke: (callerId) => ipcRenderer.invoke('applink:revoke', callerId),

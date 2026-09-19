@@ -558,6 +558,20 @@ button:focus { outline: none; }
 #cue-status button { margin-left: 10px; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(60,131,245,0.40); background: rgba(60,131,245,0.14); color: #cfe0ff; font: 600 11.5px var(--font); cursor: pointer; }
 #cue-status button:hover { background: rgba(60,131,245,0.24); }
 #onboard.dialog .ob-dots, #onboard.dialog .ob-actions { display: none; }
+#onboard.card .ob-actions { display: none; }
+/* First-run card (CONTRACT §12.1): balance line, justification, primary CTA */
+.ob-body .publik-card-balance { font-size: 22px; font-weight: 700; color: #fff; letter-spacing: -0.01em; margin: 2px 0 10px; text-align: center; }
+.ob-body .publik-card-why { color: var(--tx-2); }
+.ob-buttons button.ob-cta { border-color: transparent; background: var(--accent); color: #fff; }
+.ob-buttons button.ob-cta:hover { filter: brightness(1.08); background: var(--accent); }
+.publik-card .s-action.primary { border-color: transparent; background: var(--accent); color: #fff; }
+.publik-card .s-action.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); color: #fff; }
+.publik-why { margin: 0; }
+.publik-why summary { cursor: pointer; color: #9dc0ff; font-size: 12px; font-weight: 600; list-style: none; }
+.publik-why summary::-webkit-details-marker { display: none; }
+.publik-why summary::before { content: '▸ '; }
+.publik-why[open] summary::before { content: '▾ '; }
+.publik-why .s-note { margin-top: 6px; }
 .ob-body .ob-fine { display: block; margin-top: 10px; color: var(--tx-mut); font-size: 11.5px; }
 .ob-body .ob-fine a { color: #9dc0ff; text-decoration: underline; cursor: pointer; }
 

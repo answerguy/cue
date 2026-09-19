@@ -1105,6 +1105,7 @@
     aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
     // publik errors carry one action: the renderer's markdown emits no anchors,
     // so a link needs a real button (same pattern as the mic banner).
+    if (action && action.kind === 'card') { showPublikCard(); return; }
     if (action && action.kind) showStatus(message, publikActionButton(action));
   });
   cue.on('transcript', ({ channel, text }) => {
@@ -1275,10 +1276,23 @@
     } else if (action.kind === 'disclosure') {
       btn.textContent = 'Set up publik API';
       btn.addEventListener('click', () => showPublikDisclosure());
+    } else if (action.kind === 'card') {
+      btn.textContent = 'Show the publik API card';
+      btn.addEventListener('click', () => showPublikCard());
     } else {
       return null;
     }
     return btn;
+  }
+
+  // Low starter (CONTRACT §12 / task 3): one non-blocking banner with one
+  // link, once per key while it sits below the 20% line — not on every push.
+  let lowStarterNoticedFor = null;
+  function maybeShowLowStarter(p) {
+    if (!p || !p.lowStarter) { lowStarterNoticedFor = null; return; }
+    if (lowStarterNoticedFor === p.keyId) return;
+    lowStarterNoticedFor = p.keyId;
+    showStatus(p.lowStarter.message, publikActionButton(p.lowStarter.action));
   }
 
   function selectByoProvider() {
@@ -1311,22 +1325,33 @@
       line = 'Connecting…';
     }
     note.textContent = line;
+    // Low starter: the same sentence the banner used, kept on the card.
+    const low = $('#publik-low-note');
+    low.textContent = p.lowStarter ? p.lowStarter.message : '';
+    low.classList.toggle('hidden', !p.lowStarter);
+    // "Why it costs money" — the one justification sentence (CONTRACT §12).
+    $('#publik-why-summary').textContent = p.copy.whyItCostsToggle;
+    $('#publik-why-text').textContent = p.copy.whyItCosts;
+    // The primary button (CONTRACT §12.2): "Link this computer & pick a plan"
+    // while anonymous, "Pick a plan" / "Manage plan" once claimed.
+    const cta = p.settingsCta;
+    $('#publik-link').textContent = cta ? cta.label : '';
     show('#publik-setup', !p.connected && !p.disclosureAccepted);
     show('#publik-reconnect', p.disclosureAccepted && (!p.connected || p.revoked));
-    show('#publik-link', p.connected && !p.revoked && p.claimState !== 'claimed' && !!p.claimUrl);
+    show('#publik-link', !!cta);
     show('#publik-add-credit', p.connected && !p.revoked && p.claimState === 'claimed' && !!p.addCreditUrl);
     show('#publik-disconnect', p.connected && !p.revoked);
     $('#provider-publik').classList.toggle('hidden', !p.available);
     if (settings.provider === 'publik') $('#s-status').textContent = statusText();
   }
   $('#publik-setup').addEventListener('click', () => showPublikDisclosure());
-  $('#publik-link').addEventListener('click', () => cue.publikOpen(publikState && publikState.claimUrl));
+  $('#publik-link').addEventListener('click', () => { const cta = publikState && publikState.settingsCta; if (cta) cue.publikOpen(cta.url); });
   $('#publik-add-credit').addEventListener('click', () => cue.publikOpen(publikState && publikState.addCreditUrl));
   $('#publik-pricing').addEventListener('click', () => cue.publikOpen(publikState ? publikState.links.pricing : ''));
   $('#publik-reconnect').addEventListener('click', async () => { $('#publik-reconnect').disabled = true; try { publikState = await cue.publikReconnect(); } finally { $('#publik-reconnect').disabled = false; } renderPublikBlock(); });
   $('#publik-disconnect').addEventListener('click', async () => { publikState = await cue.publikDisconnect(); renderPublikBlock(); });
   $('#publik-byo').addEventListener('click', selectByoProvider);
-  cue.on('publik:state', (state) => { publikState = state; renderPublikBlock(); });
+  cue.on('publik:state', (state) => { publikState = state; renderPublikBlock(); maybeShowLowStarter(state); });
 
   function fillSettings() {
     // Keys tab
@@ -1775,9 +1800,43 @@
       body: () => `${esc(c.intro)}<br><br><strong>Cost.</strong> ${esc(c.cost)}<br><br><strong>Where your prompts go.</strong> ${esc(c.dataPath)}` +
         `<span class="ob-fine">${esc(c.terms)} <a id="ob-publik-terms">publik API terms</a></span>`,
       buttons: [
-        { label: c.accept, action: async () => { publikState = await cue.publikAcceptDisclosure(); settings.provider = 'publik'; renderPublikBlock(); if (obDialog) { hideOnboardDialog(); } else { obIndex++; renderOnboard(); } } },
+        { label: c.accept, action: async () => {
+          const btns = $('#ob-buttons').querySelectorAll('button'); btns.forEach((b) => { b.disabled = true; });
+          publikState = await cue.publikAcceptDisclosure(); settings.provider = 'publik'; renderPublikBlock();
+          // CONTRACT §12.1: the card comes right after POST /installs succeeds,
+          // with the real balance on it. Nothing is spent before it is seen.
+          if (publikState.card) { showPublikCard(); return; }
+          if (obDialog) { hideOnboardDialog(); } else { obIndex++; renderOnboard(); }
+        } },
         { label: c.decline, action: () => { if (obDialog) hideOnboardDialog(); else finishOnboard(); openSettings(); selectByoProvider(); } }
       ]
+    };
+  }
+  // The first-run card (CONTRACT §12.1), in this order: (a) the balance line
+  // from the mint response, (b) the one-sentence justification, (c) the
+  // primary button that opens claim_url — and "Later", which keeps the free
+  // starter. Everything is painted from publikState.card (src/publik.js
+  // ctaView), so the copy has one source and the link rule is tested there.
+  function publikCardStep() {
+    const card = publikState.card;
+    const done = async () => {
+      publikState = await cue.publikCardSeen(); renderPublikBlock();
+      const idx = OB_STEPS.findIndex((st) => st.publikCard);
+      if (idx >= 0) OB_STEPS.splice(idx, 1);
+      if (obDialog) { hideOnboardDialog(); return; }
+      if (obIndex >= OB_STEPS.length) finishOnboard(); else renderOnboard();
+    };
+    const buttons = [];
+    if (card.primary) {
+      buttons.push({ label: card.primary.label, primary: true, action: async () => { cue.publikOpen(card.primary.url); await done(); } });
+    }
+    buttons.push({ label: card.secondary.label, action: done });
+    return {
+      icon: '✅',
+      title: card.title,
+      body: () => `<div class="publik-card-balance">${esc(card.balance)}</div><div class="publik-card-why">${esc(card.why)}</div>`,
+      buttons,
+      publikCard: true
     };
   }
   function esc(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
@@ -1791,6 +1850,26 @@
     obIndex = idx; renderOnboard();
     obScrim.classList.remove('hidden'); setIgnore(false);
   }
+  // Show the card: inside onboarding it becomes the next step; afterwards it
+  // is a dialog of its own (also reached from the "never a silent starter"
+  // gate in main.js runFeature).
+  function showPublikCard() {
+    if (!publikState || !publikState.card) return;
+    const existing = OB_STEPS.findIndex((st) => st.publikCard);
+    if (existing >= 0) OB_STEPS.splice(existing, 1);
+    const inOnboarding = !obScrim.classList.contains('hidden') && !obDialog;
+    if (inOnboarding) {
+      const idx = OB_STEPS.findIndex((st) => st.publik);
+      OB_STEPS.splice(idx + 1, 0, publikCardStep());
+      obIndex = idx + 1; renderOnboard();
+      return;
+    }
+    OB_STEPS.push(publikCardStep());
+    obDialog = true;
+    $('#onboard').classList.add('dialog');
+    obIndex = OB_STEPS.length - 1; renderOnboard();
+    obScrim.classList.remove('hidden'); setIgnore(false);
+  }
   function hideOnboardDialog() { obDialog = false; $('#onboard').classList.remove('dialog'); obScrim.classList.add('hidden'); }
 
   let obIndex = 0;
@@ -1802,7 +1881,10 @@
     const termsLink = $('#ob-publik-terms');
     if (termsLink) termsLink.addEventListener('click', () => cue.publikOpen(publikState.links.terms));
     const btns = $('#ob-buttons'); btns.innerHTML = '';
-    (step.buttons || []).forEach((b) => { const el = document.createElement('button'); el.textContent = b.label; el.addEventListener('click', b.action); btns.appendChild(el); });
+    (step.buttons || []).forEach((b) => { const el = document.createElement('button'); el.textContent = b.label; if (b.primary) el.classList.add('ob-cta'); el.addEventListener('click', b.action); btns.appendChild(el); });
+    // The publik card has its own two buttons and no Next/Skip: leaving it any
+    // other way would spend the starter without the card being acknowledged.
+    $('#onboard').classList.toggle('card', !!step.publikCard);
     const dots = $('#ob-dots'); dots.innerHTML = '';
     OB_STEPS.forEach((_, i) => { const d = document.createElement('span'); if (i === obIndex) d.className = 'on'; dots.appendChild(d); });
     $('#ob-back').style.visibility = obIndex === 0 ? 'hidden' : 'visible';
