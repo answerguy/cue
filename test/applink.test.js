@@ -137,3 +137,13 @@ test('answers Iris over the link', async (t) => {
   const wire = JSON.stringify(bundle);
   assert.ok(!wire.includes('salary') && !wire.includes('sk-proj-'), 'diagnostics bundle leaked private data');
 });
+
+test('a publik API key is reported as a boolean only — the pk_ value never leaves the process', () => {
+  const key = 'pk_live_' + 'a'.repeat(12) + '_' + 'b'.repeat(32);
+  const state = describeState(snapshot({
+    settings: { ...SETTINGS, provider: 'publik', apiKeys: { ...SETTINGS.apiKeys, publik: key }, publik: { keyId: 'a'.repeat(12), claimUrl: 'https://publikhq.com/claim/X' } }
+  }));
+  assert.equal(state.hasKey.publik, true);
+  assert.equal(state.provider, 'publik');
+  assert.doesNotMatch(JSON.stringify(state), /pk_/);
+});

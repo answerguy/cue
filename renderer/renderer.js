@@ -23,6 +23,9 @@
 
   // ---- state -------------------------------------------------------------
   let settings = null;
+  // Redacted view of the publik API state (never the key), from main via
+  // cue.publikState() at boot and the publik:state push thereafter.
+  let publikState = null;
   let whisperOverview = null;
   let busy = false;
   let aiEl = null;       // current streaming <div class="ai-text">
@@ -1097,9 +1100,12 @@
   });
   cue.on('llm:token', ({ text }) => appendToken(text));
   cue.on('llm:done', () => { finalizeAi(); setBusy(false); });
-  cue.on('llm:error', ({ message }) => {
+  cue.on('llm:error', ({ message, action }) => {
     if (!aiEl) startAi(true);
     aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
+    // publik errors carry one action: the renderer's markdown emits no anchors,
+    // so a link needs a real button (same pattern as the mic banner).
+    if (action && action.kind) showStatus(message, publikActionButton(action));
   });
   cue.on('transcript', ({ channel, text }) => {
     if (!text || text.trim().length < 2 || /^[?!.,;:\-…]+$/.test(text.trim())) return;
@@ -1114,7 +1120,7 @@
     }
   });
   let statusTimer = null;
-  function showStatus(message) {
+  function showStatus(message, button) {
     let el = document.getElementById('cue-status');
     if (!el) {
       el = document.createElement('div');
@@ -1131,9 +1137,10 @@
       }
     }
     el.textContent = message;
+    if (button) el.appendChild(button);
     el.classList.add('show');
     clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => el.classList.remove('show'), 11000);
+    statusTimer = setTimeout(() => el.classList.remove('show'), button ? 30000 : 11000);
   }
   cue.on('status', ({ message }) => {
     cue.log('[status] ' + message);
@@ -1251,7 +1258,75 @@
 
   function updateCustomProviderFields() {
     $('#custom-endpoint-settings').classList.toggle('hidden', settings.provider !== 'custom');
+    $('#publik-settings').classList.toggle('hidden', settings.provider !== 'publik');
+    renderPublikBlock();
   }
+
+  // ---- publik API (packaged-build default) --------------------------------
+  function publikActionButton(action) {
+    if (!action || !action.kind) return null;
+    const btn = document.createElement('button');
+    if (action.kind === 'link' && action.url) {
+      btn.textContent = action.label || 'Open publikhq.com';
+      btn.addEventListener('click', () => cue.publikOpen(action.url));
+    } else if (action.kind === 'reconnect') {
+      btn.textContent = action.label || 'Reconnect';
+      btn.addEventListener('click', async () => { btn.disabled = true; publikState = await cue.publikReconnect(); renderPublikBlock(); });
+    } else if (action.kind === 'disclosure') {
+      btn.textContent = 'Set up publik API';
+      btn.addEventListener('click', () => showPublikDisclosure());
+    } else {
+      return null;
+    }
+    return btn;
+  }
+
+  function selectByoProvider() {
+    const openaiBtn = document.querySelector('#provider-seg button[data-provider="openai"]');
+    if (openaiBtn) openaiBtn.click();
+    $('#key-openai').focus();
+  }
+
+  function renderPublikBlock() {
+    const p = publikState;
+    const block = $('#publik-settings');
+    if (!block || !p || !settings) return;
+    const show = (id, on) => $(id).classList.toggle('hidden', !on);
+    $('#publik-cost-note').textContent = p.copy.cost;
+    $('#publik-data-note').textContent = p.copy.dataPath;
+    const note = $('#publik-status-note');
+    note.classList.remove('warn');
+    let line;
+    if (p.connected && p.revoked) {
+      line = 'publik API key was revoked. Reconnect to set this computer up again.'; note.classList.add('warn');
+    } else if (p.connected) {
+      line = `Connected · key ${p.keyId} · ${p.line || 'Ready'}`;
+    } else if (p.disconnected) {
+      line = 'publik API is disconnected. This computer was removed from your publik account.'; note.classList.add('warn');
+    } else if (!p.disclosureAccepted) {
+      line = 'Not set up yet — no account or key needed to start.';
+    } else if (p.lastError) {
+      line = p.lastError; note.classList.add('warn');
+    } else {
+      line = 'Connecting…';
+    }
+    note.textContent = line;
+    show('#publik-setup', !p.connected && !p.disclosureAccepted);
+    show('#publik-reconnect', p.disclosureAccepted && (!p.connected || p.revoked));
+    show('#publik-link', p.connected && !p.revoked && p.claimState !== 'claimed' && !!p.claimUrl);
+    show('#publik-add-credit', p.connected && !p.revoked && p.claimState === 'claimed' && !!p.addCreditUrl);
+    show('#publik-disconnect', p.connected && !p.revoked);
+    $('#provider-publik').classList.toggle('hidden', !p.available);
+    if (settings.provider === 'publik') $('#s-status').textContent = statusText();
+  }
+  $('#publik-setup').addEventListener('click', () => showPublikDisclosure());
+  $('#publik-link').addEventListener('click', () => cue.publikOpen(publikState && publikState.claimUrl));
+  $('#publik-add-credit').addEventListener('click', () => cue.publikOpen(publikState && publikState.addCreditUrl));
+  $('#publik-pricing').addEventListener('click', () => cue.publikOpen(publikState ? publikState.links.pricing : ''));
+  $('#publik-reconnect').addEventListener('click', async () => { $('#publik-reconnect').disabled = true; try { publikState = await cue.publikReconnect(); } finally { $('#publik-reconnect').disabled = false; } renderPublikBlock(); });
+  $('#publik-disconnect').addEventListener('click', async () => { publikState = await cue.publikDisconnect(); renderPublikBlock(); });
+  $('#publik-byo').addEventListener('click', selectByoProvider);
+  cue.on('publik:state', (state) => { publikState = state; renderPublikBlock(); });
 
   function fillSettings() {
     // Keys tab
@@ -1351,8 +1426,11 @@
 
   function statusText() {
     const k = settings.apiKeys;
-    const labels = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepgram: 'Deepgram', custom: 'Custom', ollama: 'Ollama', groq: 'Groq', minimax: 'MiniMax', azure: 'Azure AI Foundry' };
+    const labels = { publik: 'publik API', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepgram: 'Deepgram', custom: 'Custom', ollama: 'Ollama', groq: 'Groq', minimax: 'MiniMax', azure: 'Azure AI Foundry' };
     const has = Object.keys(labels).filter((p) => k[p]).map((p) => labels[p]);
+    const publikPart = settings.provider === 'publik' && publikState
+      ? ` · ${publikState.connected ? (publikState.balanceLabel ? `balance ${publikState.balanceLabel}` : 'connected') : 'not set up'}`
+      : '';
     // 'auto' walks the same fallback chain src/stt.js builds; an explicit choice
     // is reported as-is so the status line matches what will actually be used.
     const selectedSttProvider = settings.sttProvider || 'auto';
@@ -1364,7 +1442,7 @@
       settings.starStories ? '✓ stories' : null,
       settings.salaryTarget ? '✓ salary' : null
     ].filter(Boolean);
-    return `${labels[settings.provider] || settings.provider} · STT: ${stt}` + (ready.length ? ' · ' + ready.join(' · ') : '');
+    return `${labels[settings.provider] || settings.provider}${publikPart} · STT: ${stt}` + (ready.length ? ' · ' + ready.join(' · ') : '');
   }
 
   document.querySelectorAll('#provider-seg button').forEach((b) => b.addEventListener('click', () => {
@@ -1686,12 +1764,43 @@
       body: 'How to use cue:<ul><li>' + assistShortcut + ' — <strong>Assist</strong> with whatever\'s on screen or being said</li><li>' + solveShortcut + ' — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Quit with ' + quitShortcut + '.'
     }
   ];
+  // First-run disclosure (R21 §4.3): two disclosures — cost and data path —
+  // and a visible "use my own key" branch. Copy comes from main (one source).
+  // Only "Continue" mints a key; Next/Skip never provision.
+  function publikStep() {
+    const c = publikState.copy.disclosure;
+    return {
+      icon: '🪙',
+      title: c.title,
+      body: () => `${esc(c.intro)}<br><br><strong>Cost.</strong> ${esc(c.cost)}<br><br><strong>Where your prompts go.</strong> ${esc(c.dataPath)}` +
+        `<span class="ob-fine">${esc(c.terms)} <a id="ob-publik-terms">publik API terms</a></span>`,
+      buttons: [
+        { label: c.accept, action: async () => { publikState = await cue.publikAcceptDisclosure(); settings.provider = 'publik'; renderPublikBlock(); if (obDialog) { hideOnboardDialog(); } else { obIndex++; renderOnboard(); } } },
+        { label: c.decline, action: () => { if (obDialog) hideOnboardDialog(); else finishOnboard(); openSettings(); selectByoProvider(); } }
+      ]
+    };
+  }
+  function esc(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
+  let obDialog = false; // true while the publik card is shown alone, after onboarding
+  function showPublikDisclosure() {
+    if (!publikState || !publikState.available) return;
+    const idx = OB_STEPS.findIndex((st) => st.publik);
+    if (idx < 0) return;
+    obDialog = true;
+    $('#onboard').classList.add('dialog');
+    obIndex = idx; renderOnboard();
+    obScrim.classList.remove('hidden'); setIgnore(false);
+  }
+  function hideOnboardDialog() { obDialog = false; $('#onboard').classList.remove('dialog'); obScrim.classList.add('hidden'); }
+
   let obIndex = 0;
   function renderOnboard() {
     const step = OB_STEPS[obIndex];
     $('#ob-icon').textContent = step.icon;
     $('#ob-title').textContent = step.title;
-    $('#ob-body').innerHTML = step.body;
+    $('#ob-body').innerHTML = typeof step.body === 'function' ? step.body() : step.body;
+    const termsLink = $('#ob-publik-terms');
+    if (termsLink) termsLink.addEventListener('click', () => cue.publikOpen(publikState.links.terms));
     const btns = $('#ob-buttons'); btns.innerHTML = '';
     (step.buttons || []).forEach((b) => { const el = document.createElement('button'); el.textContent = b.label; el.addEventListener('click', b.action); btns.appendChild(el); });
     const dots = $('#ob-dots'); dots.innerHTML = '';
@@ -1700,8 +1809,9 @@
     $('#ob-next').textContent = obIndex === OB_STEPS.length - 1 ? 'Done' : 'Next';
     $('#ob-skip').style.visibility = obIndex === OB_STEPS.length - 1 ? 'hidden' : 'visible';
   }
-  function showOnboard() { obIndex = 0; renderOnboard(); obScrim.classList.remove('hidden'); setIgnore(false); }
+  function showOnboard() { obDialog = false; $('#onboard').classList.remove('dialog'); obIndex = 0; renderOnboard(); obScrim.classList.remove('hidden'); setIgnore(false); }
   async function finishOnboard() {
+    if (obDialog) { hideOnboardDialog(); return; }
     obScrim.classList.add('hidden');
     if (settings && !settings.onboarded) { settings.onboarded = true; await cue.settingsSet({ onboarded: true }); }
   }
@@ -1714,6 +1824,12 @@
   (async function boot() {
     settings = await cue.settingsGet();
     const platformInfo = await cue.platformInfo();
+    publikState = await cue.publikState();
+    // A build with no app token never shows the option, and keeps the BYO
+    // onboarding card. With one, the "Connect an AI provider" card becomes the
+    // publik disclosure; the BYO branch stays one tap away on that card.
+    $('#provider-publik').classList.toggle('hidden', !publikState.available);
+    if (publikState.available) OB_STEPS.splice(2, 1, { ...publikStep(), publik: true });
 
     // R4: shortcut hints
     const sayHintEl = document.getElementById('say-shortcut-hint');

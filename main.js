@@ -12,6 +12,10 @@ const { createStreamingSTT } = require('./src/stt-streaming');
 const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
 const { buildInterviewContext, detectCategory } = require('./src/interview-context');
 const { startAppLink, stopAppLink, recordEvent, appLinkConsentState, revokeAppLinkCaller } = require('./src/applink');
+const publik = require('./src/publik');
+// The app token release.yml baked into src/publik-build.json (empty in a dev
+// checkout → the publik option is simply absent from the provider picker).
+const publikBuild = publik.loadBuildConfig();
 
 // macOS system-audio loopback (the "them" channel via getDisplayMedia) does not
 // start on Electron 31–38 unless these Chromium features are enabled; without
@@ -501,6 +505,16 @@ async function runFeature(mode, userText) {
 
     if (!llm.ready) {
       const message = llm.configurationError || ('Complete the ' + settings.provider + ' provider settings. Model: ' + (llm.model || 'unset') + '.');
+      if (settings.provider === publik.PUBLIK_PROVIDER) {
+        // No key yet: either the disclosure was never accepted (open it — the
+        // mint happens only on "Continue"), or the install was revoked or the
+        // last mint failed (offer Reconnect). The app never silently spends.
+        const action = !settings.publik.disclosureAccepted
+          ? { kind: 'disclosure' }
+          : { kind: 'reconnect', label: 'Reconnect' };
+        send('llm:error', { message, action });
+        return;
+      }
       send('llm:error', { message });
       return;
     }
@@ -544,7 +558,8 @@ async function runFeature(mode, userText) {
           system,
           turns: [{ role: 'user', text: built }],
           imageDataUrl,
-          onToken: (t) => { if (streamSettled) return; rearm(); send('llm:token', { text: t }); }
+          onToken: (t) => { if (streamSettled) return; rearm(); send('llm:token', { text: t }); },
+          onResponse: settings.provider === publik.PUBLIK_PROVIDER ? (res) => publikNoteHeaders(res && res.headers) : undefined
         }),
         stalled
       ]);
@@ -553,9 +568,14 @@ async function runFeature(mode, userText) {
       clearTimeout(watchdog);
     }
     send('llm:done', {});
+    // Streams settle after their headers, so the charge is reconciled from
+    // GET /wallet shortly after the answer — one request per answer, debounced.
+    if (settings.provider === publik.PUBLIK_PROVIDER) publikScheduleWalletRefresh();
   } catch (e) {
     recordEvent({ level: 'error', event: 'llm_failed', msg: e && e.message ? e.message : String(e), frame: 'runFeature', context: { mode, provider: store.getSettings().provider } });
-    send('llm:error', { message: e && e.message ? e.message : String(e) });
+    const action = e && e.action ? e.action : null;
+    send('llm:error', { message: e && e.message ? e.message : String(e), action });
+    if (action) publikHandleErrorAction(action);
   } finally {
     streamSettled = true;
     state.busy = false;
@@ -563,8 +583,165 @@ async function runFeature(mode, userText) {
 }
 
 // -------- IPC --------
-ipcMain.handle('settings:get', () => store.getSettings());
-ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return store.setSettings(patch); });
+// Redact on the way out, strip on the way in: the publik key never enters the
+// renderer, and the renderer's whole-object Save can never clobber it.
+ipcMain.handle('settings:get', () => store.redactForRenderer(store.getSettings()));
+ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return store.redactForRenderer(store.setSettings(store.stripRendererPatch(patch))); });
+
+// -------- publik API --------
+// Contract: ~/publik-api-research/CONTRACT.md. The key is minted only after
+// the disclosure is accepted (publik:accept-disclosure); the balance line is
+// fed by the x-publik-* headers on every answer and reconciled from GET /wallet.
+let publikWalletTimer = null;
+let publikProvisioning = null;
+
+function publikDevice() {
+  let deviceName = '';
+  try { deviceName = os.hostname(); } catch { /* optional */ }
+  return { appVersion: app.getVersion(), platform: process.platform, osVersion: os.release(), arch: process.arch, deviceName };
+}
+
+function publikState() {
+  const s = store.getSettings();
+  const p = s.publik || {};
+  const connected = !!s.apiKeys.publik;
+  const wallet = p.wallet || null;
+  const claimState = (wallet && wallet.claimState) || p.claimState || 'anonymous';
+  const view = {
+    available: publikBuild.available,
+    selected: s.provider === publik.PUBLIK_PROVIDER,
+    connected,
+    revoked: !!p.revoked,
+    disconnected: !!p.disconnected,
+    keyId: p.keyId || '',
+    claimState,
+    claimUrl: p.claimUrl || (wallet && wallet.claimUrl) || '',
+    addCreditUrl: (wallet && wallet.addCreditUrl) || '',
+    topUpUrl: (wallet && wallet.topUpUrl) || p.claimUrl || '',
+    starterMicros: p.starterMicros || 0,
+    balanceMicros: p.balanceMicros,
+    balanceAt: p.balanceAt || 0,
+    balanceLabel: publik.formatMicros(p.balanceMicros),
+    wallet,
+    disclosureAccepted: p.disclosureAccepted || 0,
+    disclosureVersion: publikBuild.disclosureVersion,
+    lastError: p.lastError || '',
+    copy: publik.COPY,
+    links: publik.LINKS
+  };
+  view.line = publik.balanceLine(view);
+  return view;
+}
+function publikPush() { send('publik:state', publikState()); }
+
+async function publikProvision() {
+  if (publikProvisioning) return publikProvisioning;
+  publikProvisioning = publik.provisionInstall({
+    build: publikBuild,
+    store,
+    device: publikDevice(),
+    log: (e) => recordEvent({ level: e.level, event: e.event, msg: e.msg, frame: 'publikProvision', context: e.context || {} })
+  }).then((r) => {
+    if (r.ok && r.minted) store.setPublik({ disconnected: false });
+    publikPush();
+    return publikState();
+  }).finally(() => { publikProvisioning = null; });
+  return publikProvisioning;
+}
+
+// x-publik-* headers from a streamed answer: the balance after admission
+// (the hold is included), the claim state, the week. Settlement follows.
+function publikNoteHeaders(headers) {
+  const h = publik.readGatewayHeaders(headers);
+  if (!h) return;
+  const s = store.getSettings();
+  const wallet = { ...(s.publik.wallet || {}) };
+  if (h.balanceMicros !== null) wallet.balanceMicros = h.balanceMicros;
+  if (h.claimState) wallet.claimState = h.claimState;
+  if (h.weekUsedMicros !== null) wallet.weekUsedMicros = h.weekUsedMicros;
+  if (h.weekBudgetMicros !== null || h.weekResetsAt) wallet.weekBudgetMicros = h.weekBudgetMicros;
+  if (h.weekResetsAt) wallet.weekResetsAt = h.weekResetsAt;
+  if (h.starterRemainingMicros !== null) wallet.starterRemainingMicros = h.starterRemainingMicros;
+  store.setPublik({
+    balanceMicros: h.balanceMicros !== null ? h.balanceMicros : s.publik.balanceMicros,
+    balanceAt: Date.now(),
+    claimState: h.claimState || s.publik.claimState,
+    wallet,
+    revoked: false
+  });
+  publikPush();
+}
+
+async function publikRefreshWallet() {
+  const s = store.getSettings();
+  if (!s.apiKeys.publik) return publikState();
+  try {
+    const w = await publik.fetchWallet({ baseUrl: s.publik.baseUrl || publikBuild.baseUrl, apiKey: s.apiKeys.publik });
+    store.setPublik({
+      wallet: w, balanceMicros: w.balanceMicros, balanceAt: Date.now(), claimState: w.claimState,
+      claimUrl: w.claimUrl || (w.claimState === 'claimed' ? '' : s.publik.claimUrl), revoked: false, disconnected: false, lastError: ''
+    });
+  } catch (e) {
+    if (e.status === 401) publikHandleRevoked(e);
+    else recordEvent({ level: 'warn', event: 'publik_wallet_failed', msg: e.message, frame: 'publikRefreshWallet', context: { status: e.status || null } });
+  }
+  publikPush();
+  return publikState();
+}
+function publikScheduleWalletRefresh() {
+  clearTimeout(publikWalletTimer);
+  publikWalletTimer = setTimeout(() => { publikRefreshWallet().catch(() => {}); }, 1500);
+}
+
+// 401 key_revoked: reprovision:true (idle sweep) → re-mint on our own with the
+// same install_id; reprovision:false (removed from the dashboard) → stay
+// disconnected until the user presses Reconnect.
+function publikHandleRevoked(e) {
+  const revokedType = !!(e && e.type === 'key_revoked');
+  const silent = revokedType && e.reprovision === true;
+  // "disconnected" is the dashboard/uninstaller removal only; a plain 401
+  // (invalid_api_key) just asks for Reconnect.
+  store.setPublik({ revoked: true, disconnected: revokedType && !silent, lastError: '' });
+  if (silent) publikProvision().catch(() => {});
+}
+function publikHandleErrorAction(action) {
+  if (!action || action.kind !== 'reprovision') return;
+  publikHandleRevoked({ type: 'key_revoked', reprovision: true });
+}
+
+ipcMain.handle('publik:state', () => publikState());
+ipcMain.handle('publik:accept-disclosure', async () => {
+  // Consent precedes mint: this is the only path that calls POST /installs
+  // for a fresh install. It also selects publik if the user had moved away.
+  if (!publikBuild.available) return publikState();
+  store.setPublik({ disclosureAccepted: publikBuild.disclosureVersion });
+  store.setSettings({ provider: publik.PUBLIK_PROVIDER });
+  return publikProvision();
+});
+ipcMain.handle('publik:reconnect', async () => {
+  const s = store.getSettings();
+  if (!s.publik.disclosureAccepted) return publikState();
+  if (s.apiKeys.publik && !s.publik.revoked) return publikRefreshWallet();
+  store.setPublik({ revoked: true });
+  return publikProvision();
+});
+ipcMain.handle('publik:refresh', () => publikRefreshWallet());
+ipcMain.handle('publik:disconnect', async () => {
+  const s = store.getSettings();
+  if (s.apiKeys.publik) {
+    try { await publik.revokeInstall({ baseUrl: s.publik.baseUrl || publikBuild.baseUrl, apiKey: s.apiKeys.publik }); } catch (e) { /* the key is dropped locally regardless */ }
+  }
+  store.setPublik({ apiKey: '', keyId: '', revoked: false, disconnected: true, balanceMicros: null, wallet: null, lastError: '' });
+  publikPush();
+  return publikState();
+});
+// The only path a gateway-supplied URL can take out of the app: publikhq.com
+// only, else the stored claim link, else the dashboard.
+ipcMain.on('publik:open', (_e, url) => {
+  const s = store.getSettings();
+  const target = publik.isSafePublikLink(url) ? url : (s.publik.claimUrl || publik.LINKS.dashboard);
+  shell.openExternal(target).catch(() => {});
+});
 ipcMain.handle('capture:toggle', () => {
   const targetState = !desiredCaptureState;
   desiredCaptureState = targetState;
@@ -764,6 +941,13 @@ function createPermissionsWindow() {
 // -------- launch (called after permissions are confirmed) --------
 function launchApp() {
   if (isMac && app.dock) app.dock.hide();
+
+  // Before the app-link snapshot and before the window exists, so a first run
+  // boots with provider 'publik'. Runs once per settings file and never moves
+  // a user who has a working key. No network call happens here.
+  if (store.applyPublikDefault(publikBuild)) {
+    recordEvent({ level: 'info', event: 'publik_default_applied', msg: '', frame: 'launchApp', context: {} });
+  }
 
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
 
