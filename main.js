@@ -47,6 +47,14 @@ const WIN_BUILD = getWindowsBuild();
 const WIN_SUPPORTS_CONTENT_PROTECTION = !isWindows || WIN_BUILD >= 19041;
 
 let permWin = null;
+// Windows never blocks startup on an unresolved permission (see app.whenReady()
+// below), so launchApp() can already have run once by the time the user grants
+// access and clicks Continue in the gate window (permissions:continue also
+// calls launchApp()). Without this guard the second call re-creates the main
+// BrowserWindow (createWindow() has no existing-window check), re-registers
+// global shortcuts and re-starts the applink server -- a real, reachable
+// regression, not a hypothetical.
+let appLaunched = false;
 
 // -------- capture / transcript state --------
 const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
@@ -775,6 +783,17 @@ function createPermissionsWindow() {
 
 // -------- launch (called after permissions are confirmed) --------
 function launchApp() {
+  if (appLaunched) {
+    // Already launched once (Windows startup runs launchApp() unconditionally
+    // even while the permission gate is still showing). Just dismiss the gate
+    // and bring the existing main window forward instead of building a second
+    // one on top of it.
+    if (permWin && !permWin.isDestroyed()) { permWin.close(); permWin = null; }
+    if (win && !win.isDestroyed()) { win.showInactive(); }
+    return;
+  }
+  appLaunched = true;
+
   if (isMac && app.dock) app.dock.hide();
 
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });

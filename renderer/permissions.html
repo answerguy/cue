@@ -280,12 +280,21 @@
         }
       }
 
-      // Open settings buttons
+      // Open settings buttons — deep-link to the OS privacy pane. macOS uses the
+      // x-apple.systempreferences: scheme; Windows has its own ms-settings: URIs
+      // (opened the same way, via shell.openExternal in main). Windows has no
+      // per-app "Screen Recording" privacy pane the way macOS does, so that
+      // button lands on the general Privacy & security page instead.
+      const isWin = cue.platform === 'win32';
       btnMic.addEventListener('click', () => {
-        cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+        cue.openPane(isWin
+          ? 'ms-settings:privacy-microphone'
+          : 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
       });
       btnScreen.addEventListener('click', () => {
-        cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+        cue.openPane(isWin
+          ? 'ms-settings:privacy'
+          : 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
       });
 
       // Check again
