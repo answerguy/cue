@@ -21,3 +21,10 @@ jobs:
           name: bugfix-lab-desktop-screenshot
           path: bugfix-lab-desktop.png
           if-no-files-found: ignore
+      - name: Upload window content capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bugfix-lab-window-capture
+          path: cue-window-capture.png
+          if-no-files-found: ignore
