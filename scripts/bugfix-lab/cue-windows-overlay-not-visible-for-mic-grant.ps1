@@ -90,8 +90,8 @@ while ((Get-Date) -lt $deadline) {
         $allPids = $cueProcs | Select-Object -ExpandProperty Id
         $pidSet = New-Object 'System.Collections.Generic.HashSet[uint32]'
         foreach ($p in $allPids) { [void]$pidSet.Add([uint32]$p) }
-        $hits = [Win32Probe]::EnumerateForPids($pidSet)
-        $visibleReal = $hits | Where-Object { $_.Visible -and $_.Width -gt 0 -and $_.Height -gt 0 }
+        $hits = @([Win32Probe]::EnumerateForPids($pidSet))
+        $visibleReal = @($hits | Where-Object { $_.Visible -and $_.Width -gt 0 -and $_.Height -gt 0 })
         if ($visibleReal.Count -gt 0) { break }
     }
     Start-Sleep -Milliseconds 1000
@@ -119,7 +119,7 @@ try {
     Write-Output "Screenshot capture failed (non-fatal): $_"
 }
 
-$visibleReal = $hits | Where-Object { $_.Visible -and $_.Width -gt 0 -and $_.Height -gt 0 }
+$visibleReal = @($hits | Where-Object { $_.Visible -and $_.Width -gt 0 -and $_.Height -gt 0 })
 
 if (-not $proc.HasExited) {
     Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
