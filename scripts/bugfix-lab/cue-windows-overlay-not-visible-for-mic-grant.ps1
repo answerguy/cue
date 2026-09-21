@@ -87,8 +87,13 @@ public static class Win32Probe {
 '@
 Add-Type -TypeDefinition $sig -Language CSharp
 
+Add-Type -AssemblyName System.Windows.Forms
+Write-Output "[diag] SESSIONNAME=$env:SESSIONNAME TerminalServerSession=$([System.Windows.Forms.SystemInformation]::TerminalServerSession)"
+
 Write-Output "Launching cue.exe: $($exe.FullName)"
-$proc = Start-Process -FilePath $exe.FullName -PassThru
+$cueStdout = "$env:RUNNER_TEMP\cue-stdout.log"
+$cueStderr = "$env:RUNNER_TEMP\cue-stderr.log"
+$proc = Start-Process -FilePath $exe.FullName -PassThru -RedirectStandardOutput $cueStdout -RedirectStandardError $cueStderr
 Start-Sleep -Seconds 3
 if ($proc.HasExited) {
     Write-Result 1 "cue.exe process exited immediately (code $($proc.ExitCode)) — no window could ever appear"
@@ -202,6 +207,15 @@ if (-not $proc.HasExited) {
     Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
 }
 Get-Process -Name "cue" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+if (Test-Path $cueStdout) {
+    Write-Output "--- cue.exe stdout ---"
+    Get-Content $cueStdout | ForEach-Object { Write-Output "[cue-stdout] $_" }
+}
+if (Test-Path $cueStderr) {
+    Write-Output "--- cue.exe stderr ---"
+    Get-Content $cueStderr | ForEach-Object { Write-Output "[cue-stderr] $_" }
+}
 
 if ($visibleReal.Count -eq 0) {
     Write-Result 1 "cue.exe is running (PIDs: $($allPids -join ',')) but EnumWindows found zero visible, non-degenerate top-level windows for it after 30s — this is the reported symptom (no UI surface to grant mic access)."
