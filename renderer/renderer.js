@@ -12,10 +12,12 @@
   quitButton.title = isMac ? 'Quit cue (⌘⇧X)' : 'Quit cue (Ctrl+Shift+X)';
 
   // ---- paint icons -------------------------------------------------------
-  $('#logo-btn').innerHTML = icon('logo', { size: 18 });
+  $('#logo-btn').innerHTML = icon('badge-question-mark', { size: 16 });
+  $('#tb-settings-btn').innerHTML = icon('settings', { size: 16 });
   $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
+  $('#opacity-btn .ic').innerHTML = icon('eclipse', { size: 14 });
   $('#quit-btn').innerHTML = icon('x', { size: 14 });
-  document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('sparkles', { size: 16 });
+  document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('monitor', { size: 16 });
   document.querySelector('.act[data-mode="say"] .ic').innerHTML = icon('wand-sparkles', { size: 16 });
   document.querySelector('.act[data-mode="recap"] .ic').innerHTML = icon('refresh-cw', { size: 16 });
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
@@ -23,6 +25,21 @@
   $('#send-btn').innerHTML = icon('play', { size: 15 });
   const clearIC = document.querySelector('#clear-transcript-btn .ic');
   if (clearIC) clearIC.innerHTML = icon('trash-2', { size: 15 });
+
+  function setSessionButton(active) {
+    const btn = $('#stop-btn');
+    const ic = btn.querySelector('.ic');
+    const label = btn.querySelector('.tb-stop-label');
+    btn.classList.toggle('active', active);
+    if (ic) ic.innerHTML = active
+      ? icon('square', { size: 14 })
+      : icon('play', { size: 14, filled: false });
+    if (label) label.textContent = active ? 'End session' : 'Start session';
+    const title = active ? 'End session' : 'Start session';
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+  }
+  setSessionButton(false);
 
   // ---- state -------------------------------------------------------------
   let settings = null;
@@ -496,7 +513,10 @@
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); send(); }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runMode('assist', ''); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      runMode(e.shiftKey ? 'assist' : 'say', '');
+    }
   });
   
   // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A)
@@ -534,7 +554,13 @@
   let reopenSidebarOnExpand = false;
   function toggleHide() {
     const collapsed = $('#panel-wrap').classList.toggle('collapsed');
-    $('#hide-btn').classList.toggle('collapsed', collapsed);
+    const btn = $('#hide-btn');
+    btn.classList.toggle('collapsed', collapsed);
+    const label = btn.querySelector('.tb-hide-label');
+    const text = collapsed ? 'Show' : 'Hide';
+    if (label) label.textContent = text;
+    btn.title = text;
+    btn.setAttribute('aria-label', text);
     if (collapsed) {
       reopenSidebarOnExpand = sidebarOpen;
       if (sidebarOpen) hideSidebar();
@@ -545,14 +571,59 @@
   $('#hide-btn').addEventListener('click', toggleHide);
   cue.on('hide:toggle', toggleHide);
 
-  function setListenButton(active) {
-    const btn = $('#stop-btn');
-    btn.classList.toggle('active', active);
-    btn.innerHTML = icon(active ? 'stop-square' : 'play', { size: 13 }) +
-      '<span>' + (active ? 'Stop session' : 'Start session') + '</span>';
-    btn.title = active ? 'Stop listening' : 'Start listening';
+  const OPACITY_MIN = 0.2;
+  function clampOpacity(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 1;
+    return Math.min(1, Math.max(OPACITY_MIN, Math.round(n * 100) / 100));
   }
-  setListenButton(false);
+  function opacityToPercent(value) { return Math.round(clampOpacity(value) * 100); }
+  function persistOpacitySoon() {
+    clearTimeout(persistOpacitySoon.timer);
+    persistOpacitySoon.timer = setTimeout(() => {
+      if (!settings) return;
+      cue.settingsSet({ opacity: settings.opacity }).then((next) => { if (next) settings = next; }).catch(() => {});
+    }, 400);
+  }
+  function applyOpacity(value, persist) {
+    const opacity = clampOpacity(value);
+    const percent = opacityToPercent(opacity);
+    if (settings) settings.opacity = opacity;
+    document.documentElement.style.setProperty('--cue-opacity', String(opacity));
+    const tb = $('#tb-opacity-slider');
+    const tbVal = $('#tb-opacity-value');
+    const s = $('#s-opacity-slider');
+    const sVal = $('#s-opacity-value');
+    if (tb) tb.value = String(percent);
+    if (tbVal) tbVal.textContent = percent + '%';
+    if (s) s.value = String(percent);
+    if (sVal) sVal.textContent = percent + '%';
+    if (persist) persistOpacitySoon();
+  }
+  function toggleOpacityPopover(force) {
+    const pop = $('#opacity-popover');
+    const btn = $('#opacity-btn');
+    if (!pop || !btn) return;
+    const open = force != null ? force : pop.classList.contains('hidden');
+    pop.classList.toggle('hidden', !open);
+    btn.classList.toggle('on', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.getElementById('app').classList.toggle('opacity-open', open);
+  }
+  $('#opacity-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleOpacityPopover();
+  });
+  document.addEventListener('click', (e) => {
+    const wrap = document.querySelector('.tb-opacity-wrap');
+    if (wrap && !wrap.contains(e.target)) toggleOpacityPopover(false);
+  });
+  ['tb-opacity-slider', 's-opacity-slider'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => applyOpacity(Number(el.value) / 100, true));
+    el.addEventListener('change', () => applyOpacity(Number(el.value) / 100, true));
+  });
 
   // Stop = start/stop listening. Kick off system-audio capture straight from the click so
   // the user-gesture is fresh for getDisplayMedia (loopback capture needs it).
@@ -952,7 +1023,7 @@
   // ---- events from main --------------------------------------------------
   cue.on('capture:state', ({ active, streaming, mode }) => {
     setLiveDotState(active ? 'idle' : 'off');
-    setListenButton(active);
+    setSessionButton(active);
     // FIX #4: Add .listening class to composer when capture is active
     composer.classList.toggle('listening', active);
     // startSystemAudio() is called directly from the stop-button click handler
@@ -1046,8 +1117,8 @@
         error: 'error'
       };
       if (localStates[status]) setSttState(localStates[status]);
-      if (status === 'loading') setListenButton(true);
-      if (status === 'off' || status === 'error') setListenButton(false);
+      if (status === 'loading') setSessionButton(true);
+      if (status === 'off' || status === 'error') setSessionButton(false);
       if (status === 'loading' || status === 'transcribing' || status === 'stopping') setLiveDotState('transcribing');
       if (status === 'ready') setLiveDotState('idle');
       if (status === 'off') setLiveDotState('off');
@@ -1167,31 +1238,17 @@
   }
   const aiRulesEl = document.getElementById('ai-rules');
   if (aiRulesEl) aiRulesEl.addEventListener('input', updateAiRulesCounter);
-  function updatePrepStatus() {
-    if (!settings) return;
-    const fields = {
-      resume:  !!(settings.resumeText && settings.resumeText.trim()),
-      jd:      !!(settings.jobDescription && settings.jobDescription.trim()),
-      stories: !!(settings.starStories && settings.starStories.trim()),
-      salary:  !!(settings.salaryTarget && settings.salaryTarget.trim())
-    };
-    document.querySelectorAll('#prep-status .prep-item').forEach((el) => {
-      const loaded = fields[el.dataset.field];
-      el.classList.toggle('loaded', loaded);
-      el.classList.toggle('missing', !loaded);
-      el.title = loaded
-        ? el.textContent.trim() + ' loaded'
-        : el.textContent.trim() + ' not set — add in Settings';
-    });
-  }
-
   function updateSmartTooltip() {
     if (!settings) return;
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
-    const fast = m.fast || 'fast model';
-    const smart = m.smart || 'smart model';
+    const fast = (m.fast || '').trim();
+    const smart = (m.smart || '').trim();
     const btn = document.getElementById('smart-toggle');
-    if (btn) btn.title = 'Fast: ' + fast + ' · Smart: ' + smart + ' (higher quality, ~2× slower)';
+    if (!btn) return;
+    const same = fast.toLowerCase() === smart.toLowerCase();
+    btn.classList.toggle('hidden', same);
+    if (same) return;
+    btn.title = 'Fast: ' + (fast || 'fast model') + ' · Smart: ' + (smart || 'smart model') + ' (higher quality, ~2× slower)';
   }
 
   // ---- microphone permission banner --------------------------------------
@@ -1236,6 +1293,7 @@
   }
   function closeSettings() { saveSettings(); scrim.classList.add('hidden'); }
   $('#more-btn').addEventListener('click', openSettings);
+  $('#tb-settings-btn').addEventListener('click', openSettings);
   $('#s-close').addEventListener('click', () => { void closeSettings(); });
   scrim.addEventListener('click', (e) => { if (e.target === scrim) void closeSettings(); });
 
@@ -1253,8 +1311,12 @@
   });
 
   function updateCustomProviderFields() {
-    $('#custom-endpoint-settings').classList.toggle('hidden', settings.provider !== 'custom');
-    $('#publik-settings').classList.toggle('hidden', settings.provider !== 'publik');
+    const provider = settings.provider;
+    document.querySelectorAll('[data-key-for]').forEach((el) => {
+      el.classList.toggle('hidden', el.dataset.keyFor !== provider);
+    });
+    $('#custom-endpoint-settings').classList.toggle('hidden', provider !== 'custom');
+    $('#publik-settings').classList.toggle('hidden', provider !== 'publik');
     renderPublikBlock();
   }
 
@@ -1336,7 +1398,6 @@
     show('#publik-link', !!cta);
     show('#publik-add-credit', p.connected && !p.revoked && p.claimState === 'claimed' && !!p.addCreditUrl);
     show('#publik-disconnect', p.connected && !p.revoked);
-    $('#provider-publik').classList.toggle('hidden', !p.available);
     if (settings.provider === 'publik') $('#s-status').textContent = statusText();
   }
   $('#publik-setup').addEventListener('click', () => showPublikDisclosure());
@@ -1351,19 +1412,13 @@
   function fillSettings() {
     // Keys tab
     document.querySelectorAll('#provider-seg button').forEach((b) => b.classList.toggle('on', b.dataset.provider === settings.provider));
+    $('#key-cerebras').value = settings.apiKeys.cerebras || '';
     $('#key-openai').value = settings.apiKeys.openai || '';
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
-    $('#key-gemini').value = settings.apiKeys.gemini || '';
-    $('#key-deepgram').value = settings.apiKeys.deepgram || '';
+    $('#key-groq').value = settings.apiKeys.groq || '';
     $('#key-custom').value = settings.apiKeys.custom || '';
     $('#base-url').value = settings.baseUrl || '';
     updateCustomProviderFields();
-    $('#key-ollama').value = settings.apiKeys.ollama || '';
-    $('#key-groq').value = settings.apiKeys.groq || '';
-    $('#key-minimax').value = settings.apiKeys.minimax || '';
-    document.querySelectorAll('#minimax-region-seg button').forEach((b) => b.classList.toggle('on', b.dataset.region === (settings.minimaxRegion || 'global_en')));
-    $('#key-azure').value = settings.apiKeys.azure || '';
-    $('#azure-endpoint').value = settings.azureEndpoint || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     fillAppLinkCallers();
@@ -1384,20 +1439,11 @@
     const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
     $('#whisper-language').value = localWhisper.language || 'auto';
     $('#whisper-threads').value = Number(localWhisper.threads) || 0;
-    // Profile tab
-    $('#resume-text').value = settings.resumeText || '';
-    $('#job-description').value = settings.jobDescription || '';
-    // Interview Prep tab
-    $('#star-stories').value = settings.starStories || '';
-    $('#why-company').value = settings.whyCompany || '';
-    $('#why-leaving').value = settings.whyLeaving || '';
-    $('#work-style').value = settings.workStyle || '';
     // Style tab
     $('#ai-rules').value = settings.aiRules || '';
     updateAiRulesCounter();
-    // Q&A tab
-    $('#salary-target').value = settings.salaryTarget || '';
-    $('#questions-to-ask').value = settings.questionsToAsk || '';
+    // Appearance tab
+    applyOpacity(settings.opacity, false);
   }
 
   // Whoever cue has been told it may answer questions for. Empty is the normal
@@ -1436,26 +1482,9 @@
     }
   }
 
-  const uploadResumeBtn = document.getElementById('upload-resume-btn');
-  if (uploadResumeBtn) uploadResumeBtn.addEventListener('click', async () => {
-    const res = await cue.pickProfileDocument();
-    if (!res || res.canceled) return;
-    if (res.error) { showStatus('Resume import failed: ' + res.error); return; }
-    $('#resume-text').value = res.text || '';
-    showStatus('Imported ' + res.fileName + ' — press Save to keep it.');
-  });
-  const uploadJdBtn = document.getElementById('upload-jd-btn');
-  if (uploadJdBtn) uploadJdBtn.addEventListener('click', async () => {
-    const res = await cue.pickProfileDocument();
-    if (!res || res.canceled) return;
-    if (res.error) { showStatus('Job description import failed: ' + res.error); return; }
-    $('#job-description').value = res.text || '';
-    showStatus('Imported ' + res.fileName + ' — press Save to keep it.');
-  });
-
   function statusText() {
     const k = settings.apiKeys;
-    const labels = { publik: 'publik API', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepgram: 'Deepgram', custom: 'Custom', ollama: 'Ollama', groq: 'Groq', minimax: 'MiniMax', azure: 'Azure AI Foundry' };
+    const labels = { publik: 'publik API', cerebras: 'Cerebras', openai: 'OpenAI', anthropic: 'Anthropic', custom: 'Custom', groq: 'Groq' };
     const has = Object.keys(labels).filter((p) => k[p]).map((p) => labels[p]);
     const publikPart = settings.provider === 'publik' && publikState
       ? ` · ${publikState.connected ? (publikState.balanceLabel ? `balance ${publikState.balanceLabel}` : 'connected') : 'not set up'}`
@@ -1463,15 +1492,9 @@
     // 'auto' walks the same fallback chain src/stt.js builds; an explicit choice
     // is reported as-is so the status line matches what will actually be used.
     const selectedSttProvider = settings.sttProvider || 'auto';
-    const automaticStt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : (k.gemini ? 'Gemini (batch)' : 'none')));
+    const automaticStt = k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : 'none');
     const stt = selectedSttProvider === 'auto' ? automaticStt : selectedSttProvider;
-    const ready = [
-      settings.resumeText ? '✓ resume' : null,
-      settings.jobDescription ? '✓ JD' : null,
-      settings.starStories ? '✓ stories' : null,
-      settings.salaryTarget ? '✓ salary' : null
-    ].filter(Boolean);
-    return `${labels[settings.provider] || settings.provider}${publikPart} · STT: ${stt}` + (ready.length ? ' · ' + ready.join(' · ') : '');
+    return `${labels[settings.provider] || settings.provider}${publikPart} · STT: ${stt}`;
   }
 
   document.querySelectorAll('#provider-seg button').forEach((b) => b.addEventListener('click', () => {
@@ -1483,11 +1506,6 @@
     $('#s-status').textContent = statusText();
     updateSmartTooltip();
   }));
-  document.querySelectorAll('#minimax-region-seg button').forEach((b) => b.addEventListener('click', () => {
-    settings.minimaxRegion = b.dataset.region;
-    document.querySelectorAll('#minimax-region-seg button').forEach((x) => x.classList.toggle('on', x === b));
-  }));
-
   document.querySelectorAll('#meeting-audio-seg button').forEach((button) => button.addEventListener('click', () => {
     settings.meetingAudio = button.dataset.meetingAudio === 'on';
     document.querySelectorAll('#meeting-audio-seg button').forEach((candidate) => {
@@ -1645,17 +1663,13 @@
 
   async function saveSettings() {
     // Keys
+    settings.apiKeys.cerebras = $('#key-cerebras').value.trim();
     settings.apiKeys.openai = $('#key-openai').value.trim();
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
-    settings.apiKeys.gemini = $('#key-gemini').value.trim();
-    settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
+    settings.apiKeys.groq = $('#key-groq').value.trim();
     settings.apiKeys.custom = $('#key-custom').value.trim();
     settings.baseUrl = $('#base-url').value.trim();
-    settings.apiKeys.ollama = $('#key-ollama').value.trim();
-    settings.apiKeys.groq = $('#key-groq').value.trim();
-    settings.apiKeys.minimax = $('#key-minimax').value.trim();
-    settings.apiKeys.azure = $('#key-azure').value.trim();
-    settings.azureEndpoint = $('#azure-endpoint').value.trim();
+    settings.minimaxRegion = 'global_en';
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
@@ -1666,7 +1680,7 @@
     // cue keeps reporting itself unconfigured even though a valid key was
     // saved for the provider the user actually meant to use.
     if (!settings.apiKeys[settings.provider]) {
-      const keyedProviders = ['openai', 'anthropic', 'gemini', 'groq', 'minimax', 'azure'];
+      const keyedProviders = ['cerebras', 'openai', 'anthropic', 'groq'];
       const justFilled = keyedProviders.find((p) => settings.apiKeys[p]);
       if (justFilled) settings.provider = justFilled;
     }
@@ -1675,23 +1689,14 @@
     settings.localWhisper.modelId = $('#whisper-model').value || settings.localWhisper.modelId || 'base.en';
     settings.localWhisper.language = $('#whisper-language').value || 'auto';
     settings.localWhisper.threads = Math.max(0, Math.min(64, Number.parseInt($('#whisper-threads').value, 10) || 0));
-    // Profile
-    settings.resumeText = $('#resume-text').value.trim();
-    settings.jobDescription = $('#job-description').value.trim();
-    // Interview Prep
-    settings.starStories = $('#star-stories').value.trim();
-    settings.whyCompany = $('#why-company').value.trim();
-    settings.whyLeaving = $('#why-leaving').value.trim();
-    settings.workStyle = $('#work-style').value.trim();
     // Style tab
     settings.aiRules = $('#ai-rules').value.trim();
-    // Q&A
-    settings.salaryTarget = $('#salary-target').value.trim();
-    settings.questionsToAsk = $('#questions-to-ask').value.trim();
+    // Appearance tab
+    const opacitySlider = $('#s-opacity-slider');
+    if (opacitySlider) settings.opacity = clampOpacity(Number(opacitySlider.value) / 100);
     try {
       settings = await cue.settingsSet(settings);
       $('#s-status').textContent = statusText();
-      updatePrepStatus();
       updateSmartTooltip();
       return true;
     } catch (error) {
@@ -1779,36 +1784,31 @@
         { label: 'Open Microphone settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone') },
         { label: 'Open Screen Recording settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') }
       ];
-  const assistShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">↵</span>' : '<span class="kbd">⌘</span> <span class="kbd">↵</span>';
-  const solveShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">H</span>' : '<span class="kbd">⌘</span> <span class="kbd">H</span>';
+  const assistShortcut = isWindows ? '<span class="kbd">Ctrl</span><span class="kbd">⇧</span><span class="kbd">↵</span>' : '<span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">↵</span>';
+  const sayShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">↵</span>' : '<span class="kbd">⌘</span> <span class="kbd">↵</span>';
   const quitShortcut = isWindows ? '<span class="kbd">Ctrl</span><span class="kbd">⇧</span><span class="kbd">X</span>' : '<span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">X</span>';
   const OB_STEPS = [
     {
       icon: '👋',
       title: 'Welcome to cue',
-      body: 'cue is a private AI copilot that floats over your screen. It can <strong>see your screen</strong>, <strong>hear your meetings</strong>, and help you answer questions or solve coding problems — while staying hidden from most screen shares.<br><br>This quick guide gets you running in about a minute.'
+      body: 'cue is a private AI copilot that floats over your screen. It can see your screen, hear your meetings, and help you answer questions – while staying hidden from screen shares.'
     },
     {
       icon: '🔐',
       title: 'Allow cue to see & hear',
-      body: permissionHelp + '<ul><li><strong>Microphone</strong> — to hear you</li><li><strong>Screen recording</strong> — to see your screen and hear meeting audio</li></ul>',
+      body: permissionHelp + '<ul><li><strong>Microphone</strong> – to hear you</li><li><strong>Screen recording</strong> – to see your screen and hear your meeting</li></ul>',
       buttons: permissionButtons
     },
     {
-      icon: '🔑',
+      icon: '⚙️',
       title: 'Connect an AI provider',
-      body: 'cue uses <strong>your own</strong> API key — pick <span class="hl">OpenAI</span>, <span class="hl">Anthropic</span>, <span class="hl">Google Gemini</span>, or <span class="hl">Azure AI Foundry</span>. Get a key from your provider, then paste it into cue\'s Settings.<br><br><strong>Tip:</strong> For the <em>best</em> real-time listening, add a <span class="hl">Deepgram</span> key (lowest latency streaming transcription). Otherwise, an OpenAI key enables streaming via the Realtime API, and Gemini/Whisper work as batch fallbacks.',
-      buttons: [{ label: 'Open cue Settings', action: () => { finishOnboard(); openSettings(); } }]
-    },
-    {
-      icon: '🫥',
-      title: 'Stay hidden in Zoom',
-      body: 'cue is hidden from most screen shares automatically (Google Meet, Teams, QuickTime — nothing to do). <strong>Zoom needs one setting:</strong><br><br>Zoom → <span class="hl">Settings</span> → <span class="hl">Share Screen</span> → <span class="hl">Advanced</span> → <strong>Screen capture mode</strong> → choose <strong>“Advanced capture with window filtering.”</strong><br><br>Avoid “<strong>without</strong> window filtering” — that mode reveals cue.'
+      body: 'cue uses API keys for <span class="hl">Cerebras API</span> and options to enable real-time transcription via a local or hosted transcription model.',
+      buttons: [{ label: 'Configure cue settings', action: () => { finishOnboard(); openSettings(); } }]
     },
     {
       icon: '✨',
       title: 'You’re all set',
-      body: 'How to use cue:<ul><li>' + assistShortcut + ' — <strong>Assist</strong> with whatever\'s on screen or being said</li><li>' + solveShortcut + ' — solve a coding problem on screen</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Quit with ' + quitShortcut + '.'
+      body: 'How to use cue:<ul><li>' + sayShortcut + ' — <strong>What should I say?</strong> from the conversation</li><li>' + assistShortcut + ' — <strong>Smart assist</strong> with whatever\'s on screen or being said</li><li>Click <strong>Start session</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>help</strong> icon in the top bar. Quit with ' + quitShortcut + '.'
     }
   ];
   // First-run disclosure (R21 §4.3): two disclosures — cost and data path —
@@ -1932,17 +1932,22 @@
     // A build with no app token never shows the option, and keeps the BYO
     // onboarding card. With one, the "Connect an AI provider" card becomes the
     // publik disclosure; the BYO branch stays one tap away on that card.
-    $('#provider-publik').classList.toggle('hidden', !publikState.available);
     if (publikState.available) OB_STEPS.splice(2, 1, { ...publikStep(), publik: true });
 
     // R4: shortcut hints
     const sayHintEl = document.getElementById('say-shortcut-hint');
     const assistHintEl = document.getElementById('assist-shortcut-hint');
-    if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
-    if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
+    if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
+    if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
+    const sayBtn = document.querySelector('.act[data-mode="say"]');
+    const assistBtn = document.querySelector('.act[data-mode="assist"]');
+    if (sayBtn) sayBtn.title = isWindows
+      ? 'Suggests what to say next based on the conversation (Ctrl+Enter)'
+      : 'Suggests what to say next based on the conversation (⌘↵)';
+    if (assistBtn) assistBtn.title = isWindows
+      ? 'Scans your screen and conversation to decide what you need (Ctrl+Shift+Enter)'
+      : 'Scans your screen and conversation to decide what you need (⌘⇧↵)';
 
-    // R5: prep status
-    updatePrepStatus();
     // R6: smart tooltip
     updateSmartTooltip();
     // Fix 3: Adjust permission buttons based on actual Windows version.
@@ -1963,12 +1968,14 @@
 
     // Fix placeholder shortcut hint to match platform
     if (isWindows) {
-      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⏎</span> for Assist';
+      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⇧</span><span class="keycap">⏎</span> for Smart assist';
     }
+
+    applyOpacity(settings.opacity, false);
 
     const st = await cue.captureState();
     $('#live-dot').classList.toggle('off', !st.active);
-    setListenButton(st.active);
+    setSessionButton(st.active);
     if (!settings.onboarded) showOnboard();
   })();
 })();

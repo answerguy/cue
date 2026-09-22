@@ -3,7 +3,8 @@ const assert = require('node:assert');
 const { DEFAULTS, resolveShortcuts, findConflicts, isValid } = require('../src/shortcuts');
 
 test('defaults cover the core actions', () => {
-  assert.strictEqual(DEFAULTS.assist, 'CommandOrControl+Return');
+  assert.strictEqual(DEFAULTS.say, 'CommandOrControl+Return');
+  assert.strictEqual(DEFAULTS.assist, 'CommandOrControl+Shift+Return');
   assert.ok(DEFAULTS.leetcode);
   assert.ok(DEFAULTS.quit);
 });
@@ -15,7 +16,7 @@ test('resolveShortcuts merges overrides', () => {
 });
 
 test('findConflicts detects duplicate accelerators', () => {
-  const map = resolveShortcuts({ leetcode: 'CommandOrControl+Return' });
+  const map = resolveShortcuts({ leetcode: 'CommandOrControl+Shift+Return' });
   const conflicts = findConflicts(map);
   assert.ok(conflicts.some(([a, b]) => (a === 'assist' && b === 'leetcode') || (a === 'leetcode' && b === 'assist')));
 });

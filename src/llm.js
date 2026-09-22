@@ -20,6 +20,7 @@ const CURRENT_GEMINI_DEFAULT = 'gemini-2.5-flash';
 const CURRENT_ANTHROPIC_DEFAULT_FAST = 'claude-haiku-4-5-20251001';
 const CURRENT_ANTHROPIC_DEFAULT_SMART = 'claude-sonnet-4-5-20250929';
 const DEFAULT_MODELS = {
+  cerebras: 'qwen-3.8-27b',
   openai: 'gpt-4o-mini',
   anthropic: CURRENT_ANTHROPIC_DEFAULT_FAST,
   gemini: CURRENT_GEMINI_DEFAULT,
@@ -29,6 +30,7 @@ const DEFAULT_MODELS = {
   azure: 'gpt-4o-mini',
   publik: publik.DEFAULT_MODELS.fast
 };
+const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
 
 // Gemini model ids that Google has since deprecated/retired. A settings file
 // saved before this fix can still have one of these persisted on disk, so
@@ -43,7 +45,7 @@ const DEAD_GEMINI_MODEL_RE = /^gemini-(1\.0|1\.5|2\.0)(?:-|$)/i;
 // live model on next read instead of permanently re-hitting the same 404.
 const DEAD_ANTHROPIC_MODEL_RE = /^claude-(2(?:\.\d+)?(?:-|$)|3-)/i;
 
-const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL };
+const PROVIDER_LABELS = { azure: 'Azure AI Foundry', cerebras: 'Cerebras', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL };
 
 function normalizeProviderName(provider) {
   if (!provider) return 'provider';
@@ -410,7 +412,7 @@ function createLLM(settings) {
     model = tier === 'smart' ? CURRENT_ANTHROPIC_DEFAULT_SMART : CURRENT_ANTHROPIC_DEFAULT_FAST;
   }
   if (!model) model = DEFAULT_MODELS[provider] || '';
-  const minimaxRegion = settings.minimaxRegion || 'global_en';
+  const minimaxRegion = 'global_en';
   const endpoint = settings.azureEndpoint || '';
 
   if (provider === PUBLIK_PROVIDER) {
@@ -461,6 +463,7 @@ function createLLM(settings) {
         if (provider === PUBLIK_PROVIDER) return await streamOpenAI(args);
         if (provider === 'ollama') return await streamOllama(args);
         if (provider === 'groq') return await streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });
+        if (provider === 'cerebras') return await streamOpenAI({ ...args, baseURL: CEREBRAS_BASE_URL });
         if (provider === 'minimax') return await streamOpenAI({ ...args, baseURL: MINIMAX_BASE_URLS[minimaxRegion] || MINIMAX_BASE_URLS.global_en });
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);

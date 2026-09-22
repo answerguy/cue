@@ -123,3 +123,16 @@ test('defaults carry the publik model aliases and the settings file is written 0
   store.setSettings({});
   if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
 });
+
+test('opacity is persisted and clamped so the window cannot disappear', () => {
+  const { store } = loadStore();
+  assert.equal(store.getSettings().opacity, 1);
+  assert.equal(store.clampOpacity(0.55), 0.55);
+  assert.equal(store.clampOpacity(0), 0.2);
+  assert.equal(store.clampOpacity(2), 1);
+  assert.equal(store.clampOpacity('nope'), 1);
+  store.setSettings({ opacity: 0.01 });
+  assert.equal(store.getSettings().opacity, 0.2);
+  store.setSettings({ opacity: 0.73 });
+  assert.equal(store.getSettings().opacity, 0.73);
+});

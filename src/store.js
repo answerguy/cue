@@ -28,7 +28,7 @@ const DEFAULTS = {
   meetingAudio: process.platform !== 'darwin',
   baseUrl: '',
   minimaxRegion: 'global_en',
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' , azure: '', publik: '' },
+  apiKeys: { cerebras: '', openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' , azure: '', publik: '' },
   azureEndpoint: '',
   // publik API (packaged-build default). apiKeys.publik holds the minted key;
   // everything here is state the main process owns — the renderer only reads
@@ -67,10 +67,13 @@ const DEFAULTS = {
   // points", "casual tone". Applied to every LLM mode EXCEPT LeetCode (kept
   // strict for coding problems).
   aiRules: '',
+  // Overlay opacity (1 = fully opaque). Clamped so the window never vanishes.
+  opacity: 1,
   // Window position
   windowX: null,
   windowY: null,
   models: {
+    cerebras: { fast: 'qwen-3.8-27b', smart: 'qwen-3.8-27b' },
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     // Kept in sync with CURRENT_ANTHROPIC_DEFAULT_FAST/_SMART in src/llm.js —
     // claude-3-5-haiku-latest/claude-3-5-sonnet-latest (the previous defaults
@@ -96,6 +99,15 @@ const DEFAULTS = {
 
 // Fields the renderer may never write. settings:set passes patches through
 // stripRendererPatch; settings:get hands out redactForRenderer's view.
+const MIN_OPACITY = 0.2;
+const MAX_OPACITY = 1;
+
+function clampOpacity(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(MAX_OPACITY, Math.max(MIN_OPACITY, Math.round(n * 100) / 100));
+}
+
 const RENDERER_READ_ONLY = ['publik'];
 
 let data = null;
@@ -163,6 +175,9 @@ function redactForRenderer(s) {
 
 module.exports = {
   MAX_AI_RULES_CHARS,
+  MIN_OPACITY,
+  MAX_OPACITY,
+  clampOpacity,
   RENDERER_READ_ONLY,
   applyPublikDefault,
   stripRendererPatch,
@@ -181,6 +196,7 @@ module.exports = {
     load();
     const nextSettings = deepMerge(data, patch || {});
     nextSettings.baseUrl = normalizeBaseUrl(nextSettings.baseUrl);
+    nextSettings.opacity = clampOpacity(nextSettings.opacity);
     data = nextSettings;
     save();
     return data;
