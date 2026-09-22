@@ -2,7 +2,7 @@
 // no audio API — we transcribe with whatever audio-capable key is available, and
 // fall back across providers. Returns { text, provider } or { text:'', error }.
 const { pcmToWav } = require('./wav');
-const { formatProviderErrorMessage, isQuotaError, CURRENT_GEMINI_DEFAULT } = require('./llm');
+const { formatProviderErrorMessage, isQuotaError, isRateLimitError, CURRENT_GEMINI_DEFAULT } = require('./llm');
 
 const BASE_VOCAB = 'CI/CD, Docker, Kubernetes, Terraform, Jenkins, AWS, Azure, GCP, ' +
   'CodeCommit, CodePipeline, CodeBuild, CodeDeploy, DevOps, SRE, microservices, deployment, ' +
@@ -105,10 +105,14 @@ function createSTT(settings) {
           // Shares detection/wording with the LLM error path (src/llm.js) so a
           // 404 (dead/misspelled model) or 429 (quota) reads the same whether it
           // came from a chat request or a transcription request.
-          const quota = isQuotaError(e);
+          // Both exhaustion and a plain rate limit mean "stop hammering this
+          // provider" — the 30s cooldown below covers both (it always did, via
+          // the old status===429 catch-all inside isQuotaError; now that a
+          // rate limit is classified separately, it has to be named here too).
+          const backOff = isQuotaError(e) || isRateLimitError(e);
           const message = formatProviderErrorMessage(e, c.p);
           lastErr = { status: e && e.status, code: e && e.code, message, provider: c.p };
-          if (quota) {
+          if (backOff) {
             lastProvider = c.p;
             disabledUntil = now + 30000;
             break;

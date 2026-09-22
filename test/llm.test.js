@@ -34,7 +34,7 @@ Module._load = function loadWithOpenAIStub(request, parent, isMain) {
   return originalModuleLoad.call(this, request, parent, isMain);
 };
 
-const { createLLM, formatProviderErrorMessage, isQuotaError, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER } = require('../src/llm');
+const { createLLM, formatProviderErrorMessage, isQuotaError, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER, isRateLimitError } = require('../src/llm');
 
 test.after(() => {
   Module._load = originalModuleLoad;
@@ -242,9 +242,74 @@ test('formatProviderErrorMessage: an unrecognized error passes its raw message t
 });
 
 test('isQuotaError: agrees with formatProviderErrorMessage on what counts as quota', () => {
-  assert.equal(isQuotaError(geminiApiError({ status: 429, body: {} })), true);
+  // A 429 whose body says nothing about quota is a rate limit, not exhaustion
+  // (cue-quota-exhausted-429-false-positive): it used to be classified as quota
+  // purely because the status was 429, which is what produced the false
+  // "free-tier quota exhausted" message on accounts that had plenty of credit.
+  assert.equal(isQuotaError(geminiApiError({ status: 429, body: {} })), false);
+  assert.equal(isRateLimitError(geminiApiError({ status: 429, body: {} })), true);
+  assert.equal(isQuotaError(geminiApiError({ status: 429, body: { error: { status: 'RESOURCE_EXHAUSTED' } } })), true);
   assert.equal(isQuotaError(geminiApiError({ status: 404, body: {} })), false);
   assert.equal(isQuotaError(new Error('insufficient_quota')), true);
+});
+
+// ---- Anthropic/OpenAI genuine rate limit vs. quota exhaustion --------------
+// Regression coverage for cue-quota-exhausted-429-false-positive: a plain
+// per-minute/RPM rate limit is NOT an account-exhaustion signal and must not
+// be reported to the user as "free-tier quota exhausted". Anthropic's API
+// has no separate "quota" concept at all -- every Anthropic 429 is a
+// rate_limit_error -- so before this fix an Anthropic user could NEVER avoid
+// the false "quota exhausted" message.
+
+function anthropicRateLimitError() {
+  // Shape matches @anthropic-ai/sdk's RateLimitError: status 429, with
+  // error.error holding the parsed {type:'error', error:{type:'rate_limit_error', ...}} envelope.
+  const body = { type: 'error', error: { type: 'rate_limit_error', message: 'Number of request tokens has exceeded your per-minute rate limit.' } };
+  const e = new Error(`429 ${JSON.stringify(body)}`);
+  e.status = 429;
+  e.error = body;
+  return e;
+}
+
+function openaiRateLimitExceededError() {
+  // Shape matches the openai SDK's APIError for an RPM burst on a brand-new
+  // key: code 'rate_limit_exceeded', NOT 'insufficient_quota'.
+  const body = { message: 'Rate limit reached for gpt-4o-mini on requests per min (RPM): Limit 3, Used 3, Requested 1.', type: 'requests', code: 'rate_limit_exceeded' };
+  const e = new Error(`429 ${JSON.stringify({ error: body })}`);
+  e.status = 429;
+  e.code = 'rate_limit_exceeded';
+  e.error = body;
+  return e;
+}
+
+test('isQuotaError: an Anthropic rate_limit_error (per-minute, not account exhaustion) is not quota', () => {
+  assert.equal(isQuotaError(anthropicRateLimitError()), false);
+});
+
+test('isQuotaError: an OpenAI rate_limit_exceeded burst (not insufficient_quota) is not quota', () => {
+  assert.equal(isQuotaError(openaiRateLimitExceededError()), false);
+});
+
+test('formatProviderErrorMessage: an Anthropic rate_limit_error gets its own message, never "quota exhausted"', () => {
+  const message = formatProviderErrorMessage(anthropicRateLimitError(), 'anthropic', 'claude-3-5-haiku-latest');
+  assert.doesNotMatch(message, /free-tier quota exhausted/i);
+  assert.match(message, /rate-limiting/i);
+});
+
+test('formatProviderErrorMessage: an OpenAI rate_limit_exceeded burst gets its own message, never "quota exhausted"', () => {
+  const message = formatProviderErrorMessage(openaiRateLimitExceededError(), 'openai', 'gpt-4o-mini');
+  assert.doesNotMatch(message, /free-tier quota exhausted/i);
+  assert.match(message, /rate-limiting/i);
+});
+
+test('formatProviderErrorMessage: a genuine OpenAI insufficient_quota error still shows quota-exhausted', () => {
+  const body = { message: 'You exceeded your current quota, please check your plan and billing details.', type: 'insufficient_quota', code: 'insufficient_quota' };
+  const e = new Error(`429 ${JSON.stringify({ error: body })}`);
+  e.status = 429;
+  e.code = 'insufficient_quota';
+  e.error = body;
+  const message = formatProviderErrorMessage(e, 'openai', 'gpt-4o-mini');
+  assert.match(message, /OpenAI free-tier quota exhausted/);
 });
 
 // ---- Gemini model selection / self-healing migration -----------------------
@@ -411,4 +476,34 @@ test('publik never touches the Custom provider path', async () => {
   const llm = createLLM(createCustomSettings());
   await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} });
   assert.deepEqual(capturedClientOptions, { apiKey: 'gateway-token', baseURL: 'http://127.0.0.1:18789/v1' });
+});
+
+// A 429 carrying NO quota signal at all is the shape most providers send under
+// load, and it is the smallest input that used to produce the false message
+// (REGION.json's minimal_repro for cue-quota-exhausted-429-false-positive).
+test('formatProviderErrorMessage: a bare 429 with no upstream body is a rate limit, not quota exhaustion', () => {
+  const message = formatProviderErrorMessage({ status: 429 }, 'anthropic', 'claude-3-5-haiku-latest');
+  assert.doesNotMatch(message, /free-tier quota exhausted/i);
+  assert.match(message, /rate-limiting/i);
+  assert.equal(isQuotaError({ status: 429 }), false);
+});
+
+test('formatProviderErrorMessage: an Anthropic 429 with a non-rate-limit body is still never quota exhaustion', () => {
+  // Anthropic has no quota concept, so no Anthropic 429 body can justify the
+  // quota copy — not overloaded_error, not an unrecognized future type.
+  const body = { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } };
+  const e = new Error(`429 ${JSON.stringify(body)}`);
+  e.status = 429;
+  e.error = body;
+  const message = formatProviderErrorMessage(e, 'anthropic');
+  assert.doesNotMatch(message, /free-tier quota exhausted/i);
+  assert.match(message, /rate-limiting/i);
+});
+
+test('isRateLimitError: a genuine quota error is never also a rate limit, and non-429s are neither', () => {
+  const quota = new Error('429 You exceeded your current quota, please check your plan and billing details.');
+  assert.equal(isQuotaError(quota), true);
+  assert.equal(isRateLimitError(quota), false);
+  assert.equal(isRateLimitError(new Error('socket hang up')), false);
+  assert.equal(isRateLimitError(geminiApiError({ status: 404, body: {} })), false);
 });
