@@ -58,7 +58,7 @@ html, body {
 #settings-scrim, #onboard-scrim, #consent-scrim {
   opacity: var(--cue-opacity, 1);
 }
-#app.opacity-open { padding-top: 62px; }
+#app.opacity-open { padding-top: 82px; }
 #toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #consent-scrim { pointer-events: auto; }
 #toolbar { -webkit-app-region: drag; }   /* drag the top pill to move the window */
 #panel-wrap, #panel, #messages, #action-row, #composer, #input, textarea, button, .act, .smart-pill, .more-btn, #send-btn, .s-close, .s-seg button, .ob-buttons button, .ob-ghost, .ob-primary, .tb-opacity-wrap, .opacity-popover { -webkit-app-region: no-drag; }
@@ -100,8 +100,8 @@ html, body {
 .drag-label { color: rgba(255,255,255,0.9); }
 .tb-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.10); margin: 0 2px; }
 #toolbar button { border: none; background: transparent; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background 140ms ease, transform 140ms ease; }
-.tb-logo { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.06) !important; }
-.tb-logo:hover { background: rgba(255,255,255,0.12) !important; }
+.tb-logo, .tb-settings { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.06) !important; }
+.tb-logo:hover, .tb-settings:hover { background: rgba(255,255,255,0.12) !important; }
 .tb-hide { gap: 6px; padding: 5px 12px 5px 10px; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; }
 .tb-hide:hover { background: rgba(255,255,255,0.08); }
 .tb-hide .chev { width: 14px; height: 14px; display: inline-flex; color: rgba(255,255,255,0.9); }
@@ -113,7 +113,7 @@ html, body {
 .tb-opacity.on { background: rgba(255,255,255,0.10); }
 .opacity-popover {
   position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60;
-  display: flex; align-items: center; gap: 10px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
   padding: 8px 12px; min-width: 180px;
   background: var(--bg);
   border: 1px solid rgba(255,255,255,0.14);
@@ -122,6 +122,8 @@ html, body {
   -webkit-app-region: no-drag;
 }
 .opacity-popover.hidden { display: none; }
+.opacity-label { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.88); }
+.opacity-row { display: flex; align-items: center; gap: 10px; }
 .opacity-popover input[type="range"], .s-opacity-row input[type="range"] {
   flex: 1; min-width: 120px; accent-color: #7FB0F9; cursor: pointer;
 }
