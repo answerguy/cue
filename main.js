@@ -74,6 +74,14 @@ const WIN_SUPPORTS_CONTENT_PROTECTION = !isWindows || WIN_BUILD >= 19041;
 const WIN_IS_LOCAL_CONSOLE_SESSION = !isWindows || process.env.SESSIONNAME === 'Console';
 
 let permWin = null;
+// Windows never blocks startup on an unresolved permission (see app.whenReady()
+// below), so launchApp() can already have run once by the time the user grants
+// access and clicks Continue in the gate window (permissions:continue also
+// calls launchApp()). Without this guard the second call re-creates the main
+// BrowserWindow (createWindow() has no existing-window check), re-registers
+// global shortcuts and re-starts the applink server -- a real, reachable
+// regression, not a hypothetical.
+let appLaunched = false;
 
 // -------- capture / transcript state --------
 const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
@@ -946,29 +954,41 @@ async function verifyScreenAccess() {
 }
 
 async function getPermissionStatus() {
-  if (process.platform !== 'darwin') return { mic: 'granted', screen: 'granted' };
-  return {
-    mic: systemPreferences.getMediaAccessStatus('microphone'),
-    screen: await verifyScreenAccess(),
-  };
+  // systemPreferences.getMediaAccessStatus('microphone') is also implemented on
+  // Windows (it reads the Settings > Privacy > Microphone toggle); 'screen' has
+  // no per-app gate on Windows so verifyScreenAccess() falls straight through to
+  // 'granted' there. Only genuinely ungated platforms (e.g. Linux) keep the old
+  // hard-coded "granted" fallback.
+  if (process.platform === 'darwin' || process.platform === 'win32') {
+    return {
+      mic: systemPreferences.getMediaAccessStatus('microphone'),
+      screen: await verifyScreenAccess(),
+    };
+  }
+  return { mic: 'granted', screen: 'granted' };
 }
 
 async function requestPermissions() {
-  if (process.platform !== 'darwin') return true;
+  if (process.platform !== 'darwin' && process.platform !== 'win32') return true;
 
-  // Trigger the macOS microphone permission dialog (first-use only)
-  const micStatus = systemPreferences.getMediaAccessStatus('microphone');
-  if (micStatus !== 'granted') {
-    await systemPreferences.askForMediaAccess('microphone');
-  }
+  if (process.platform === 'darwin') {
+    // Trigger the macOS microphone permission dialog (first-use only)
+    const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+    if (micStatus !== 'granted') {
+      await systemPreferences.askForMediaAccess('microphone');
+    }
 
-  // Trigger the macOS screen-recording permission dialog (first-use only).
-  // There is no askForMediaAccess('screen'), but attempting to enumerate
-  // sources via desktopCapturer will cause macOS to prompt the user.
-  const screenStatus = await verifyScreenAccess();
-  if (screenStatus !== 'granted') {
-    try { await desktopCapturer.getSources({ types: ['screen'] }); } catch (_) {}
+    // Trigger the macOS screen-recording permission dialog (first-use only).
+    // There is no askForMediaAccess('screen'), but attempting to enumerate
+    // sources via desktopCapturer will cause macOS to prompt the user.
+    const screenStatus = await verifyScreenAccess();
+    if (screenStatus !== 'granted') {
+      try { await desktopCapturer.getSources({ types: ['screen'] }); } catch (_) {}
+    }
   }
+  // Windows has no OS-level "ask" dialog (systemPreferences.askForMediaAccess is
+  // macOS-only) — mic access is governed entirely by the Settings toggle the user
+  // flips themselves, which getPermissionStatus() below reads directly.
 
   const status = await getPermissionStatus();
   return status.mic === 'granted' && status.screen === 'granted';
@@ -1001,6 +1021,17 @@ function createPermissionsWindow() {
 
 // -------- launch (called after permissions are confirmed) --------
 function launchApp() {
+  if (appLaunched) {
+    // Already launched once (Windows startup runs launchApp() unconditionally
+    // even while the permission gate is still showing). Just dismiss the gate
+    // and bring the existing main window forward instead of building a second
+    // one on top of it.
+    if (permWin && !permWin.isDestroyed()) { permWin.close(); permWin = null; }
+    if (win && !win.isDestroyed()) { win.showInactive(); }
+    return;
+  }
+  appLaunched = true;
+
   if (isMac && app.dock) app.dock.hide();
 
   // Before the app-link snapshot and before the window exists, so a first run
@@ -1074,6 +1105,18 @@ app.whenReady().then(async () => {
       createPermissionsWindow();
       app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createPermissionsWindow(); });
       return;
+    }
+  } else if (isWindows) {
+    // Windows has no OS-level modal permission dialog to block startup on —
+    // there is no askForMediaAccess() equivalent, and the only way to change
+    // the mic toggle is to leave the app and use Settings — so unlike macOS
+    // this never withholds the main window. It surfaces the same in-app
+    // gate as an informational window alongside the app instead of leaving
+    // the user with no option at all to see or act on the permission state
+    // ("not able to give permission ... coz there is no option").
+    const allGranted = await requestPermissions();
+    if (!allGranted) {
+      createPermissionsWindow();
     }
   }
 
