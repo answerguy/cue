@@ -1,6 +1,7 @@
 /* cue — glassmorphism overlay. Tokens reconstructed from the Cluely screenshot. */
 
 :root {
+  --main-w: 700px;                       /* matches MAIN_W in main.js */
   --accent: #3C83F5;
   --accent-hi: #4A8DF7;
   --live: #22C55E;
@@ -45,6 +46,7 @@ html, body {
 #app {
   position: relative;
   z-index: 2;
+  width: var(--main-w);                  /* the window is wider; the rest is room for the history sidebar */
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -53,6 +55,7 @@ html, body {
   pointer-events: none;                  /* only the actual UI blocks; gaps pass through */
 }
 #toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #consent-scrim { pointer-events: auto; }
+#settings-scrim, #onboard-scrim, #consent-scrim { right: auto; width: var(--main-w); }
 #toolbar { -webkit-app-region: drag; }   /* drag the top pill to move the window */
 #panel-wrap, #panel, #messages, #action-row, #composer, #input, textarea, button, .act, .smart-pill, .more-btn, #send-btn, .s-close, .s-seg button, .ob-buttons button, .ob-ghost, .ob-primary { -webkit-app-region: no-drag; }
 
@@ -147,7 +150,7 @@ html, body {
 .mic-perm-actions button.dismiss:hover { background: rgba(255,255,255,0.10); color: var(--tx-2); }
 
 /* ============================ Panel ============================ */
-#panel-wrap { position: relative; margin-top: 12px; width: min(624px, 94vw); }
+#panel-wrap { position: relative; margin-top: 12px; width: 624px; }
 button:focus { outline: none; }
 #live-dot {
   position: absolute; top: -3px; left: -5px; z-index: 4;
@@ -166,7 +169,7 @@ button:focus { outline: none; }
   border-radius: var(--r-panel);
   box-shadow: 0 16px 48px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.10);
 }
-#panel { padding: 20px 22px; animation: overlayIn 260ms cubic-bezier(0.22,1,0.36,1); }
+#panel { position: relative; z-index: 1; padding: 20px 22px; animation: overlayIn 260ms cubic-bezier(0.22,1,0.36,1); }
 #panel.collapsed { display: none; }
 
 /* ============================ Messages ============================ */
@@ -609,15 +612,16 @@ button:focus { outline: none; }
   min-width: 0; /* allow shrink */
 }
 
-/* Transcript history sidebar — floats OUTSIDE the main panel */
+/* Transcript history sidebar — attached to the panel's right edge, same top and height.
+   Closed, it is tucked behind the panel and ignores the mouse so the click-through
+   logic treats the area as empty. */
 .transcript-sidebar {
-  position: fixed;
-  top: 80px; /* below toolbar */
-  /* FIX #6: Use right edge positioning instead of calc that assumes fixed width */
-  right: 20px;
-  width: 220px;
-  max-height: 480px;
-  min-height: 200px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(100% + 12px);
+  width: 300px;
+  min-height: 220px;
   display: flex;
   flex-direction: column;
   
@@ -626,21 +630,23 @@ button:focus { outline: none; }
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid var(--bd-hair);
-  border-radius: var(--r-16);
+  border-radius: var(--r-panel);
   box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
-  padding: 14px;
-  
-  z-index: 10;
-  pointer-events: auto;
-  animation: slideInRight 200ms cubic-bezier(0.22,1,0.36,1);
-}
-.transcript-sidebar.hidden { 
-  display: none; 
-}
+  padding: 16px;
 
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(12px); }
-  to { opacity: 1; transform: none; }
+  z-index: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-24px);
+  transition: transform 160ms cubic-bezier(0.4,0,1,1), opacity 140ms ease, visibility 0s linear 160ms;
+}
+.transcript-sidebar.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition: transform 220ms cubic-bezier(0.22,1,0.36,1), opacity 180ms ease, visibility 0s;
 }
 
 .ts-header {
@@ -740,14 +746,6 @@ button:focus { outline: none; }
   color: #fca5a5;
 }
 
-/* Sidebar no longer widens panel — it floats outside */
-/* The history sidebar is position:fixed at right:20px and 220px wide. In a 700px
-   window the default 624px panel would sit underneath it, so narrow the panel and
-   shift it left while the sidebar is open. */
-#panel-wrap.sidebar-open {
-  width: min(420px, 60vw);
-  transform: translateX(-120px);
-}
 
 /* ============================ Transcript viewer ============================ */
 .transcript-wrap {
@@ -763,7 +761,7 @@ button:focus { outline: none; }
 .transcript-placeholder { color: var(--tx-mut); font-size: 12px; font-style: italic; padding: 4px 0; }
 /* Toast */
 #toast {
-  display: none; position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  display: none; position: fixed; bottom: 18px; left: calc(var(--main-w) / 2); transform: translateX(-50%);
   background: rgba(34,197,94,0.18); border: 1px solid rgba(34,197,94,0.35);
   color: #a7f3c8; font-size: 12.5px; padding: 7px 16px; border-radius: var(--r-pill);
   z-index: 50; white-space: nowrap; pointer-events: none;
@@ -843,6 +841,7 @@ button:focus { outline: none; }
 @media (prefers-reduced-motion: reduce) {
   #panel, .user-bubble, .ai-text .w { animation: none !important; opacity: 1 !important; transform: none !important; }
   #live-dot { animation: none !important; }
+  .transcript-sidebar { transition: none !important; }
 }
 
 /* ============================ Assistant access ============================ */

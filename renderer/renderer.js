@@ -531,10 +531,17 @@
   });
 
   // Hide / collapse
+  let reopenSidebarOnExpand = false;
   function toggleHide() {
     const collapsed = $('#panel').classList.toggle('collapsed');
     $('#hide-btn').classList.toggle('collapsed', collapsed);
     $('#live-dot').style.display = collapsed ? 'none' : '';
+    if (collapsed) {
+      reopenSidebarOnExpand = sidebarOpen;
+      if (sidebarOpen) hideSidebar();
+    } else if (reopenSidebarOnExpand) {
+      showSidebar();
+    }
   }
   $('#hide-btn').addEventListener('click', toggleHide);
   cue.on('hide:toggle', toggleHide);
@@ -813,20 +820,16 @@
   function showSidebar() {
     const sidebar = document.getElementById('transcript-sidebar');
     const historyBtn = document.getElementById('history-btn');
-    if (sidebar) sidebar.classList.remove('hidden');
+    if (sidebar) sidebar.classList.add('open');
     if (historyBtn) historyBtn.classList.add('active');
-    const panelWrap = document.getElementById('panel-wrap');
-    if (panelWrap) panelWrap.classList.add('sidebar-open');
     sidebarOpen = true;
   }
 
   function hideSidebar() {
     const sidebar = document.getElementById('transcript-sidebar');
     const historyBtn = document.getElementById('history-btn');
-    if (sidebar) sidebar.classList.add('hidden');
+    if (sidebar) sidebar.classList.remove('open');
     if (historyBtn) historyBtn.classList.remove('active');
-    const panelWrap = document.getElementById('panel-wrap');
-    if (panelWrap) panelWrap.classList.remove('sidebar-open');
     sidebarOpen = false;
   }
 

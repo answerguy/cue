@@ -217,14 +217,16 @@ async function getWhisperOverview() {
 // -------- window --------
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  const W = 700, H = 600;
+  // The window is wider than the panel so the history sidebar can slide out beside it;
+  // the extra strip is transparent and click-through. Must match --main-w in styles.css.
+  const MAIN_W = 700, W = 1000, H = 600;
 
   const savedSettings = store.getSettings();
-  let startX = Math.round(workArea.x + (workArea.width - W) / 2);
+  let startX = Math.round(workArea.x + (workArea.width - MAIN_W) / 2);
   let startY = workArea.y + 6;
 
   if (savedSettings.windowX !== null && savedSettings.windowY !== null) {
-    const clampedX = Math.max(workArea.x - W + 100, Math.min(savedSettings.windowX, workArea.x + workArea.width - 100));
+    const clampedX = Math.max(workArea.x - MAIN_W + 100, Math.min(savedSettings.windowX, workArea.x + workArea.width - 100));
     const clampedY = Math.max(workArea.y, Math.min(savedSettings.windowY, workArea.y + workArea.height - 40));
     startX = clampedX;
     startY = clampedY;
