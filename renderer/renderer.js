@@ -14,9 +14,8 @@
   // ---- paint icons -------------------------------------------------------
   $('#logo-btn').innerHTML = icon('logo', { size: 18 });
   $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
-  $('#stop-btn').innerHTML = icon('stop-square', { size: 15 });
   $('#quit-btn').innerHTML = icon('x', { size: 14 });
-  document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('sparkles', { size: 16 });
+  document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('monitor', { size: 16 });
   document.querySelector('.act[data-mode="say"] .ic').innerHTML = icon('wand-sparkles', { size: 16 });
   document.querySelector('.act[data-mode="recap"] .ic').innerHTML = icon('refresh-cw', { size: 16 });
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
@@ -24,6 +23,21 @@
   $('#send-btn').innerHTML = icon('play', { size: 15 });
   const clearIC = document.querySelector('#clear-transcript-btn .ic');
   if (clearIC) clearIC.innerHTML = icon('trash-2', { size: 15 });
+
+  function setSessionButton(active) {
+    const btn = $('#stop-btn');
+    const ic = btn.querySelector('.ic');
+    const label = btn.querySelector('.tb-stop-label');
+    btn.classList.toggle('active', active);
+    if (ic) ic.innerHTML = active
+      ? icon('square', { size: 14 })
+      : icon('play', { size: 14, filled: false });
+    if (label) label.textContent = active ? 'End session' : 'Start session';
+    const title = active ? 'End session' : 'Start session';
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+  }
+  setSessionButton(false);
 
   // ---- state -------------------------------------------------------------
   let settings = null;
@@ -944,7 +958,7 @@
   // ---- events from main --------------------------------------------------
   cue.on('capture:state', ({ active, streaming, mode }) => {
     setLiveDotState(active ? 'idle' : 'off');
-    $('#stop-btn').classList.toggle('active', active);
+    setSessionButton(active);
     // FIX #4: Add .listening class to composer when capture is active
     composer.classList.toggle('listening', active);
     // Update history button to show active state when listening
@@ -1054,8 +1068,8 @@
         label.textContent = localLabels[status] || status;
         label.className = 'stt-status stt-' + sttState;
       }
-      if (status === 'loading') $('#stop-btn').classList.add('active');
-      if (status === 'off' || status === 'error') $('#stop-btn').classList.remove('active');
+      if (status === 'loading') setSessionButton(true);
+      if (status === 'off' || status === 'error') setSessionButton(false);
       if (status === 'loading' || status === 'transcribing' || status === 'stopping') setLiveDotState('transcribing');
       if (status === 'ready') setLiveDotState('idle');
       if (status === 'off') setLiveDotState('off');
@@ -1818,7 +1832,7 @@
     {
       icon: '✨',
       title: 'You’re all set',
-      body: 'How to use cue:<ul><li>' + assistShortcut + ' — <strong>Assist</strong> with whatever\'s on screen or being said</li><li>Click <strong>▢</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Quit with ' + quitShortcut + '.'
+      body: 'How to use cue:<ul><li>' + assistShortcut + ' — <strong>Smart assist</strong> with whatever\'s on screen or being said</li><li>Click <strong>Start session</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Quit with ' + quitShortcut + '.'
     }
   ];
   // First-run disclosure (R21 §4.3): two disclosures — cost and data path —
@@ -1974,12 +1988,12 @@
 
     // Fix placeholder shortcut hint to match platform
     if (isWindows) {
-      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⏎</span> for Assist';
+      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⏎</span> for Smart assist';
     }
 
     const st = await cue.captureState();
     $('#live-dot').classList.toggle('off', !st.active);
-    $('#stop-btn').classList.toggle('active', st.active);
+    setSessionButton(st.active);
     if (!settings.onboarded) showOnboard();
   })();
 })();
