@@ -12,7 +12,8 @@
   quitButton.title = isMac ? 'Quit cue (⌘⇧X)' : 'Quit cue (Ctrl+Shift+X)';
 
   // ---- paint icons -------------------------------------------------------
-  $('#logo-btn').innerHTML = icon('logo', { size: 18 });
+  $('#logo-btn').innerHTML = icon('badge-question-mark', { size: 16 });
+  $('#tb-settings-btn').innerHTML = icon('settings', { size: 16 });
   $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
   $('#opacity-btn .ic').innerHTML = icon('eclipse', { size: 14 });
   $('#quit-btn').innerHTML = icon('x', { size: 14 });
@@ -1316,6 +1317,7 @@
   }
   function closeSettings() { saveSettings(); scrim.classList.add('hidden'); }
   $('#more-btn').addEventListener('click', openSettings);
+  $('#tb-settings-btn').addEventListener('click', openSettings);
   $('#s-close').addEventListener('click', () => { void closeSettings(); });
   scrim.addEventListener('click', (e) => { if (e.target === scrim) void closeSettings(); });
 
@@ -1333,8 +1335,12 @@
   });
 
   function updateCustomProviderFields() {
-    $('#custom-endpoint-settings').classList.toggle('hidden', settings.provider !== 'custom');
-    $('#publik-settings').classList.toggle('hidden', settings.provider !== 'publik');
+    const provider = settings.provider;
+    document.querySelectorAll('[data-key-for]').forEach((el) => {
+      el.classList.toggle('hidden', el.dataset.keyFor !== provider);
+    });
+    $('#custom-endpoint-settings').classList.toggle('hidden', provider !== 'custom');
+    $('#publik-settings').classList.toggle('hidden', provider !== 'publik');
     renderPublikBlock();
   }
 
@@ -1434,8 +1440,6 @@
     $('#key-openai').value = settings.apiKeys.openai || '';
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
     $('#key-groq').value = settings.apiKeys.groq || '';
-    $('#key-gemini').value = settings.apiKeys.gemini || '';
-    $('#key-deepgram').value = settings.apiKeys.deepgram || '';
     $('#key-custom').value = settings.apiKeys.custom || '';
     $('#base-url').value = settings.baseUrl || '';
     updateCustomProviderFields();
@@ -1504,7 +1508,7 @@
 
   function statusText() {
     const k = settings.apiKeys;
-    const labels = { publik: 'publik API', cerebras: 'Cerebras', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepgram: 'Deepgram', custom: 'Custom', groq: 'Groq' };
+    const labels = { publik: 'publik API', cerebras: 'Cerebras', openai: 'OpenAI', anthropic: 'Anthropic', custom: 'Custom', groq: 'Groq' };
     const has = Object.keys(labels).filter((p) => k[p]).map((p) => labels[p]);
     const publikPart = settings.provider === 'publik' && publikState
       ? ` · ${publikState.connected ? (publikState.balanceLabel ? `balance ${publikState.balanceLabel}` : 'connected') : 'not set up'}`
@@ -1512,7 +1516,7 @@
     // 'auto' walks the same fallback chain src/stt.js builds; an explicit choice
     // is reported as-is so the status line matches what will actually be used.
     const selectedSttProvider = settings.sttProvider || 'auto';
-    const automaticStt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : (k.gemini ? 'Gemini (batch)' : 'none')));
+    const automaticStt = k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : 'none');
     const stt = selectedSttProvider === 'auto' ? automaticStt : selectedSttProvider;
     return `${labels[settings.provider] || settings.provider}${publikPart} · STT: ${stt}`;
   }
@@ -1687,8 +1691,6 @@
     settings.apiKeys.openai = $('#key-openai').value.trim();
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
     settings.apiKeys.groq = $('#key-groq').value.trim();
-    settings.apiKeys.gemini = $('#key-gemini').value.trim();
-    settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
     settings.apiKeys.custom = $('#key-custom').value.trim();
     settings.baseUrl = $('#base-url').value.trim();
     settings.minimaxRegion = 'global_en';
@@ -1830,7 +1832,7 @@
     {
       icon: '✨',
       title: 'You’re all set',
-      body: 'How to use cue:<ul><li>' + sayShortcut + ' — <strong>What should I say?</strong> from the conversation</li><li>' + assistShortcut + ' — <strong>Smart assist</strong> with whatever\'s on screen or being said</li><li>Click <strong>Start session</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Quit with ' + quitShortcut + '.'
+      body: 'How to use cue:<ul><li>' + sayShortcut + ' — <strong>What should I say?</strong> from the conversation</li><li>' + assistShortcut + ' — <strong>Smart assist</strong> with whatever\'s on screen or being said</li><li>Click <strong>Start session</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>help</strong> icon in the top bar. Quit with ' + quitShortcut + '.'
     }
   ];
   // First-run disclosure (R21 §4.3): two disclosures — cost and data path —

@@ -100,7 +100,7 @@ Windows x64 and Linux x64/arm64 use checksum-verified binaries from the pinned u
 
 ## First launch — the 1-minute setup
 
-When cue opens the first time, a **built-in tutorial** walks you through everything below. You can reopen it anytime by clicking the **cue logo** (top-left of the pill). Here's the same thing in writing.
+When cue opens the first time, a **built-in tutorial** walks you through everything below. You can reopen it anytime by clicking the **help** icon (top-left of the pill). Here's the same thing in writing.
 
 ### Step 1 — Grant permissions
 

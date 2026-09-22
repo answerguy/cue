@@ -334,7 +334,7 @@ async function flushChannel(channel) {
     const settings = store.getSettings();
     const stt = createSTT(settings);
     if (!stt.available) {
-      if (!sttDisabled) { sttDisabled = true; send('status', { message: 'No transcription key set. Add an OpenAI (Whisper), Deepgram, or Gemini key in Settings to enable listening. Screen/LeetCode features work without it.' }); }
+      if (!sttDisabled) { sttDisabled = true; send('status', { message: 'No transcription key set. Add an OpenAI (Whisper) or Groq key in Settings to enable listening. Screen/LeetCode features work without it.' }); }
       return;
     }
     const res = await stt.transcribe(pcm);

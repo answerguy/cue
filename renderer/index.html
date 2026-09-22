@@ -14,7 +14,8 @@
         <span class="drag-dots" aria-hidden="true"></span>
         <span class="drag-label">Drag</span>
       </div>
-      <button class="tb-logo" id="logo-btn" title="cue"></button>
+      <button class="tb-logo" id="logo-btn" title="How to use cue" aria-label="How to use cue"></button>
+      <button class="tb-settings" id="tb-settings-btn" title="Settings" aria-label="Settings"></button>
       <div class="tb-divider"></div>
       <button class="tb-hide" id="hide-btn" title="Hide" aria-label="Hide"><span class="chev"></span><span class="tb-hide-label">Hide</span></button>
       <div class="tb-divider"></div>
@@ -27,8 +28,11 @@
           <span class="ic"></span>
         </button>
         <div id="opacity-popover" class="opacity-popover hidden">
-          <input type="range" id="tb-opacity-slider" min="20" max="100" step="1" value="100" />
-          <span id="tb-opacity-value">100%</span>
+          <div class="opacity-label">Opacity</div>
+          <div class="opacity-row">
+            <input type="range" id="tb-opacity-slider" min="20" max="100" step="1" value="100" />
+            <span id="tb-opacity-value">100%</span>
+          </div>
         </div>
       </div>
       <div class="tb-divider"></div>
@@ -126,18 +130,16 @@
         </div>
 
         <label class="s-label">API keys &amp; URLs <span class="s-hint">stored locally · never sent to any server</span></label>
-        <div class="s-field"><span>Cerebras</span><input id="key-cerebras" type="password" placeholder="csk-..." autocomplete="off" /></div>
-        <div class="s-field"><span>OpenAI</span><input id="key-openai" type="password" placeholder="sk-..." autocomplete="off" /></div>
-        <div class="s-field"><span>Anthropic</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off" /></div>
-        <div class="s-field"><span>Groq</span><input id="key-groq" type="password" placeholder="gsk_..." autocomplete="off" /></div>
-        <div class="s-field"><span>Gemini</span><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="off" /></div>
-        <div class="s-field"><span>Deepgram</span><input id="key-deepgram" type="password" placeholder="dg-..." autocomplete="off" /></div>
-        <div class="s-field"><span>Custom</span><input id="key-custom" type="password" placeholder="optional" autocomplete="off" /></div>
+        <div class="s-field" data-key-for="cerebras"><span>Cerebras</span><input id="key-cerebras" type="password" placeholder="csk-..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="openai"><span>OpenAI</span><input id="key-openai" type="password" placeholder="sk-..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="anthropic"><span>Anthropic</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="groq"><span>Groq</span><input id="key-groq" type="password" placeholder="gsk_..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="custom"><span>Custom</span><input id="key-custom" type="password" placeholder="optional" autocomplete="off" /></div>
 
         <div id="custom-endpoint-settings" class="hidden">
           <label class="s-label" for="base-url">Custom endpoint <span class="s-hint">OpenAI-compatible chat API</span></label>
           <div class="s-field"><span>Base URL</span><input id="base-url" type="url" placeholder="http://127.0.0.1:18789/v1" autocomplete="off" spellcheck="false" /></div>
-          <div class="s-help">Your Custom key and LLM requests are sent to this URL. To also use it for speech-to-text, pick Custom on the Audio tab — otherwise transcription continues to use Deepgram, OpenAI, or Gemini.</div>
+          <div class="s-help">Your Custom key and LLM requests are sent to this URL. To also use it for speech-to-text, pick Custom on the Audio tab — otherwise transcription uses OpenAI or Groq.</div>
         </div>
 
         <!-- publik API: the packaged-build default. Text and buttons are filled by
@@ -178,9 +180,7 @@
         <div class="s-seg s-seg-wrap" id="stt-provider-seg">
           <button data-stt-provider="auto">Auto</button>
           <button data-stt-provider="local">Local</button>
-          <button data-stt-provider="deepgram">Deepgram</button>
           <button data-stt-provider="openai">OpenAI</button>
-          <button data-stt-provider="gemini">Gemini</button>
           <button data-stt-provider="custom">Custom</button>
         </div>
         <div class="s-note">Local mode keeps microphone and meeting audio on this computer. It never silently falls back to a cloud transcription provider. Custom sends audio to the Base URL and Custom key set on the API Keys tab (requires both).</div>
