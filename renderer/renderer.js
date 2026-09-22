@@ -281,30 +281,6 @@
     while (questionHistory.length > MAX_QUESTION_HISTORY) {
       questionHistory.shift();
     }
-    
-    updateHistoryBadge(); // FIX #14: Update badge when history changes
-  }
-  
-  // FIX #14: History button badge showing count
-  function updateHistoryBadge() {
-    const historyBtn = document.getElementById('history-btn');
-    if (!historyBtn) return;
-    
-    // Remove existing badge if any
-    let badge = historyBtn.querySelector('.history-badge');
-    
-    const count = questionHistory.length;
-    if (count > 0) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'history-badge';
-        historyBtn.appendChild(badge);
-      }
-      badge.textContent = count > 9 ? '9+' : count;
-      badge.style.display = '';
-    } else if (badge) {
-      badge.style.display = 'none';
-    }
   }
 
   // ---- Restore last question from history (Ctrl+Z) ----
@@ -317,7 +293,6 @@
       composer.classList.add('stt-filling');
       updateQuestionReadyState();
       syncPlaceholder();
-      updateHistoryBadge(); // Update badge after removing from history
       showToast('Question restored', 1500);
       return true;
     }
@@ -423,7 +398,6 @@
     clearInputInterim(); // FIX #5: Clear interim when clearing input
     syncPlaceholder();
     updateSendButtonState(); // FIX #9
-    updateHistoryBadge(); // FIX #14
     
     // FIX #10: Show undo hint when explicitly cleared
     if (showUndoHint && hadContent) {
@@ -874,7 +848,7 @@
   // History button toggle
   const historyBtn = document.getElementById('history-btn');
   if (historyBtn) {
-    historyBtn.innerHTML = icon('message-square-text', { size: 15 });
+    historyBtn.querySelector('.ic').innerHTML = icon('message-square-text', { size: 14 });
     historyBtn.addEventListener('click', toggleSidebar);
   }
 
@@ -966,11 +940,6 @@
     setListenButton(active);
     // FIX #4: Add .listening class to composer when capture is active
     composer.classList.toggle('listening', active);
-    // Update history button to show active state when listening
-    const historyBtn = document.getElementById('history-btn');
-    if (historyBtn) {
-      historyBtn.classList.toggle('listening', active);
-    }
     // startSystemAudio() is called directly from the stop-button click handler
     // so that the getDisplayMedia request has a fresh user gesture.
     // Here we only start the mic (no gesture required) and stop everything on deactivate.
@@ -1975,7 +1944,6 @@
     smartBtn.classList.toggle('on', !!settings.smart);
     showExample();
     syncPlaceholder();
-    updateHistoryBadge(); // FIX #3: Initialize badge on boot
     updateSendButtonState(); // Initialize send button state
 
     // Fix placeholder shortcut hint to match platform
