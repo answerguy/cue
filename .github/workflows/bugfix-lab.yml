@@ -69,3 +69,16 @@ name: bugfix-lab oracle (cue-mic-not-detected-gemini)
       - name: Run oracle
           pwsh -File tooling/scripts/bugfix-lab/cue-mic-not-detected-gemini.ps1 `
             -TargetDir "${{ github.workspace }}/target"
+  reproduce:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+          cache: 'npm'
+        run: pwsh -File scripts/bugfix-lab/cue-windows-overlay-not-visible-for-mic-grant.ps1
+      - name: Upload desktop screenshot
+          name: bugfix-lab-desktop-screenshot
+          path: bugfix-lab-desktop.png
+          if-no-files-found: ignore
+      - name: Upload window content capture
+          name: bugfix-lab-window-capture
+          path: cue-window-capture.png
+          if-no-files-found: ignore
