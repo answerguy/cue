@@ -19,6 +19,13 @@ const DEFAULTS = {
     threads: 0
   },
   smart: false,
+  // Meeting (system) audio. macOS has no way to capture system audio except through
+  // a ScreenCaptureKit display-capture session, and the OS then shows its
+  // screen-recording indicator in the menu bar and lists cue under Control Center's
+  // "Currently Sharing" for the whole call -- inside the very frame the user is
+  // screen-sharing. cue's promise is to be invisible, so on macOS this is opt-in;
+  // on Windows/Linux loopback capture carries no such indicator, so it stays on.
+  meetingAudio: process.platform !== 'darwin',
   baseUrl: '',
   minimaxRegion: 'global_en',
   apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' , azure: '', publik: '' },
