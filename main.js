@@ -217,9 +217,10 @@ async function getWhisperOverview() {
 // -------- window --------
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  // The window is wider than the panel so the history sidebar can slide out beside it;
-  // the extra strip is transparent and click-through. Must match --main-w in styles.css.
-  const MAIN_W = 700, W = 1000, H = 600;
+  // The window has a transparent, click-through strip on each side of the main column so
+  // the history sidebar can slide out left or right. Must match --main-w/--side-w in
+  // styles.css. Saved windowX is the main column's x, not the window's.
+  const MAIN_W = 700, SIDE_W = 300, W = SIDE_W + MAIN_W + SIDE_W, H = 600;
 
   const savedSettings = store.getSettings();
   let startX = Math.round(workArea.x + (workArea.width - MAIN_W) / 2);
@@ -235,8 +236,9 @@ function createWindow() {
   const winOptions = {
     width: W,
     height: H,
-    x: startX,
+    x: startX - SIDE_W,
     y: startY,
+    enableLargerThanScreen: true,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -291,7 +293,7 @@ function createWindow() {
     moveSaveTimer = setTimeout(() => {
       if (win && !win.isDestroyed()) {
         const [x, y] = win.getPosition();
-        store.setSettings({ windowX: x, windowY: y });
+        store.setSettings({ windowX: x + SIDE_W, windowY: y });
       }
     }, 500);
   });

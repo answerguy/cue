@@ -817,10 +817,31 @@
   const tsRowTimer = { you: null, them: null };
   const TS_SENTENCE_GAP_MS = 10000; // 10s silence = new row
 
+  const SIDEBAR_GAP = 12; // matches the 12px offset in .transcript-sidebar
+
+  function placeSidebar(sidebar) {
+    const panel = $('#panel').getBoundingClientRect();
+    const needed = sidebar.offsetWidth + SIDEBAR_GAP;
+    const areaLeft = screen.availLeft;
+    const areaRight = screen.availLeft + screen.availWidth;
+    const fitsRight = window.screenX + panel.right + needed <= areaRight;
+    const fitsLeft = window.screenX + panel.left - needed >= areaLeft;
+    const onLeft = !fitsRight && fitsLeft;
+    if (sidebar.classList.contains('left') === onLeft) return;
+    // Switch sides without animating, so the open transition starts from the new side's tucked position.
+    sidebar.classList.add('ts-instant');
+    sidebar.classList.toggle('left', onLeft);
+    void sidebar.offsetWidth;
+    sidebar.classList.remove('ts-instant');
+  }
+
   function showSidebar() {
     const sidebar = document.getElementById('transcript-sidebar');
     const historyBtn = document.getElementById('history-btn');
-    if (sidebar) sidebar.classList.add('open');
+    if (sidebar) {
+      placeSidebar(sidebar);
+      sidebar.classList.add('open');
+    }
     if (historyBtn) historyBtn.classList.add('active');
     sidebarOpen = true;
   }
