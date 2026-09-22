@@ -149,18 +149,38 @@ test('routes MiniMax to the global OpenAI-compatible endpoint by default', async
   assert.equal(capturedClientOptions.apiKey, 'test-key');
 });
 
-test('routes MiniMax to the China endpoint when that region is selected', async () => {
+test('MiniMax always uses the global endpoint even if a China region is stored', async () => {
   capturedClientOptions = null;
   const llm = createLLM(minimaxSettings({ minimaxRegion: 'cn_zh' }));
   await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} });
-  assert.equal(capturedClientOptions.baseURL, 'https://api.minimaxi.com/v1');
+  assert.equal(capturedClientOptions.baseURL, 'https://api.minimax.io/v1');
 });
 
-test('falls back to the global endpoint for an unknown region', async () => {
+function cerebrasSettings(overrides) {
+  return Object.assign({
+    provider: 'cerebras',
+    smart: true,
+    apiKeys: { cerebras: 'csk-test' },
+    models: { cerebras: { fast: 'llama3.1-8b', smart: 'llama-3.3-70b' } }
+  }, overrides || {});
+}
+
+test('selects the Cerebras model for the active tier and reports readiness', () => {
+  const smart = createLLM(cerebrasSettings({ smart: true }));
+  assert.equal(smart.provider, 'cerebras');
+  assert.equal(smart.model, 'llama-3.3-70b');
+  assert.equal(smart.ready, true);
+
+  const fast = createLLM(cerebrasSettings({ smart: false }));
+  assert.equal(fast.model, 'llama3.1-8b');
+});
+
+test('routes Cerebras to https://api.cerebras.ai/v1', async () => {
   capturedClientOptions = null;
-  const llm = createLLM(minimaxSettings({ minimaxRegion: 'unknown' }));
+  const llm = createLLM(cerebrasSettings());
   await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} });
-  assert.equal(capturedClientOptions.baseURL, 'https://api.minimax.io/v1');
+  assert.equal(capturedClientOptions.baseURL, 'https://api.cerebras.ai/v1');
+  assert.equal(capturedClientOptions.apiKey, 'csk-test');
 });
 
 // ---- Gemini 404/429 error mapping ------------------------------------------
