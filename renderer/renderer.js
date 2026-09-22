@@ -14,6 +14,7 @@
   // ---- paint icons -------------------------------------------------------
   $('#logo-btn').innerHTML = icon('logo', { size: 18 });
   $('.tb-hide .chev').innerHTML = icon('chevron-down', { size: 14 });
+  $('#opacity-btn .ic').innerHTML = icon('eclipse', { size: 14 });
   $('#quit-btn').innerHTML = icon('x', { size: 14 });
   document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('monitor', { size: 16 });
   document.querySelector('.act[data-mode="say"] .ic').innerHTML = icon('wand-sparkles', { size: 16 });
@@ -537,7 +538,10 @@
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); send(); }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runMode('assist', ''); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      runMode(e.shiftKey ? 'assist' : 'say', '');
+    }
   });
   
   // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A)
@@ -574,11 +578,71 @@
   // Hide / collapse
   function toggleHide() {
     const collapsed = $('#panel').classList.toggle('collapsed');
-    $('#hide-btn').classList.toggle('collapsed', collapsed);
+    const btn = $('#hide-btn');
+    btn.classList.toggle('collapsed', collapsed);
+    const label = btn.querySelector('.tb-hide-label');
+    const text = collapsed ? 'Show' : 'Hide';
+    if (label) label.textContent = text;
+    btn.title = text;
+    btn.setAttribute('aria-label', text);
     $('#live-dot').style.display = collapsed ? 'none' : '';
   }
   $('#hide-btn').addEventListener('click', toggleHide);
   cue.on('hide:toggle', toggleHide);
+
+  const OPACITY_MIN = 0.2;
+  function clampOpacity(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 1;
+    return Math.min(1, Math.max(OPACITY_MIN, Math.round(n * 100) / 100));
+  }
+  function opacityToPercent(value) { return Math.round(clampOpacity(value) * 100); }
+  function persistOpacitySoon() {
+    clearTimeout(persistOpacitySoon.timer);
+    persistOpacitySoon.timer = setTimeout(() => {
+      if (!settings) return;
+      cue.settingsSet({ opacity: settings.opacity }).then((next) => { if (next) settings = next; }).catch(() => {});
+    }, 400);
+  }
+  function applyOpacity(value, persist) {
+    const opacity = clampOpacity(value);
+    const percent = opacityToPercent(opacity);
+    if (settings) settings.opacity = opacity;
+    document.documentElement.style.setProperty('--cue-opacity', String(opacity));
+    const tb = $('#tb-opacity-slider');
+    const tbVal = $('#tb-opacity-value');
+    const s = $('#s-opacity-slider');
+    const sVal = $('#s-opacity-value');
+    if (tb) tb.value = String(percent);
+    if (tbVal) tbVal.textContent = percent + '%';
+    if (s) s.value = String(percent);
+    if (sVal) sVal.textContent = percent + '%';
+    if (persist) persistOpacitySoon();
+  }
+  function toggleOpacityPopover(force) {
+    const pop = $('#opacity-popover');
+    const btn = $('#opacity-btn');
+    if (!pop || !btn) return;
+    const open = force != null ? force : pop.classList.contains('hidden');
+    pop.classList.toggle('hidden', !open);
+    btn.classList.toggle('on', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.getElementById('app').classList.toggle('opacity-open', open);
+  }
+  $('#opacity-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleOpacityPopover();
+  });
+  document.addEventListener('click', (e) => {
+    const wrap = document.querySelector('.tb-opacity-wrap');
+    if (wrap && !wrap.contains(e.target)) toggleOpacityPopover(false);
+  });
+  ['tb-opacity-slider', 's-opacity-slider'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => applyOpacity(Number(el.value) / 100, true));
+    el.addEventListener('change', () => applyOpacity(Number(el.value) / 100, true));
+  });
 
   // Stop = start/stop listening. Kick off system-audio capture straight from the click so
   // the user-gesture is fresh for getDisplayMedia (loopback capture needs it).
@@ -1200,10 +1264,14 @@
   function updateSmartTooltip() {
     if (!settings) return;
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
-    const fast = m.fast || 'fast model';
-    const smart = m.smart || 'smart model';
+    const fast = (m.fast || '').trim();
+    const smart = (m.smart || '').trim();
     const btn = document.getElementById('smart-toggle');
-    if (btn) btn.title = 'Fast: ' + fast + ' · Smart: ' + smart + ' (higher quality, ~2× slower)';
+    if (!btn) return;
+    const same = fast.toLowerCase() === smart.toLowerCase();
+    btn.classList.toggle('hidden', same);
+    if (same) return;
+    btn.title = 'Fast: ' + (fast || 'fast model') + ' · Smart: ' + (smart || 'smart model') + ' (higher quality, ~2× slower)';
   }
 
   // ---- microphone permission banner --------------------------------------
@@ -1394,6 +1462,8 @@
     // Style tab
     $('#ai-rules').value = settings.aiRules || '';
     updateAiRulesCounter();
+    // Appearance tab
+    applyOpacity(settings.opacity, false);
   }
 
   // Whoever cue has been told it may answer questions for. Empty is the normal
@@ -1643,6 +1713,9 @@
     settings.localWhisper.threads = Math.max(0, Math.min(64, Number.parseInt($('#whisper-threads').value, 10) || 0));
     // Style tab
     settings.aiRules = $('#ai-rules').value.trim();
+    // Appearance tab
+    const opacitySlider = $('#s-opacity-slider');
+    if (opacitySlider) settings.opacity = clampOpacity(Number(opacitySlider.value) / 100);
     try {
       settings = await cue.settingsSet(settings);
       $('#s-status').textContent = statusText();
@@ -1733,7 +1806,8 @@
         { label: 'Open Microphone settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone') },
         { label: 'Open Screen Recording settings', action: () => cue.openPane('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') }
       ];
-  const assistShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">↵</span>' : '<span class="kbd">⌘</span> <span class="kbd">↵</span>';
+  const assistShortcut = isWindows ? '<span class="kbd">Ctrl</span><span class="kbd">⇧</span><span class="kbd">↵</span>' : '<span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">↵</span>';
+  const sayShortcut = isWindows ? '<span class="kbd">Ctrl</span> <span class="kbd">↵</span>' : '<span class="kbd">⌘</span> <span class="kbd">↵</span>';
   const quitShortcut = isWindows ? '<span class="kbd">Ctrl</span><span class="kbd">⇧</span><span class="kbd">X</span>' : '<span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">X</span>';
   const OB_STEPS = [
     {
@@ -1756,7 +1830,7 @@
     {
       icon: '✨',
       title: 'You’re all set',
-      body: 'How to use cue:<ul><li>' + assistShortcut + ' — <strong>Smart assist</strong> with whatever\'s on screen or being said</li><li>Click <strong>Start session</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Quit with ' + quitShortcut + '.'
+      body: 'How to use cue:<ul><li>' + sayShortcut + ' — <strong>What should I say?</strong> from the conversation</li><li>' + assistShortcut + ' — <strong>Smart assist</strong> with whatever\'s on screen or being said</li><li>Click <strong>Start session</strong> in the top bar to start listening to a meeting</li><li>Type a question and press <span class="kbd">↵</span></li></ul>Reopen this guide anytime by clicking the <strong>cue logo</strong>. Quit with ' + quitShortcut + '.'
     }
   ];
   // First-run disclosure (R21 §4.3): two disclosures — cost and data path —
@@ -1885,8 +1959,16 @@
     // R4: shortcut hints
     const sayHintEl = document.getElementById('say-shortcut-hint');
     const assistHintEl = document.getElementById('assist-shortcut-hint');
-    if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
-    if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
+    if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
+    if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
+    const sayBtn = document.querySelector('.act[data-mode="say"]');
+    const assistBtn = document.querySelector('.act[data-mode="assist"]');
+    if (sayBtn) sayBtn.title = isWindows
+      ? 'Suggests what to say next based on the conversation (Ctrl+Enter)'
+      : 'Suggests what to say next based on the conversation (⌘↵)';
+    if (assistBtn) assistBtn.title = isWindows
+      ? 'Scans your screen and conversation to decide what you need (Ctrl+Shift+Enter)'
+      : 'Scans your screen and conversation to decide what you need (⌘⇧↵)';
 
     // R6: smart tooltip
     updateSmartTooltip();
@@ -1909,8 +1991,10 @@
 
     // Fix placeholder shortcut hint to match platform
     if (isWindows) {
-      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⏎</span> for Smart assist';
+      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⇧</span><span class="keycap">⏎</span> for Smart assist';
     }
+
+    applyOpacity(settings.opacity, false);
 
     const st = await cue.captureState();
     $('#live-dot').classList.toggle('off', !st.active);

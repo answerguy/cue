@@ -1,6 +1,8 @@
 /* cue — glassmorphism overlay. Tokens reconstructed from the Cluely screenshot. */
 
 :root {
+  --bg: #2b013d;
+  --panel-bg: #3f3642;
   --accent: #3C83F5;
   --accent-hi: #4A8DF7;
   --live: #22C55E;
@@ -51,19 +53,26 @@ html, body {
   align-items: center;
   padding-top: 14px;
   pointer-events: none;                  /* only the actual UI blocks; gaps pass through */
+  opacity: var(--cue-opacity, 1);
 }
+#settings-scrim, #onboard-scrim, #consent-scrim {
+  opacity: var(--cue-opacity, 1);
+}
+#app.opacity-open { padding-top: 62px; }
 #toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #consent-scrim { pointer-events: auto; }
 #toolbar { -webkit-app-region: drag; }   /* drag the top pill to move the window */
-#panel-wrap, #panel, #messages, #action-row, #composer, #input, textarea, button, .act, .smart-pill, .more-btn, #send-btn, .s-close, .s-seg button, .ob-buttons button, .ob-ghost, .ob-primary { -webkit-app-region: no-drag; }
+#panel-wrap, #panel, #messages, #action-row, #composer, #input, textarea, button, .act, .smart-pill, .more-btn, #send-btn, .s-close, .s-seg button, .ob-buttons button, .ob-ghost, .ob-primary, .tb-opacity-wrap, .opacity-popover { -webkit-app-region: no-drag; }
 
 /* ============================ Toolbar pill ============================ */
 #toolbar {
+  position: relative;
+  z-index: 50;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 5px 6px;
   border-radius: var(--r-pill);
-  background: rgba(28,30,38,0.85);
+  background: var(--bg);
   border: 1px solid rgba(255,255,255,0.14);
   box-shadow: 0 8px 24px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.08);
   backdrop-filter: blur(24px) saturate(160%);
@@ -97,6 +106,29 @@ html, body {
 .tb-hide:hover { background: rgba(255,255,255,0.08); }
 .tb-hide .chev { width: 14px; height: 14px; display: inline-flex; color: rgba(255,255,255,0.9); }
 .tb-hide.collapsed .chev { transform: rotate(180deg); }
+.tb-opacity-wrap { position: relative; display: inline-flex; -webkit-app-region: no-drag; }
+.tb-opacity { width: 28px; height: 28px; padding: 0; border-radius: var(--r-pill); }
+.tb-opacity .ic { width: 14px; height: 14px; display: inline-flex; }
+.tb-opacity:hover { background: rgba(255,255,255,0.08); }
+.tb-opacity.on { background: rgba(255,255,255,0.10); }
+.opacity-popover {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; min-width: 180px;
+  background: var(--bg);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.40);
+  -webkit-app-region: no-drag;
+}
+.opacity-popover.hidden { display: none; }
+.opacity-popover input[type="range"], .s-opacity-row input[type="range"] {
+  flex: 1; min-width: 120px; accent-color: #7FB0F9; cursor: pointer;
+}
+.opacity-popover span, .s-opacity-row span {
+  min-width: 36px; color: rgba(255,255,255,0.75); font-size: 12px; font-weight: 600; text-align: right;
+}
+.s-opacity-row { display: flex; align-items: center; gap: 12px; }
 .tb-stop { gap: 6px; padding: 5px 12px 5px 10px; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; color: #fff; }
 .tb-stop .ic { width: 14px; height: 14px; display: inline-flex; }
 .tb-stop:hover { background: rgba(255,255,255,0.08); }
@@ -160,7 +192,7 @@ button:focus { outline: none; }
 #live-dot.off { background: rgba(255,255,255,0.28); box-shadow: none; animation: none; }
 
 .glass {
-  background: rgba(20,22,28,0.72);
+  background: var(--panel-bg);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid var(--bd-hair);
@@ -642,7 +674,7 @@ button:focus { outline: none; }
   flex-direction: column;
   
   /* Glass styling to match main panel */
-  background: rgba(20,22,28,0.85);
+  background: var(--panel-bg);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid var(--bd-hair);

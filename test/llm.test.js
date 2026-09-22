@@ -161,18 +161,18 @@ function cerebrasSettings(overrides) {
     provider: 'cerebras',
     smart: true,
     apiKeys: { cerebras: 'csk-test' },
-    models: { cerebras: { fast: 'llama3.1-8b', smart: 'llama-3.3-70b' } }
+    models: { cerebras: { fast: 'qwen-3.8-27b', smart: 'qwen-3.8-27b' } }
   }, overrides || {});
 }
 
 test('selects the Cerebras model for the active tier and reports readiness', () => {
   const smart = createLLM(cerebrasSettings({ smart: true }));
   assert.equal(smart.provider, 'cerebras');
-  assert.equal(smart.model, 'llama-3.3-70b');
+  assert.equal(smart.model, 'qwen-3.8-27b');
   assert.equal(smart.ready, true);
 
   const fast = createLLM(cerebrasSettings({ smart: false }));
-  assert.equal(fast.model, 'llama3.1-8b');
+  assert.equal(fast.model, 'qwen-3.8-27b');
 });
 
 test('routes Cerebras to https://api.cerebras.ai/v1', async () => {

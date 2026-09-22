@@ -16,11 +16,21 @@
       </div>
       <button class="tb-logo" id="logo-btn" title="cue"></button>
       <div class="tb-divider"></div>
-      <button class="tb-hide" id="hide-btn"><span class="chev"></span><span>Hide</span></button>
+      <button class="tb-hide" id="hide-btn" title="Hide" aria-label="Hide"><span class="chev"></span><span class="tb-hide-label">Hide</span></button>
       <div class="tb-divider"></div>
       <button class="tb-stop" id="stop-btn" title="Start session" aria-label="Start session">
         <span class="ic"></span><span class="tb-stop-label">Start session</span>
       </button>
+      <div class="tb-divider"></div>
+      <div class="tb-opacity-wrap">
+        <button class="tb-opacity" id="opacity-btn" title="Opacity" aria-label="Opacity" aria-expanded="false">
+          <span class="ic"></span>
+        </button>
+        <div id="opacity-popover" class="opacity-popover hidden">
+          <input type="range" id="tb-opacity-slider" min="20" max="100" step="1" value="100" />
+          <span id="tb-opacity-value">100%</span>
+        </div>
+      </div>
       <div class="tb-divider"></div>
       <button class="tb-quit" id="quit-btn" title="Quit cue" aria-label="Quit cue"></button>
     </div>
@@ -56,7 +66,7 @@
 
             <div id="composer">
               <div id="input-area">
-                <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⏎</span> for Smart assist</div>
+                <div id="placeholder">Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⇧</span><span class="keycap">⏎</span> for Smart assist</div>
                 <textarea id="input" rows="1" spellcheck="false"></textarea>
               </div>
               <div id="composer-bottom">
@@ -101,6 +111,7 @@
         <button class="s-tab on" data-tab="keys">🔑 API Keys</button>
         <button class="s-tab" data-tab="transcription">🔉 Audio</button>
         <button class="s-tab" data-tab="style">✨ Style</button>
+        <button class="s-tab" data-tab="appearance">🌗 Appearance</button>
       </div>
 
       <!-- Tab: Keys -->
@@ -233,6 +244,15 @@
         <div class="s-counter"><span id="ai-rules-count">0</span> / 2000</div>
         <div class="s-hint-block">
           These rules tell cue <strong>how</strong> to write, not <strong>what</strong> to say. Use one imperative sentence per line (e.g. <em>Never use em-dashes.</em>). They apply to every mode except coding-problem solves (LeetCode), which stays strict. Stored locally; never sent anywhere except the AI provider when cue answers a question.
+        </div>
+      </div>
+
+      <!-- Tab: Appearance -->
+      <div class="s-body s-tab-pane hidden" data-pane="appearance">
+        <label class="s-label" for="s-opacity-slider">Opacity <span class="s-hint">how see-through the overlay is</span></label>
+        <div class="s-opacity-row">
+          <input type="range" id="s-opacity-slider" min="20" max="100" step="1" value="100" />
+          <span id="s-opacity-value">100%</span>
         </div>
       </div>
 
