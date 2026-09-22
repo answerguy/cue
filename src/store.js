@@ -28,7 +28,7 @@ const DEFAULTS = {
   meetingAudio: process.platform !== 'darwin',
   baseUrl: '',
   minimaxRegion: 'global_en',
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' , azure: '', publik: '' },
+  apiKeys: { cerebras: '', openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' , azure: '', publik: '' },
   azureEndpoint: '',
   // publik API (packaged-build default). apiKeys.publik holds the minted key;
   // everything here is state the main process owns — the renderer only reads
@@ -71,6 +71,7 @@ const DEFAULTS = {
   windowX: null,
   windowY: null,
   models: {
+    cerebras: { fast: 'llama3.1-8b', smart: 'llama-3.3-70b' },
     openai: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     // Kept in sync with CURRENT_ANTHROPIC_DEFAULT_FAST/_SMART in src/llm.js —
     // claude-3-5-haiku-latest/claude-3-5-sonnet-latest (the previous defaults

@@ -1348,7 +1348,6 @@
     show('#publik-link', !!cta);
     show('#publik-add-credit', p.connected && !p.revoked && p.claimState === 'claimed' && !!p.addCreditUrl);
     show('#publik-disconnect', p.connected && !p.revoked);
-    $('#provider-publik').classList.toggle('hidden', !p.available);
     if (settings.provider === 'publik') $('#s-status').textContent = statusText();
   }
   $('#publik-setup').addEventListener('click', () => showPublikDisclosure());
@@ -1363,19 +1362,15 @@
   function fillSettings() {
     // Keys tab
     document.querySelectorAll('#provider-seg button').forEach((b) => b.classList.toggle('on', b.dataset.provider === settings.provider));
+    $('#key-cerebras').value = settings.apiKeys.cerebras || '';
     $('#key-openai').value = settings.apiKeys.openai || '';
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
+    $('#key-groq').value = settings.apiKeys.groq || '';
     $('#key-gemini').value = settings.apiKeys.gemini || '';
     $('#key-deepgram').value = settings.apiKeys.deepgram || '';
     $('#key-custom').value = settings.apiKeys.custom || '';
     $('#base-url').value = settings.baseUrl || '';
     updateCustomProviderFields();
-    $('#key-ollama').value = settings.apiKeys.ollama || '';
-    $('#key-groq').value = settings.apiKeys.groq || '';
-    $('#key-minimax').value = settings.apiKeys.minimax || '';
-    document.querySelectorAll('#minimax-region-seg button').forEach((b) => b.classList.toggle('on', b.dataset.region === (settings.minimaxRegion || 'global_en')));
-    $('#key-azure').value = settings.apiKeys.azure || '';
-    $('#azure-endpoint').value = settings.azureEndpoint || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     fillAppLinkCallers();
@@ -1396,20 +1391,9 @@
     const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
     $('#whisper-language').value = localWhisper.language || 'auto';
     $('#whisper-threads').value = Number(localWhisper.threads) || 0;
-    // Profile tab
-    $('#resume-text').value = settings.resumeText || '';
-    $('#job-description').value = settings.jobDescription || '';
-    // Interview Prep tab
-    $('#star-stories').value = settings.starStories || '';
-    $('#why-company').value = settings.whyCompany || '';
-    $('#why-leaving').value = settings.whyLeaving || '';
-    $('#work-style').value = settings.workStyle || '';
     // Style tab
     $('#ai-rules').value = settings.aiRules || '';
     updateAiRulesCounter();
-    // Q&A tab
-    $('#salary-target').value = settings.salaryTarget || '';
-    $('#questions-to-ask').value = settings.questionsToAsk || '';
   }
 
   // Whoever cue has been told it may answer questions for. Empty is the normal
@@ -1448,26 +1432,9 @@
     }
   }
 
-  const uploadResumeBtn = document.getElementById('upload-resume-btn');
-  if (uploadResumeBtn) uploadResumeBtn.addEventListener('click', async () => {
-    const res = await cue.pickProfileDocument();
-    if (!res || res.canceled) return;
-    if (res.error) { showStatus('Resume import failed: ' + res.error); return; }
-    $('#resume-text').value = res.text || '';
-    showStatus('Imported ' + res.fileName + ' — press Save to keep it.');
-  });
-  const uploadJdBtn = document.getElementById('upload-jd-btn');
-  if (uploadJdBtn) uploadJdBtn.addEventListener('click', async () => {
-    const res = await cue.pickProfileDocument();
-    if (!res || res.canceled) return;
-    if (res.error) { showStatus('Job description import failed: ' + res.error); return; }
-    $('#job-description').value = res.text || '';
-    showStatus('Imported ' + res.fileName + ' — press Save to keep it.');
-  });
-
   function statusText() {
     const k = settings.apiKeys;
-    const labels = { publik: 'publik API', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepgram: 'Deepgram', custom: 'Custom', ollama: 'Ollama', groq: 'Groq', minimax: 'MiniMax', azure: 'Azure AI Foundry' };
+    const labels = { publik: 'publik API', cerebras: 'Cerebras', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepgram: 'Deepgram', custom: 'Custom', groq: 'Groq' };
     const has = Object.keys(labels).filter((p) => k[p]).map((p) => labels[p]);
     const publikPart = settings.provider === 'publik' && publikState
       ? ` · ${publikState.connected ? (publikState.balanceLabel ? `balance ${publikState.balanceLabel}` : 'connected') : 'not set up'}`
@@ -1477,13 +1444,7 @@
     const selectedSttProvider = settings.sttProvider || 'auto';
     const automaticStt = k.deepgram ? 'Deepgram (streaming)' : (k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : (k.gemini ? 'Gemini (batch)' : 'none')));
     const stt = selectedSttProvider === 'auto' ? automaticStt : selectedSttProvider;
-    const ready = [
-      settings.resumeText ? '✓ resume' : null,
-      settings.jobDescription ? '✓ JD' : null,
-      settings.starStories ? '✓ stories' : null,
-      settings.salaryTarget ? '✓ salary' : null
-    ].filter(Boolean);
-    return `${labels[settings.provider] || settings.provider}${publikPart} · STT: ${stt}` + (ready.length ? ' · ' + ready.join(' · ') : '');
+    return `${labels[settings.provider] || settings.provider}${publikPart} · STT: ${stt}`;
   }
 
   document.querySelectorAll('#provider-seg button').forEach((b) => b.addEventListener('click', () => {
@@ -1495,11 +1456,6 @@
     $('#s-status').textContent = statusText();
     updateSmartTooltip();
   }));
-  document.querySelectorAll('#minimax-region-seg button').forEach((b) => b.addEventListener('click', () => {
-    settings.minimaxRegion = b.dataset.region;
-    document.querySelectorAll('#minimax-region-seg button').forEach((x) => x.classList.toggle('on', x === b));
-  }));
-
   document.querySelectorAll('#meeting-audio-seg button').forEach((button) => button.addEventListener('click', () => {
     settings.meetingAudio = button.dataset.meetingAudio === 'on';
     document.querySelectorAll('#meeting-audio-seg button').forEach((candidate) => {
@@ -1657,17 +1613,15 @@
 
   async function saveSettings() {
     // Keys
+    settings.apiKeys.cerebras = $('#key-cerebras').value.trim();
     settings.apiKeys.openai = $('#key-openai').value.trim();
     settings.apiKeys.anthropic = $('#key-anthropic').value.trim();
+    settings.apiKeys.groq = $('#key-groq').value.trim();
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
     settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
     settings.apiKeys.custom = $('#key-custom').value.trim();
     settings.baseUrl = $('#base-url').value.trim();
-    settings.apiKeys.ollama = $('#key-ollama').value.trim();
-    settings.apiKeys.groq = $('#key-groq').value.trim();
-    settings.apiKeys.minimax = $('#key-minimax').value.trim();
-    settings.apiKeys.azure = $('#key-azure').value.trim();
-    settings.azureEndpoint = $('#azure-endpoint').value.trim();
+    settings.minimaxRegion = 'global_en';
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
@@ -1678,7 +1632,7 @@
     // cue keeps reporting itself unconfigured even though a valid key was
     // saved for the provider the user actually meant to use.
     if (!settings.apiKeys[settings.provider]) {
-      const keyedProviders = ['openai', 'anthropic', 'gemini', 'groq', 'minimax', 'azure'];
+      const keyedProviders = ['cerebras', 'openai', 'anthropic', 'groq'];
       const justFilled = keyedProviders.find((p) => settings.apiKeys[p]);
       if (justFilled) settings.provider = justFilled;
     }
@@ -1687,19 +1641,8 @@
     settings.localWhisper.modelId = $('#whisper-model').value || settings.localWhisper.modelId || 'base.en';
     settings.localWhisper.language = $('#whisper-language').value || 'auto';
     settings.localWhisper.threads = Math.max(0, Math.min(64, Number.parseInt($('#whisper-threads').value, 10) || 0));
-    // Profile
-    settings.resumeText = $('#resume-text').value.trim();
-    settings.jobDescription = $('#job-description').value.trim();
-    // Interview Prep
-    settings.starStories = $('#star-stories').value.trim();
-    settings.whyCompany = $('#why-company').value.trim();
-    settings.whyLeaving = $('#why-leaving').value.trim();
-    settings.workStyle = $('#work-style').value.trim();
     // Style tab
     settings.aiRules = $('#ai-rules').value.trim();
-    // Q&A
-    settings.salaryTarget = $('#salary-target').value.trim();
-    settings.questionsToAsk = $('#questions-to-ask').value.trim();
     try {
       settings = await cue.settingsSet(settings);
       $('#s-status').textContent = statusText();
@@ -1937,7 +1880,6 @@
     // A build with no app token never shows the option, and keeps the BYO
     // onboarding card. With one, the "Connect an AI provider" card becomes the
     // publik disclosure; the BYO branch stays one tap away on that card.
-    $('#provider-publik').classList.toggle('hidden', !publikState.available);
     if (publikState.available) OB_STEPS.splice(2, 1, { ...publikStep(), publik: true });
 
     // R4: shortcut hints
