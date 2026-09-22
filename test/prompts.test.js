@@ -24,11 +24,6 @@ test('leetcode mode ignores context block and returns coding prompt', () => {
   assert.ok(!system.includes('IGNORED_CONTEXT'), 'leetcode should not include context block');
 });
 
-test('followup mode returns a bullet list', () => {
-  const system = MODES.followup.buildSystem(null);
-  assert.match(system, /bullet list|bullets/i);
-});
-
 test('all modes have a build function', () => {
   for (const [name, mode] of Object.entries(MODES)) {
     assert.equal(typeof mode.build, 'function', `${name}.build must be a function`);

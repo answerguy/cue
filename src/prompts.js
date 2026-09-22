@@ -87,27 +87,6 @@ const MODES = {
     }
   },
 
-  // ── Follow-up questions ────────────────────────────────────────────────────
-  followup: {
-    needsScreen: false,
-    userBubble: 'Follow-up questions',
-    small: true,
-    resumeMode: 'followup',
-    buildSystem(contextBlock, aiRules) {
-      return applyRules(buildSystem(
-        'You are cue. Suggest 2–4 sharp follow-up questions the candidate could ask the interviewer.\n' +
-        'Base them on what was discussed and the candidate\'s background/target role.\n' +
-        'Good follow-ups: show genuine curiosity, demonstrate research, highlight the candidate\'s strengths, or uncover role details.\n' +
-        'Return as a bullet list only. No preamble.',
-        contextBlock
-      ), aiRules, 'followup');
-    },
-    build(ctx) {
-      const t = formatTranscript(ctx.transcript, 20);
-      return 'Conversation so far:\n' + (t || '(none)') + '\n\nSuggest follow-up questions for the interviewer.';
-    }
-  },
-
   // ── Recap ──────────────────────────────────────────────────────────────────
   recap: {
     needsScreen: false,

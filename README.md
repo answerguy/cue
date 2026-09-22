@@ -25,7 +25,6 @@ cue floats a small glass panel on top of everything. It takes **three separate i
 |---|---|---|
 | **Assist** | `⌘` `↵` (macOS) or `Ctrl` `Enter` (Windows), configurable | your screen + recent conversation |
 | **What should I say?** | button | meeting audio + your mic |
-| **Follow-up questions** | button | the whole conversation |
 | **Recap** | button | the whole conversation |
 | **Ask anything** | type + `↵` | your screen + conversation |
 | **Solve a coding problem** | `⌘` `H` (macOS) or `Ctrl` `H` (Windows) | your screen only |
@@ -44,7 +43,7 @@ It's a copilot for **live meetings** ("what do I say to that?") and **coding pro
 | Permissions to grant | Microphone **and** Screen Recording | Microphone only |
 
 > [!NOTE]
-> **Meeting audio needs macOS 14.4+.** Capturing the *other* person — what powers **What should I say?**, **Follow-up questions**, and **Recap** — uses system-audio loopback. On Windows that works out of the box. On macOS it relies on ScreenCaptureKit, which cue enables through Chromium's `MacLoopbackAudioForScreenShare` and `MacSckSystemAudioLoopbackOverride` switches; on older macOS the *Them* channel stays silent while your screen and the **You** channel keep working.
+> **Meeting audio needs macOS 14.4+.** Capturing the *other* person — what powers **What should I say?** and **Recap** — uses system-audio loopback. On Windows that works out of the box. On macOS it relies on ScreenCaptureKit, which cue enables through Chromium's `MacLoopbackAudioForScreenShare` and `MacSckSystemAudioLoopbackOverride` switches; on older macOS the *Them* channel stays silent while your screen and the **You** channel keep working.
 
 ---
 
@@ -239,7 +238,7 @@ Try `base.en`, `tiny.en`, or a quantized `q5`/`q8` model. Model size in Settings
 **"It says give access, but I already gave access."**
 You probably granted an older build. Because the app is ad-hoc signed, a rebuild changes its identity and macOS stops honoring the old grant (the checkmark can linger). Toggle cue **off and on** in System Settings → Screen Recording, or remove and re-add it.
 
-**"What should I say?", "Follow-up questions", or "Recap" never hear the other person (macOS).**
+**"What should I say?" or "Recap" never hear the other person (macOS).**
 Expected — meeting audio is Windows-only (see [Platform support](#platform-support)). Your own mic still transcribes, so those features see the *You* side of the conversation but never the *Them* side.
 
 **cue has no dock or taskbar icon — how do I quit it?**
