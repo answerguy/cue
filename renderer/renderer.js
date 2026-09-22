@@ -1197,24 +1197,6 @@
   }
   const aiRulesEl = document.getElementById('ai-rules');
   if (aiRulesEl) aiRulesEl.addEventListener('input', updateAiRulesCounter);
-  function updatePrepStatus() {
-    if (!settings) return;
-    const fields = {
-      resume:  !!(settings.resumeText && settings.resumeText.trim()),
-      jd:      !!(settings.jobDescription && settings.jobDescription.trim()),
-      stories: !!(settings.starStories && settings.starStories.trim()),
-      salary:  !!(settings.salaryTarget && settings.salaryTarget.trim())
-    };
-    document.querySelectorAll('#prep-status .prep-item').forEach((el) => {
-      const loaded = fields[el.dataset.field];
-      el.classList.toggle('loaded', loaded);
-      el.classList.toggle('missing', !loaded);
-      el.title = loaded
-        ? el.textContent.trim() + ' loaded'
-        : el.textContent.trim() + ' not set — add in Settings';
-    });
-  }
-
   function updateSmartTooltip() {
     if (!settings) return;
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
@@ -1721,7 +1703,6 @@
     try {
       settings = await cue.settingsSet(settings);
       $('#s-status').textContent = statusText();
-      updatePrepStatus();
       updateSmartTooltip();
       return true;
     } catch (error) {
@@ -1965,8 +1946,6 @@
     if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
     if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
 
-    // R5: prep status
-    updatePrepStatus();
     // R6: smart tooltip
     updateSmartTooltip();
     // Fix 3: Adjust permission buttons based on actual Windows version.
