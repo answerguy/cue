@@ -51,3 +51,21 @@ jobs:
         if: always() && steps.oracle.outputs.exit_code == '2'
         shell: pwsh
         run: exit 1
+name: bugfix-lab oracle (cue-mic-not-detected-gemini)
+  workflow_dispatch:
+    inputs:
+      test_ref:
+        description: "Commit SHA or ref of cue to run the oracle against"
+        required: true
+  oracle:
+      - name: Checkout tooling (this branch — oracle harness + ps1)
+          path: tooling
+      - name: Checkout target ref under test
+          path: target
+          ref: ${{ inputs.test_ref }}
+          fetch-depth: 1
+      - name: Setup Node
+          node-version: "22"
+      - name: Run oracle
+          pwsh -File tooling/scripts/bugfix-lab/cue-mic-not-detected-gemini.ps1 `
+            -TargetDir "${{ github.workspace }}/target"

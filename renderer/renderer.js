@@ -957,7 +957,6 @@
       // Don't auto-close sidebar — let user keep it open if they want
     }
     updateSttStatus({ active, streaming });
-    if (active) { startMic(); } else { stopMic(); stopSystemAudio(); }
     if (active && mode === 'local') {
       sttState = 'local';
       const label = document.getElementById('stt-status');
