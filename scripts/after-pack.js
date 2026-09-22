@@ -1,5 +1,9 @@
 const path = require('path');
-const { Arch } = require('builder-util');
+// electron-builder's Arch enum, inlined rather than imported: `builder-util` is a
+// transitive dependency of electron-builder, not a declared one, so requiring it made
+// this script (and its test) fail wherever electron-builder is not installed.
+const Arch = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal',
+               ia32: 0, x64: 1, armv7l: 2, arm64: 3, universal: 4 };
 const { prepareWhisperRuntime } = require('./prepare-whisper-runtime');
 const { getRuntimeTarget } = require('../src/whisper-runtime-manifest');
 
