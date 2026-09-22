@@ -138,7 +138,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'toast';
-      document.getElementById('app').appendChild(el);
+      document.getElementById('panel-wrap').appendChild(el);
     }
     // Clear any pending timers to prevent overlap
     clearTimeout(toastTimer);
@@ -574,22 +574,14 @@
   const clearTranscriptBtn = document.getElementById('clear-transcript-btn');
   if (clearTranscriptBtn) {
     clearTranscriptBtn.addEventListener('click', async () => {
-      // Save current input to history before clearing (for undo)
-      saveToQuestionHistory(input.value);
-      
       await cue.clearTranscript();
-      clearMessages();
       // Also clear the floating interim bar
       if (interimEl) { interimEl.textContent = ''; interimEl.classList.remove('show'); }
-      // FIX #1: Use ts-list instead of non-existent transcript-list
-      const list = document.getElementById('ts-list');
-      if (list) list.innerHTML = '<div class="ts-placeholder">Conversation history will appear here when listening.</div>';
       transcriptInterimEl = null;
-      clearTranscriptSidebar(); // clear the history sidebar too
-      hardClearSTTFill(); // clear the input box too
-      
-      const undoHint = isWindows ? 'Ctrl+Z to undo' : '⌘Z to undo';
-      showToast(`Transcript cleared · ${undoHint}`, 3500);
+      clearTranscriptSidebar();
+      // Only a question auto-filled from the transcript goes; anything the user typed stays.
+      if (inputFromSTT) hardClearSTTFill();
+      showToast('Transcript cleared.', 2500);
     });
   }
 
