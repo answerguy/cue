@@ -804,17 +804,28 @@
 
   let sttState = 'disconnected';
 
-  function updateSttStatus({ active, streaming } = {}) {
+  const STT_LABELS = {
+    disconnected: 'Transcription off',
+    connecting: 'Starting transcription…',
+    loading: 'Starting transcription…',
+    streaming: 'Transcription running',
+    batch: 'Transcription running',
+    local: 'Transcription running',
+    stopping: 'Stopping transcription…',
+    error: 'Transcription error'
+  };
+
+  function setSttState(state) {
+    sttState = state;
     const label = document.getElementById('stt-status');
     if (!label) return;
-    if (active === false) {
-      sttState = 'disconnected';
-      label.textContent = 'off';
-    } else if (active === true) {
-      sttState = streaming ? 'connecting' : 'batch';
-      label.textContent = sttState;
-    }
-    label.className = 'stt-status stt-' + sttState;
+    label.textContent = STT_LABELS[state];
+    label.className = 'stt-status stt-' + state;
+  }
+
+  function updateSttStatus({ active, streaming } = {}) {
+    if (active === false) setSttState('disconnected');
+    else if (active === true) setSttState(streaming ? 'connecting' : 'batch');
   }
 
   // ---- transcript history sidebar (hidden by default, manual toggle) ----
@@ -976,14 +987,8 @@
       }
       // Don't auto-close sidebar — let user keep it open if they want
     }
-    updateSttStatus({ active, streaming });
-    if (active && mode === 'local') {
-      sttState = 'local';
-      const label = document.getElementById('stt-status');
-      if (label) { label.textContent = 'local'; label.className = 'stt-status stt-local'; }
-    } else {
-      updateSttStatus({ active, streaming });
-    }
+    if (active && mode === 'local') setSttState('local');
+    else updateSttStatus({ active, streaming });
   });
 
   // ---- real-time transcript display (interim + final) ----
@@ -1048,20 +1053,15 @@
   cue.on('stt:status', ({ channel, status, provider }) => {
     cue.log(`[stt] ${provider || channel || 'unknown'} ${status}`);
     if (provider === 'local') {
-      const label = document.getElementById('stt-status');
-      const localLabels = {
-        loading: 'loading local',
+      const localStates = {
+        loading: 'loading',
         ready: 'local',
         transcribing: 'local',
         stopping: 'stopping',
-        off: 'off',
+        off: 'disconnected',
         error: 'error'
       };
-      sttState = status === 'ready' || status === 'transcribing' ? 'local' : status;
-      if (label) {
-        label.textContent = localLabels[status] || status;
-        label.className = 'stt-status stt-' + sttState;
-      }
+      if (localStates[status]) setSttState(localStates[status]);
       if (status === 'loading') setListenButton(true);
       if (status === 'off' || status === 'error') setListenButton(false);
       if (status === 'loading' || status === 'transcribing' || status === 'stopping') setLiveDotState('transcribing');
@@ -1069,11 +1069,7 @@
       if (status === 'off') setLiveDotState('off');
       return;
     }
-    if (status === 'connected') {
-      sttState = 'streaming';
-      const label = document.getElementById('stt-status');
-      if (label) { label.textContent = sttState; label.className = 'stt-status stt-streaming'; }
-    }
+    if (status === 'connected') setSttState('streaming');
   });
   cue.on('vad:state', ({ channel, speaking }) => {
     setLiveDotState(speaking ? 'speaking' : 'idle');
@@ -1167,11 +1163,7 @@
     showStatus(message);
     if (sttState !== 'disconnected') {
       const lower = message.toLowerCase();
-      if (lower.includes('error') || lower.includes(' off')) {
-        sttState = 'error';
-        const label = document.getElementById('stt-status');
-        if (label) { label.textContent = sttState; label.className = 'stt-status stt-error'; }
-      }
+      if (lower.includes('error') || lower.includes(' off')) setSttState('error');
     }
   });
 
