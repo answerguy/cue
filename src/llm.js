@@ -20,7 +20,7 @@ const CURRENT_GEMINI_DEFAULT = 'gemini-2.5-flash';
 const CURRENT_ANTHROPIC_DEFAULT_FAST = 'claude-haiku-4-5-20251001';
 const CURRENT_ANTHROPIC_DEFAULT_SMART = 'claude-sonnet-4-5-20250929';
 const DEFAULT_MODELS = {
-  cerebras: 'llama3.1-8b',
+  cerebras: 'qwen-3.8-27b',
   openai: 'gpt-4o-mini',
   anthropic: CURRENT_ANTHROPIC_DEFAULT_FAST,
   gemini: CURRENT_GEMINI_DEFAULT,
