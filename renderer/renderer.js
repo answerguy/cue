@@ -533,9 +533,8 @@
   // Hide / collapse
   let reopenSidebarOnExpand = false;
   function toggleHide() {
-    const collapsed = $('#panel').classList.toggle('collapsed');
+    const collapsed = $('#panel-wrap').classList.toggle('collapsed');
     $('#hide-btn').classList.toggle('collapsed', collapsed);
-    $('#live-dot').style.display = collapsed ? 'none' : '';
     if (collapsed) {
       reopenSidebarOnExpand = sidebarOpen;
       if (sidebarOpen) hideSidebar();
