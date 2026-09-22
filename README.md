@@ -184,7 +184,7 @@ cue is hidden from most screen-share tools automatically — **Google Meet, Micr
 
 - **`⌘` `↵` — Smart assist.** The do-the-smart-thing key. On a coding problem it solves it; in a conversation it tells you what to say. Works from anywhere. Change it under **Settings → Keyboard shortcuts**.
 - **`⌘` `H` — Solve what's on screen.** Screenshots a coding problem and returns the approach, code, and time/space complexity.
-- **The `▢` button** (top bar) — start/stop **listening** to a meeting. The green dot means it's live.
+- **Start session / End session** (top bar) — start or stop **listening** to a meeting. The green dot means it's live.
 - **Type a question** in the box and press `↵` to ask about your screen or conversation.
 - **Smart** — flip it on for a smarter, more thorough model; off for fast and cheap.
 - **Hide** collapses the panel to just the top bar. Drag cue around by the **top pill**. Quit with `⌘` `⇧` `X` on macOS or `Ctrl` `Shift` `X` on Windows.

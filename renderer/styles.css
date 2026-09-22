@@ -97,7 +97,8 @@ html, body {
 .tb-hide:hover { background: rgba(255,255,255,0.08); }
 .tb-hide .chev { width: 14px; height: 14px; display: inline-flex; color: rgba(255,255,255,0.9); }
 .tb-hide.collapsed .chev { transform: rotate(180deg); }
-.tb-stop { width: 28px; height: 28px; border-radius: var(--r-8); color: #fff; }
+.tb-stop { gap: 6px; padding: 5px 12px 5px 10px; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; color: #fff; }
+.tb-stop .ic { width: 14px; height: 14px; display: inline-flex; }
 .tb-stop:hover { background: rgba(255,255,255,0.08); }
 .tb-stop.active { color: #ff6b6b; }
 .tb-quit { width: 28px; height: 28px; border-radius: var(--r-8); color: rgba(255,255,255,0.50); }
