@@ -80,10 +80,10 @@ const DEFAULTS = {
     // llm.js's DEAD_ANTHROPIC_MODEL_RE self-heal additionally migrates any
     // settings file already saved with the old dead ids.
     anthropic: { fast: 'claude-haiku-4-5-20251001', smart: 'claude-sonnet-4-5-20250929' },
-    // Kept in sync with CURRENT_GEMINI_DEFAULT in src/llm.js — gemini-2.0-flash
-    // (the previous default here) was retired by Google on 2026-03-03 and 404s
-    // on every request. gemini-2.5-flash is current and free-tier available.
-    gemini: { fast: 'gemini-2.5-flash', smart: 'gemini-2.5-flash' },
+    // Kept in sync with CURRENT_GEMINI_DEFAULT in src/llm.js. gemini-2.0-flash
+    // was retired 2026-03-03 and gemini-2.5-flash is closed to new API keys, so
+    // both 404. gemini-3.6-flash is Google's named successor to 2.5-flash.
+    gemini: { fast: 'gemini-3.6-flash', smart: 'gemini-3.6-flash' },
     custom: { fast: '', smart: '' },
     ollama: { fast: 'llama3.2', smart: 'llama3.3' },
     groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },
