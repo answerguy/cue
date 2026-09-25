@@ -28,7 +28,7 @@ const DEFAULTS = {
   meetingAudio: process.platform !== 'darwin',
   baseUrl: '',
   minimaxRegion: 'global_en',
-  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '' , azure: '', publik: '' },
+  apiKeys: { openai: '', anthropic: '', gemini: '', deepgram: '', custom: '', ollama: '', groq: '', minimax: '', deepseek: '', azure: '', publik: '' },
   azureEndpoint: '',
   // publik API (packaged-build default). apiKeys.publik holds the minted key;
   // everything here is state the main process owns — the renderer only reads
@@ -88,6 +88,9 @@ const DEFAULTS = {
     ollama: { fast: 'llama3.2', smart: 'llama3.3' },
     groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },
     minimax: { fast: 'MiniMax-M2.7', smart: 'MiniMax-M3' },
+    // deepseek-chat/deepseek-reasoner were retired 2026-07-24; deepseek-flash
+    // (non-thinking) and deepseek-v4-pro (thinking) are the current aliases.
+    deepseek: { fast: 'deepseek-flash', smart: 'deepseek-v4-pro' },
     azure: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     // Tier aliases, never upstream slugs; the provisioning response overrides them.
     publik: { fast: 'publik-fast', smart: 'publik-balanced' }

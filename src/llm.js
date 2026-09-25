@@ -35,6 +35,10 @@ const DEFAULT_MODELS = {
   ollama: 'llama3.2',
   groq: 'llama-3.1-8b-instant',
   minimax: 'MiniMax-M2.7',
+  // deepseek-chat/deepseek-reasoner were retired 2026-07-24 and now 404; the
+  // replacement aliases are deepseek-flash (non-thinking) and deepseek-v4-pro
+  // (thinking), so those are the defaults used everywhere in this file.
+  deepseek: 'deepseek-flash',
   azure: 'gpt-4o-mini',
   publik: publik.DEFAULT_MODELS.fast
 };
@@ -68,7 +72,16 @@ function resolveGeminiModel(settings) {
 // live model on next read instead of permanently re-hitting the same 404.
 const DEAD_ANTHROPIC_MODEL_RE = /^claude-(2(?:\.\d+)?(?:-|$)|3-)/i;
 
-const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL };
+// Same story for DeepSeek's retired chat/reasoner aliases — map each to its
+// closest current replacement rather than collapsing both to one default.
+const DEAD_DEEPSEEK_MODEL_RE = /^deepseek-(chat|reasoner)$/i;
+const CURRENT_DEEPSEEK_FAST_DEFAULT = 'deepseek-flash';
+const CURRENT_DEEPSEEK_SMART_DEFAULT = 'deepseek-v4-pro';
+
+const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL, deepseek: 'DeepSeek' };
+
+// DeepSeek is OpenAI-compatible and reuses the OpenAI screenshot/streaming path via baseURL.
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 
 function normalizeProviderName(provider) {
   if (!provider) return 'provider';
@@ -461,6 +474,9 @@ function createLLM(settings) {
   if (provider === 'anthropic' && DEAD_ANTHROPIC_MODEL_RE.test(model || '')) {
     model = tier === 'smart' ? CURRENT_ANTHROPIC_DEFAULT_SMART : CURRENT_ANTHROPIC_DEFAULT_FAST;
   }
+  if (provider === 'deepseek' && DEAD_DEEPSEEK_MODEL_RE.test(model || '')) {
+    model = /reasoner/i.test(model) ? CURRENT_DEEPSEEK_SMART_DEFAULT : CURRENT_DEEPSEEK_FAST_DEFAULT;
+  }
   if (!model) model = DEFAULT_MODELS[provider] || '';
   const minimaxRegion = settings.minimaxRegion || 'global_en';
   const endpoint = settings.azureEndpoint || '';
@@ -514,6 +530,7 @@ function createLLM(settings) {
         if (provider === 'ollama') return await streamOllama(args);
         if (provider === 'groq') return await streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });
         if (provider === 'minimax') return await streamOpenAI({ ...args, baseURL: MINIMAX_BASE_URLS[minimaxRegion] || MINIMAX_BASE_URLS.global_en });
+        if (provider === 'deepseek') return await streamOpenAI({ ...args, baseURL: DEEPSEEK_BASE_URL });
         if (provider === 'anthropic') return await streamAnthropic(args);
         if (provider === 'gemini') return await streamGemini(args);
         if (provider === 'azure') return await streamAzure(args);
