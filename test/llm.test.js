@@ -156,11 +156,31 @@ test('routes MiniMax to the China endpoint when that region is selected', async 
   assert.equal(capturedClientOptions.baseURL, 'https://api.minimaxi.com/v1');
 });
 
-test('falls back to the global endpoint for an unknown region', async () => {
+function cerebrasSettings(overrides) {
+  return Object.assign({
+    provider: 'cerebras',
+    smart: true,
+    apiKeys: { cerebras: 'csk-test' },
+    models: { cerebras: { fast: 'qwen-3.8-27b', smart: 'qwen-3.8-27b' } }
+  }, overrides || {});
+}
+
+test('selects the Cerebras model for the active tier and reports readiness', () => {
+  const smart = createLLM(cerebrasSettings({ smart: true }));
+  assert.equal(smart.provider, 'cerebras');
+  assert.equal(smart.model, 'qwen-3.8-27b');
+  assert.equal(smart.ready, true);
+
+  const fast = createLLM(cerebrasSettings({ smart: false }));
+  assert.equal(fast.model, 'qwen-3.8-27b');
+});
+
+test('routes Cerebras to https://api.cerebras.ai/v1', async () => {
   capturedClientOptions = null;
-  const llm = createLLM(minimaxSettings({ minimaxRegion: 'unknown' }));
+  const llm = createLLM(cerebrasSettings());
   await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} });
-  assert.equal(capturedClientOptions.baseURL, 'https://api.minimax.io/v1');
+  assert.equal(capturedClientOptions.baseURL, 'https://api.cerebras.ai/v1');
+  assert.equal(capturedClientOptions.apiKey, 'csk-test');
 });
 
 // ---- DeepSeek ---------------------------------------------------------------

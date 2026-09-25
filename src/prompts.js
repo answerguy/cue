@@ -87,36 +87,6 @@ const MODES = {
     }
   },
 
-  // ── Follow-up questions ────────────────────────────────────────────────────
-  // Follow-up and recap are grounded in THIS conversation: every bullet must
-  // trace back to something actually said. Without that instruction the model
-  // fills an empty or thin transcript with plausible generic interview
-  // questions, which reads as a canned preset. They also no longer assume the
-  // conversation is a job interview — the context block says so when it is.
-  followup: {
-    needsScreen: false,
-    userBubble: 'Follow-up questions',
-    small: true,
-    resumeMode: 'followup',
-    transcriptRequired: true,
-    buildSystem(contextBlock, aiRules) {
-      return applyRules(buildSystem(
-        'You are cue. Suggest 2–4 sharp follow-up questions the user ("You") could ask the other person ("Them") next, ' +
-        'based strictly on what was actually said in this conversation.\n' +
-        'Each question must reference a specific point, name, number, or claim from the transcript — ' +
-        'dig into something they said, clarify an ambiguity, or probe a detail they skipped. ' +
-        'Never produce generic questions that could apply to any conversation. ' +
-        'If the context block shows this is a job interview, favour questions that also reflect well on the candidate.\n' +
-        'Return as a bullet list only. No preamble.',
-        contextBlock
-      ), aiRules, 'followup');
-    },
-    build(ctx) {
-      const t = formatTranscript(ctx.transcript, 20);
-      return 'Conversation so far:\n' + (t || '(none)') + '\n\nSuggest follow-up questions grounded in the specifics above.';
-    }
-  },
-
   // ── Recap ──────────────────────────────────────────────────────────────────
   recap: {
     needsScreen: false,

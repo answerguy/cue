@@ -222,14 +222,17 @@ async function getWhisperOverview() {
 // -------- window --------
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  const W = 700, H = 600;
+  // The window has a transparent, click-through strip on each side of the main column so
+  // the history sidebar can slide out left or right. Must match --main-w/--side-w in
+  // styles.css. Saved windowX is the main column's x, not the window's.
+  const MAIN_W = 700, SIDE_W = 300, W = SIDE_W + MAIN_W + SIDE_W, H = 600;
 
   const savedSettings = store.getSettings();
-  let startX = Math.round(workArea.x + (workArea.width - W) / 2);
+  let startX = Math.round(workArea.x + (workArea.width - MAIN_W) / 2);
   let startY = workArea.y + 6;
 
   if (savedSettings.windowX !== null && savedSettings.windowY !== null) {
-    const clampedX = Math.max(workArea.x - W + 100, Math.min(savedSettings.windowX, workArea.x + workArea.width - 100));
+    const clampedX = Math.max(workArea.x - MAIN_W + 100, Math.min(savedSettings.windowX, workArea.x + workArea.width - 100));
     const clampedY = Math.max(workArea.y, Math.min(savedSettings.windowY, workArea.y + workArea.height - 40));
     startX = clampedX;
     startY = clampedY;
@@ -238,8 +241,9 @@ function createWindow() {
   const winOptions = {
     width: W,
     height: H,
-    x: startX,
+    x: startX - SIDE_W,
     y: startY,
+    enableLargerThanScreen: true,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -294,7 +298,7 @@ function createWindow() {
     moveSaveTimer = setTimeout(() => {
       if (win && !win.isDestroyed()) {
         const [x, y] = win.getPosition();
-        store.setSettings({ windowX: x, windowY: y });
+        store.setSettings({ windowX: x + SIDE_W, windowY: y });
       }
     }, 500);
   });
@@ -348,7 +352,7 @@ async function flushChannel(channel) {
     const settings = store.getSettings();
     const stt = createSTT(settings);
     if (!stt.available) {
-      if (!sttDisabled) { sttDisabled = true; send('status', { message: 'No transcription key set. Add an OpenAI (Whisper), Deepgram, or Gemini key in Settings to enable listening. Screen/LeetCode features work without it.' }); }
+      if (!sttDisabled) { sttDisabled = true; send('status', { message: 'No transcription key set. Add an OpenAI (Whisper) or Groq key in Settings to enable listening. Screen/LeetCode features work without it.' }); }
       return;
     }
     const res = await stt.transcribe(pcm);
@@ -982,8 +986,8 @@ ipcMain.on('permissions:continue', async () => {
 
 // -------- shortcuts --------
 function registerShortcuts() {
-  shortcutState.assist = globalShortcut.register('CommandOrControl+Return', () => runFeature('assist', ''));
-  shortcutState.say = globalShortcut.register('CommandOrControl+Shift+Return', () => runFeature('say', ''));
+  shortcutState.say = globalShortcut.register('CommandOrControl+Return', () => runFeature('say', ''));
+  shortcutState.assist = globalShortcut.register('CommandOrControl+Shift+Return', () => runFeature('assist', ''));
   shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
   shortcutState.hide = globalShortcut.register('CommandOrControl+Shift+/', () => send('hide:toggle', {}));
   shortcutState.quit = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());

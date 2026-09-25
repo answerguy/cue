@@ -29,6 +29,7 @@ const GEMINI_TRANSCRIBE_LIVE_MODEL = 'gemini-3.5-transcribe-live';
 const CURRENT_ANTHROPIC_DEFAULT_FAST = 'claude-haiku-4-5-20251001';
 const CURRENT_ANTHROPIC_DEFAULT_SMART = 'claude-sonnet-4-5-20250929';
 const DEFAULT_MODELS = {
+  cerebras: 'qwen-3.8-27b',
   openai: 'gpt-4o-mini',
   anthropic: CURRENT_ANTHROPIC_DEFAULT_FAST,
   gemini: CURRENT_GEMINI_DEFAULT,
@@ -42,6 +43,7 @@ const DEFAULT_MODELS = {
   azure: 'gpt-4o-mini',
   publik: publik.DEFAULT_MODELS.fast
 };
+const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
 
 // Gemini model ids that Google has since deprecated/retired (the 2.5 family
 // went "no longer available to new users" in Sep 2026). A settings file saved
@@ -78,7 +80,7 @@ const DEAD_DEEPSEEK_MODEL_RE = /^deepseek-(chat|reasoner)$/i;
 const CURRENT_DEEPSEEK_FAST_DEFAULT = 'deepseek-flash';
 const CURRENT_DEEPSEEK_SMART_DEFAULT = 'deepseek-v4-pro';
 
-const PROVIDER_LABELS = { azure: 'Azure AI Foundry', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL, deepseek: 'DeepSeek' };
+const PROVIDER_LABELS = { azure: 'Azure AI Foundry', cerebras: 'Cerebras', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL, deepseek: 'DeepSeek' };
 
 // DeepSeek is OpenAI-compatible and reuses the OpenAI screenshot/streaming path via baseURL.
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
@@ -529,6 +531,7 @@ function createLLM(settings) {
         if (provider === PUBLIK_PROVIDER) return await streamOpenAI(args);
         if (provider === 'ollama') return await streamOllama(args);
         if (provider === 'groq') return await streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });
+        if (provider === 'cerebras') return await streamOpenAI({ ...args, baseURL: CEREBRAS_BASE_URL });
         if (provider === 'minimax') return await streamOpenAI({ ...args, baseURL: MINIMAX_BASE_URLS[minimaxRegion] || MINIMAX_BASE_URLS.global_en });
         if (provider === 'deepseek') return await streamOpenAI({ ...args, baseURL: DEEPSEEK_BASE_URL });
         if (provider === 'anthropic') return await streamAnthropic(args);
