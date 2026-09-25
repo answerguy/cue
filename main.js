@@ -18,6 +18,15 @@ const publik = require('./src/publik');
 const publikBuild = publik.loadBuildConfig();
 const { createMeetingStore } = require('./src/meetings');
 const { createMeetingMemory } = require('./src/meeting-memory');
+const {
+  hashRGBA,
+  shouldEmitSlide,
+  createSlideStore,
+  clampSlidesConfig,
+  buildSlideSystem,
+  buildSlideUser,
+  DEFAULT_STABLE_REQUIRED
+} = require('./src/slides');
 
 // macOS system-audio loopback (the "them" channel via getDisplayMedia) does not
 // start on Electron 31–38 unless these Chromium features are enabled; without
@@ -93,6 +102,14 @@ const transcript = []; // { channel, text, ts } — capped at MAX_TRANSCRIPT_TUR
 const MAX_TRANSCRIPT_TURNS = 200; // ~30–40 minutes of conversation at normal pace
 let meetingMemory = null; // persists the transcript per meeting + notes; see src/meeting-memory.js
 let restoredTurns = []; // turns of an interrupted meeting resumed at launch, replayed to the renderer once
+// -------- slides state (memory-only, never written to disk) --------
+let slideStore = createSlideStore({ maxSlides: 50 });
+let slideTimer = null;
+let slideLastHash = null;
+let slideStableCount = 0;
+let slideBusy = false;
+let slideDisabled = false; // set when the chat key rejects slide captions (stops cost spam)
+let slideTxCursor = 0; // transcript.length at last emitted slide
 const FLUSH_MS = 900;
 const STREAM_INACTIVITY_MS = 25000; // abort a stalled LLM stream so state.busy can't wedge forever
 const MIN_BYTES = Math.floor(16000 * 2 * 0.12); // ~0.12s
@@ -468,6 +485,125 @@ function stopStreamingSTT() {
   streamingMode = false;
 }
 
+// -------- slides: auto tracking (opt-in, memory-only) --------
+// Cheap hash poll (32px thumbnail) every intervalMs; full-res VLM caption only
+// on stable change. Never blocks runFeature (own slideBusy flag). Images are
+// never stored — only hash + caption + transcript window.
+function getSlidesConfig() {
+  return clampSlidesConfig(store.getSettings().slides || {});
+}
+
+async function captureHashFrame() {
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: 32, height: 32 }
+  });
+  if (!sources.length) return null;
+  const img = sources[0].thumbnail;
+  if (!img || img.isEmpty()) return null;
+  const size = img.getSize();
+  const bmp = img.toBitmap();
+  if (!bmp || !size.width || !size.height) return null;
+  return { width: size.width, height: size.height, data: bmp };
+}
+
+async function captionSlide(imageDataUrl, transcriptSlice) {
+  const settings = store.getSettings();
+  const llm = createLLM(settings);
+  if (!llm.ready) throw new Error(llm.configurationError || 'Complete the provider settings.');
+  let watchdog = null;
+  const stalled = new Promise((_res, reject) => {
+    watchdog = setTimeout(() => reject(new Error('slide caption timed out')), STREAM_INACTIVITY_MS);
+  });
+  try {
+    return await Promise.race([
+      llm.stream({
+        system: buildSlideSystem(),
+        turns: [{ role: 'user', text: buildSlideUser(transcriptSlice) }],
+        imageDataUrl,
+        maxTokens: 300,
+        onToken: () => {}
+      }),
+      stalled
+    ]);
+  } finally {
+    clearTimeout(watchdog);
+  }
+}
+
+async function pollSlides() {
+  if (!state.capturing || slideBusy || slideDisabled) return;
+  const cfg = getSlidesConfig();
+  if (!cfg.enabled) return;
+  if (slideStore.count() >= cfg.maxSlides) return;
+  let frame = null;
+  try {
+    frame = await captureHashFrame();
+  } catch {
+    return;
+  }
+  if (!frame) return;
+  const newHash = hashRGBA(frame.width, frame.height, frame.data);
+  if (!newHash) return;
+  const decision = shouldEmitSlide(slideLastHash, newHash, {
+    threshold: cfg.threshold,
+    stableCount: slideStableCount,
+    requiredStable: DEFAULT_STABLE_REQUIRED
+  });
+  slideStableCount = decision.stableCount;
+  if (!decision.emit) {
+    if (slideLastHash && decision.distance != null && decision.distance <= cfg.threshold) slideLastHash = slideLastHash;
+    return;
+  }
+  slideLastHash = newHash;
+  slideStableCount = decision.stableCount;
+  // Stable change: take one full-res frame and caption it.
+  slideBusy = true;
+  try {
+    const imageDataUrl = await captureScreenshot();
+    if (!imageDataUrl) return;
+    const txStart = slideTxCursor;
+    const txEnd = transcript.length;
+    const slice = transcript.slice(txStart, txEnd).slice(-8);
+    const caption = (await captionSlide(imageDataUrl, slice) || '').trim();
+    if (!caption) return;
+    const slide = slideStore.add({ hash: newHash, caption, txStart, txEnd });
+    slideTxCursor = txEnd;
+    send('slides:update', { count: slideStore.count(), last: slide });
+    recordEvent({ level: 'info', event: 'slide_captured', msg: 'slide ' + slideStore.count() + ' captioned' });
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    if (/429|quota|401|403|model_not_found/i.test(msg)) {
+      slideDisabled = true;
+      send('status', { message: 'Slide captions paused: ' + msg });
+    } else {
+      console.log('[slides] caption failed', msg);
+    }
+  } finally {
+    slideBusy = false;
+  }
+}
+
+function startSlideLoop() {
+  stopSlideLoop();
+  const cfg = getSlidesConfig();
+  slideTimer = setInterval(() => { pollSlides().catch(() => {}); }, cfg.intervalMs);
+  if (slideTimer.unref) slideTimer.unref();
+}
+
+function stopSlideLoop() {
+  if (slideTimer) { clearInterval(slideTimer); slideTimer = null; }
+}
+
+function resetSlidesSession() {
+  slideStore.clear();
+  slideLastHash = null;
+  slideStableCount = 0;
+  slideBusy = false;
+  slideDisabled = false;
+  slideTxCursor = transcript.length;
+}
+
 // -------- audio routing (streaming or batch) --------
 // Per-channel level report every few seconds while capturing, so "cue never
 // hears me" reports can be told apart: no chunks (capture never reached the
@@ -527,7 +663,14 @@ async function setCapturing(active) {
         await startLocalWhisper(settings);
         state.capturing = true;
         console.log('[cue] capture started, mode: local');
+        slideDisabled = false;
+        slideTxCursor = transcript.length;
+        slideStore = createSlideStore({ maxSlides: getSlidesConfig().maxSlides });
+        slideLastHash = null;
+        slideStableCount = 0;
+        startSlideLoop();
         send('capture:state', { active: true, streaming: false, mode: 'local' });
+        send('slides:update', { count: 0, last: null });
         return true;
       } catch (error) {
         state.capturing = false;
@@ -550,8 +693,16 @@ async function setCapturing(active) {
     if (!streaming) {
       startFlushLoop();
     }
+    slideDisabled = false;
+    slideTxCursor = transcript.length;
+    const slideCfg = getSlidesConfig();
+    slideStore = createSlideStore({ maxSlides: slideCfg.maxSlides });
+    slideLastHash = null;
+    slideStableCount = 0;
+    startSlideLoop();
     console.log('[cue] capture started, mode:', streaming ? 'streaming' : 'batch');
     send('capture:state', { active: true, streaming: streamingMode, mode: streaming ? 'streaming' : 'batch' });
+    send('slides:update', { count: 0, last: null });
     return true;
   }
 
@@ -565,6 +716,7 @@ async function setCapturing(active) {
       if (notes) send('status', { message: `Meeting notes saved (${transcript.length} turns).` });
     }).catch(() => {});
   }
+  stopSlideLoop();
   buffers.you = []; buffers.them = [];
   vad.you.reset(); vad.them.reset();
   ringBuffers.you.clear(); ringBuffers.them.clear();
@@ -708,7 +860,13 @@ async function runFeature(mode, userText) {
 // Redact on the way out, strip on the way in: the publik key never enters the
 // renderer, and the renderer's whole-object Save can never clobber it.
 ipcMain.handle('settings:get', () => store.redactForRenderer(store.getSettings()));
-ipcMain.handle('settings:set', (_e, patch) => { sttDisabled = false; return store.redactForRenderer(store.setSettings(store.stripRendererPatch(patch))); });
+ipcMain.handle('settings:set', (_e, patch) => {
+  sttDisabled = false;
+  const next = store.setSettings(store.stripRendererPatch(patch));
+  // Restart slide polling with the new interval when capturing (keeps slides).
+  if (state.capturing) startSlideLoop();
+  return store.redactForRenderer(next);
+});
 
 // -------- publik API --------
 // Contract: ~/publik-api-research/CONTRACT.md. The key is minted only after
@@ -937,6 +1095,20 @@ ipcMain.handle('platform:info', () => ({
 ipcMain.handle('transcript:clear', () => {
   if (meetingMemory) meetingMemory.end().catch(() => {}); // it stays in history with its notes
   transcript.splice(0, transcript.length);
+  resetSlidesSession();
+  send('slides:update', { count: 0, last: null });
+  return { ok: true };
+});
+ipcMain.handle('slides:list', () => slideStore.list());
+ipcMain.handle('slides:state', () => ({
+  ...getSlidesConfig(),
+  count: slideStore.count(),
+  polling: !!slideTimer,
+  disabled: slideDisabled
+}));
+ipcMain.handle('slides:clear', () => {
+  resetSlidesSession();
+  send('slides:update', { count: 0, last: null });
   return { ok: true };
 });
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
@@ -971,7 +1143,13 @@ ipcMain.handle('profile:pickDocument', async () => {
 });
 ipcMain.on('app:quit', () => app.quit());
 ipcMain.handle('applink:state', () => appLinkConsentState());
-ipcMain.handle('applink:revoke', (_e, callerId) => revokeAppLinkCaller(callerId));
+ipcMain.handle('applink:revoke', (_e, callerId) => {
+  // Forgetting a caller also clears its separate slide-caption consent decision,
+  // so a caller the user re-approves later is asked about slides again too,
+  // rather than silently inheriting whatever it was granted or denied before.
+  store.clearSlidesConsent(callerId);
+  return revokeAppLinkCaller(callerId);
+});
 
 // -------- permissions IPC --------
 ipcMain.handle('permissions:check', () => getPermissionStatus());
@@ -1171,8 +1349,12 @@ function launchApp() {
       sttDisabled,
       shortcuts: { ...shortcutState },
       windowAlive: !!(win && !win.isDestroyed()),
+      slides: slideStore.list(),
     }),
     setCapturing,
+    getSlides: () => slideStore.list(),
+    getSlidesConsent: (callerId) => store.getSlidesConsent(callerId),
+    setSlidesConsent: (callerId, decision) => store.setSlidesConsent(callerId, decision),
     // Looked up rather than captured: the window is recreated on 'activate',
     // so a reference taken at startup goes stale.
     getWindow: () => win,
@@ -1226,6 +1408,7 @@ app.on('will-quit', () => {
   // behind is harmless anyway because readers check whether the PID is alive.
   // Delaying shutdown to tidy a directory would be the wrong trade.
   stopAppLink();
+  stopSlideLoop();
   if (whisperModelManager?.activeDownload) {
     whisperModelManager.cancelDownload(whisperModelManager.activeDownload.modelId);
   }

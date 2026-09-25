@@ -1143,6 +1143,11 @@
   cue.on('vad:state', ({ channel, speaking }) => {
     setLiveDotState(speaking ? 'speaking' : 'idle');
   });
+  cue.on('slides:update', ({ count, last }) => {
+    if (!count) return;
+    const title = last && last.caption ? last.caption.split('\n')[0].slice(0, 80) : 'Slide ' + count;
+    showToast(`Slide ${count} captured · ${title}`, 3000);
+  });
   cue.on('llm:start', ({ userBubble, small, category }) => {
     responseCount++;
     if (responseCount > MAX_RESPONSES) {
@@ -1473,6 +1478,12 @@
     const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
     $('#whisper-language').value = localWhisper.language || 'auto';
     $('#whisper-threads').value = Number(localWhisper.threads) || 0;
+    // Slides tab (inside Transcription pane)
+    const slidesCfg = settings.slides || { enabled: false, intervalMs: 3000 };
+    const slidesEnabled = $('#slides-enabled');
+    if (slidesEnabled) slidesEnabled.checked = !!slidesCfg.enabled;
+    const slidesInterval = $('#slides-interval');
+    if (slidesInterval) slidesInterval.value = slidesCfg.intervalMs || 3000;
     // Style tab
     $('#ai-rules').value = settings.aiRules || '';
     updateAiRulesCounter();
@@ -1733,6 +1744,15 @@
     settings.localWhisper.modelId = $('#whisper-model').value || settings.localWhisper.modelId || 'base.en';
     settings.localWhisper.language = $('#whisper-language').value || 'auto';
     settings.localWhisper.threads = Math.max(0, Math.min(64, Number.parseInt($('#whisper-threads').value, 10) || 0));
+    // Slides (opt-in, memory-only)
+    if (!settings.slides) settings.slides = {};
+    const slidesEnabledEl = $('#slides-enabled');
+    const slidesIntervalEl = $('#slides-interval');
+    if (slidesEnabledEl) settings.slides.enabled = !!slidesEnabledEl.checked;
+    if (slidesIntervalEl) {
+      const v = Number.parseInt(slidesIntervalEl.value, 10) || 3000;
+      settings.slides.intervalMs = Math.max(1500, Math.min(15000, v));
+    }
     // Style tab
     settings.aiRules = $('#ai-rules').value.trim();
     // Appearance tab

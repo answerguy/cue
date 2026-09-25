@@ -136,3 +136,21 @@ test('opacity is persisted and clamped so the window cannot disappear', () => {
   store.setSettings({ opacity: 0.73 });
   assert.equal(store.getSettings().opacity, 0.73);
 });
+
+test('slide-caption app-link consent is tracked per caller, separately from the read/action scope grants', () => {
+  const { store, read } = loadStore();
+  assert.equal(store.getSlidesConsent('com.publikhq.iris'), undefined);
+
+  store.setSlidesConsent('com.publikhq.iris', 'granted');
+  assert.equal(store.getSlidesConsent('com.publikhq.iris'), 'granted');
+  assert.equal(store.getSlidesConsent('some-other-caller'), undefined, 'consent is per caller, not global');
+  assert.deepEqual(read().applinkSlidesConsent, { 'com.publikhq.iris': 'granted' });
+
+  store.setSlidesConsent('some-other-caller', 'denied');
+  assert.equal(store.getSlidesConsent('some-other-caller'), 'denied');
+  assert.equal(store.getSlidesConsent('com.publikhq.iris'), 'granted', 'unaffected by a different caller');
+
+  store.clearSlidesConsent('com.publikhq.iris');
+  assert.equal(store.getSlidesConsent('com.publikhq.iris'), undefined);
+  assert.equal(store.getSlidesConsent('some-other-caller'), 'denied', 'clearing one caller leaves others alone');
+});

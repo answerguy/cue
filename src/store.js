@@ -69,6 +69,18 @@ const DEFAULTS = {
   aiRules: '',
   // Overlay opacity (1 = fully opaque). Clamped so the window never vanishes.
   opacity: 1,
+  // Slides: opt-in auto slide tracking (memory-only, forwarded, never written to disk).
+  slides: {
+    enabled: false,
+    intervalMs: 3000,
+    threshold: 5,
+    maxSlides: 50
+  },
+  // Per-caller consent for the app-link get_slides action, separate from the
+  // link's coarse read/action scopes: a caller already trusted to start/stop
+  // listening (scope "action") is NOT automatically trusted to read slide
+  // captions too. Keyed by app-link caller id; value is 'granted' or 'denied'.
+  applinkSlidesConsent: {},
   // Window position
   windowX: null,
   windowY: null,
@@ -203,5 +215,26 @@ module.exports = {
     data = nextSettings;
     save();
     return data;
+  },
+  // Per-caller consent for the app-link get_slides action — separate from the
+  // link's own read/action scope grants (see src/applink.js). 'granted',
+  // 'denied', or undefined if the caller has never been asked.
+  getSlidesConsent(callerId) {
+    load();
+    return (data.applinkSlidesConsent || {})[callerId];
+  },
+  setSlidesConsent(callerId, decision) {
+    load();
+    data.applinkSlidesConsent = { ...(data.applinkSlidesConsent || {}), [callerId]: decision };
+    save();
+    return data.applinkSlidesConsent;
+  },
+  clearSlidesConsent(callerId) {
+    load();
+    if (!data.applinkSlidesConsent || !(callerId in data.applinkSlidesConsent)) return;
+    const next = { ...data.applinkSlidesConsent };
+    delete next[callerId];
+    data.applinkSlidesConsent = next;
+    save();
   }
 };
