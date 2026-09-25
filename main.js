@@ -36,6 +36,14 @@ const {
 if (process.platform === 'darwin') {
   app.commandLine.appendSwitch('enable-features', 'MacLoopbackAudioForScreenShare,MacSckSystemAudioLoopbackOverride');
 }
+
+// Linux Wayland / Ozone native rendering configuration. Without this, Electron
+// falls back to XWayland even on a native Wayland session; 'auto' picks Wayland
+// when available and X11 otherwise. Harmless no-op on X11-only sessions.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-features', 'UseOzonePlatform,WaylandWindowDecorations');
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+}
 const { WhisperModelManager } = require('./src/whisper-model-manager');
 const { requireWhisperModel } = require('./src/whisper-model-catalog');
 const { locateWhisperRuntime } = require('./src/whisper-runtime');
@@ -49,6 +57,7 @@ let win = null;
 const shortcutState = { assist: false, say: false, leetcode: false, quit: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
+const isLinux = process.platform === 'linux';
 
 // -------- Windows version helpers --------
 // WDA_EXCLUDEFROMCAPTURE (setContentProtection) requires Windows 10 build 19041+.
@@ -304,7 +313,12 @@ function createWindow() {
   // we skip it silently and send a warning to the renderer instead.
   const shouldProtect = !process.env.CUE_NO_PROTECT && WIN_IS_LOCAL_CONSOLE_SESSION;
   if (shouldProtect) {
-    if (WIN_SUPPORTS_CONTENT_PROTECTION) {
+    if (isLinux) {
+      // setContentProtection has no effect on Linux (no windowing-system-level
+      // capture-exclusion primitive it can map to) — skip the no-op call and
+      // say so, rather than pretending the window is hidden from screen shares.
+      console.log('[cue] Running on Linux: native screen protection (setContentProtection) is not supported and has been skipped.');
+    } else if (WIN_SUPPORTS_CONTENT_PROTECTION) {
       win.setContentProtection(true);
     } else {
       // Will notify the renderer after it loads
@@ -1445,9 +1459,6 @@ app.on('will-quit', () => {
   }
   if (localWhisperTranscriber) localWhisperTranscriber.forceStop().catch(() => {});
 });
-app.on('window-all-closed', () => app.quit());
-
-app.on('will-quit', () => { globalShortcut.unregisterAll(); });
 app.on('window-all-closed', (e) => {
   // Don't quit while the permissions window is open — the user may be in System Settings
   if (permWin) { e.preventDefault(); return; }
