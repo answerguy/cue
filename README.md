@@ -163,6 +163,14 @@ Local mode is independent from the chat provider, so you can use local speech-to
 - Local mode never silently sends audio to a cloud fallback. A local failure is reported without sending the audio elsewhere.
 - Models are stored under Cue's Electron user-data directory and can be imported or deleted from Settings.
 
+### Optional — word-by-word transcription with only a Gemini key
+
+Deepgram and OpenAI keys stream transcripts word by word automatically. A Gemini key transcribes sentence by sentence unless you pick **Gemini** explicitly under **Settings → Audio**, which switches it to the `gemini-3.5-transcribe-live` streaming model (its running hypothesis gets revised as you speak, which some people find jumpy — that's why it's opt-in).
+
+### Meeting memory
+
+cue keeps what it hears. Every transcript turn is saved to `meetings.json` in cue's data folder as it lands, so a crash or a quit mid-meeting loses nothing: relaunch within 30 minutes and the transcript is restored to the sidebar and **Recap** / **Follow-up questions** carry on from where the conversation was. When you stop listening, cue writes notes for the meeting with your chat model — summary, key points, decisions, action items, follow-ups — and the summaries of your last three meetings are given to the model as background for later conversations (the live transcript always takes priority). A 30-minute silence, the clear-transcript button, or a stale meeting at launch closes the meeting. The newest 50 meetings are kept; nothing leaves your computer except the transcript sent to your chosen provider to write the notes.
+
 ### Optional — tailor answers to your background
 
 In **Settings**, paste your résumé or professional background into **Résumé / professional background**. cue uses it as the factual reference for career-related answers and says when the résumé does not provide a detail. You can clear it anytime.

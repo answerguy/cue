@@ -16,6 +16,8 @@ const publik = require('./src/publik');
 // The app token release.yml baked into src/publik-build.json (empty in a dev
 // checkout → the publik option is simply absent from the provider picker).
 const publikBuild = publik.loadBuildConfig();
+const { createMeetingStore } = require('./src/meetings');
+const { createMeetingMemory } = require('./src/meeting-memory');
 
 // macOS system-audio loopback (the "them" channel via getDisplayMedia) does not
 // start on Electron 31–38 unless these Chromium features are enabled; without
@@ -89,6 +91,8 @@ let sttDisabled = false; // set when the key can't reach any speech model (stops
 const buffers = { you: [], them: [] };
 const transcript = []; // { channel, text, ts } — capped at MAX_TRANSCRIPT_TURNS
 const MAX_TRANSCRIPT_TURNS = 200; // ~30–40 minutes of conversation at normal pace
+let meetingMemory = null; // persists the transcript per meeting + notes; see src/meeting-memory.js
+let restoredTurns = []; // turns of an interrupted meeting resumed at launch, replayed to the renderer once
 const FLUSH_MS = 900;
 const STREAM_INACTIVITY_MS = 25000; // abort a stalled LLM stream so state.busy can't wedge forever
 const MIN_BYTES = Math.floor(16000 * 2 * 0.12); // ~0.12s
@@ -128,6 +132,7 @@ const ringBuffers = {
 function pushTranscript(turn) {
   transcript.push(turn);
   if (transcript.length > MAX_TRANSCRIPT_TURNS) transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
+  if (meetingMemory) meetingMemory.onTurn(turn);
 }
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
@@ -299,6 +304,15 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     win.showInactive();
     win.setTitle('Microsoft Edge Update');
+    if (restoredTurns.length) {
+      // A meeting was in progress when cue last exited: put its transcript back
+      // in the sidebar so Recap / Follow-up pick up where the conversation was.
+      const turns = restoredTurns;
+      restoredTurns = [];
+      send('transcript:restore', { turns });
+      const ageMin = Math.max(1, Math.round((Date.now() - turns[turns.length - 1].ts) / 60000));
+      send('status', { message: `Resumed your meeting from ${ageMin} min ago (${turns.length} turns restored).` });
+    }
     // Warn about missing content protection on old Windows builds
     if (isWindows && shouldProtect && !WIN_SUPPORTS_CONTENT_PROTECTION) {
       send('status', {
@@ -390,17 +404,25 @@ function initStreamingSTT() {
   streamingMode = false;
 
   ['you', 'them'].forEach((channel) => {
+    let instance = null; // set below; lets the callbacks tell a stale instance from the live one
     const sttInstance = createStreamingSTT(settings, channel, {
       onTranscript: (ch, text) => {
+        if (instance && streamingSTT[ch] !== instance) return; // stale instance after a stop/start
+
         const turn = { channel: ch, text, ts: Date.now() };
         pushTranscript(turn);
         send('transcript', turn);
         send('stt:final', { channel: ch, text });
       },
       onInterim: (ch, text) => {
+        if (instance && streamingSTT[ch] !== instance) return;
         send('stt:interim', { channel: ch, text });
       },
       onError: (err) => {
+        // A socket torn down by a quick stop/start can still report an error a
+        // moment later; acting on it would kill the sessions that replaced it
+        // and start the batch loop alongside them (double transcription).
+        if (instance && streamingSTT[channel] !== instance) return;
         console.log('[streaming-stt] error', err.provider, err.message);
         const batchFallbackAvailable = createSTT(settings).available;
         stopStreamingSTT(); // close WebSockets and clear keep-alive intervals
@@ -422,9 +444,10 @@ function initStreamingSTT() {
     });
 
     if (sttInstance.type === 'streaming' && sttInstance.instance) {
+      instance = sttInstance.instance;
       streamingMode = true;
-      streamingSTT[channel] = sttInstance.instance;
-      sttInstance.instance.connect();
+      streamingSTT[channel] = instance;
+      instance.connect();
     }
   });
 
@@ -442,8 +465,28 @@ function stopStreamingSTT() {
 }
 
 // -------- audio routing (streaming or batch) --------
+// Per-channel level report every few seconds while capturing, so "cue never
+// hears me" reports can be told apart: no chunks (capture never reached the
+// main process), chunks but rms≈0 (a silent/muted device), or healthy audio
+// that the transcriber is dropping.
+const AUDIO_LEVEL_LOG_MS = 5000;
+const audioLevels = { you: { chunks: 0, peakRms: 0 }, them: { chunks: 0, peakRms: 0 }, lastLog: 0 };
+function noteAudioLevel(channel, buf) {
+  const lv = audioLevels[channel];
+  lv.chunks++;
+  if (buf.length >= 2) lv.peakRms = Math.max(lv.peakRms, rms16(buf));
+  const now = Date.now();
+  if (now - audioLevels.lastLog < AUDIO_LEVEL_LOG_MS) return;
+  audioLevels.lastLog = now;
+  const fmt = (c) => `${c}: chunks=${audioLevels[c].chunks} peakRms=${Math.round(audioLevels[c].peakRms)}`;
+  console.log(`[audio] ${fmt('you')} | ${fmt('them')} (gate=${RMS_GATE}, mode=${localWhisperTranscriber ? 'local' : streamingMode ? 'streaming' : 'batch'})`);
+  audioLevels.you = { chunks: 0, peakRms: 0 };
+  audioLevels.them = { chunks: 0, peakRms: 0 };
+}
+
 function routeAudio(channel, pcmBuffer) {
   const buf = Buffer.from(pcmBuffer);
+  noteAudioLevel(channel, buf);
 
   if (localWhisperTranscriber) {
     localWhisperTranscriber.push(channel, buf);
@@ -511,6 +554,13 @@ async function setCapturing(active) {
   state.capturing = false;
   stopFlushLoop();
   stopStreamingSTT();
+  if (meetingMemory) {
+    // Write/refresh the notes for this meeting in the background so the
+    // summary survives even if cue is closed before the meeting formally ends.
+    meetingMemory.refreshNotes().then((notes) => {
+      if (notes) send('status', { message: `Meeting notes saved (${transcript.length} turns).` });
+    }).catch(() => {});
+  }
   buffers.you = []; buffers.them = [];
   vad.you.reset(); vad.them.reset();
   ringBuffers.you.clear(); ringBuffers.them.clear();
@@ -588,8 +638,24 @@ async function runFeature(mode, userText) {
       }
     }
 
+    // Follow-up / Recap have nothing to work with before anything was heard —
+    // sent to the model anyway, it fabricates plausible generic output that
+    // looks like a canned preset. Say so instead, and log how much context
+    // every feature actually ran with.
+    console.log(`[llm] mode=${mode} transcriptTurns=${transcript.length} capturing=${state.capturing}`);
+    if (def.transcriptRequired && transcript.length === 0) {
+      send('llm:error', { message: state.capturing
+        ? 'Nothing has been transcribed yet — say something (or let the other side talk) and try again.'
+        : 'Nothing captured yet — press the listen button first so cue can hear the conversation.' });
+      return;
+    }
+
     const settingsForPrompt = store.getSettings();
-    const contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
+    let contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
+    // Summaries of the last few meetings, so "what did we agree last time?"
+    // has something to draw on. Never the current meeting, never leetcode.
+    const memoryBlock = mode !== 'leetcode' && meetingMemory ? meetingMemory.memoryBlock() : null;
+    if (memoryBlock) contextBlock = contextBlock ? contextBlock + '\n\n' + memoryBlock : memoryBlock;
     const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
     const built = def.build({ transcript, userText: userText || '' });
 
@@ -865,6 +931,7 @@ ipcMain.handle('platform:info', () => ({
   winSupportsContentProtection: WIN_SUPPORTS_CONTENT_PROTECTION
 }));
 ipcMain.handle('transcript:clear', () => {
+  if (meetingMemory) meetingMemory.end().catch(() => {}); // it stays in history with its notes
   transcript.splice(0, transcript.length);
   return { ok: true };
 });
@@ -1043,6 +1110,15 @@ function launchApp() {
 
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
 
+  meetingMemory = createMeetingMemory({
+    store: createMeetingStore({ file: path.join(app.getPath('userData'), 'meetings.json'), debounceMs: 1500 }),
+    llmFactory: () => createLLM(store.getSettings()),
+    log: (msg) => console.log('[meetings]', msg)
+  });
+  restoredTurns = meetingMemory.resumeOpen();
+  if (restoredTurns.length) transcript.push(...restoredTurns.slice(-MAX_TRANSCRIPT_TURNS));
+  meetingMemory.catchUp().then((n) => { if (n) console.log(`[meetings] wrote notes for ${n} earlier meeting(s)`); }).catch(() => {});
+
   const allowMedia = (permission) => permission === 'media' || permission === 'microphone' || permission === 'audioCapture' || permission === 'display-capture' || permission === 'screen';
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowMedia(permission)));
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
@@ -1137,6 +1213,10 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  // Quitting mid-meeting is a pause, not an end: the meeting stays open on disk
+  // so a relaunch within the resume window picks it back up (a stale one is
+  // closed and its notes written at the next launch). Just get the bytes down.
+  if (meetingMemory) meetingMemory.flush();
   // Best effort, deliberately not blocking the quit: the library also removes
   // the instance file from a `process.on('exit')` handler, and a file left
   // behind is harmless anyway because readers check whether the PID is alive.

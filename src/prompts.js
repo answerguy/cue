@@ -88,23 +88,32 @@ const MODES = {
   },
 
   // ── Follow-up questions ────────────────────────────────────────────────────
+  // Follow-up and recap are grounded in THIS conversation: every bullet must
+  // trace back to something actually said. Without that instruction the model
+  // fills an empty or thin transcript with plausible generic interview
+  // questions, which reads as a canned preset. They also no longer assume the
+  // conversation is a job interview — the context block says so when it is.
   followup: {
     needsScreen: false,
     userBubble: 'Follow-up questions',
     small: true,
     resumeMode: 'followup',
+    transcriptRequired: true,
     buildSystem(contextBlock, aiRules) {
       return applyRules(buildSystem(
-        'You are cue. Suggest 2–4 sharp follow-up questions the candidate could ask the interviewer.\n' +
-        'Base them on what was discussed and the candidate\'s background/target role.\n' +
-        'Good follow-ups: show genuine curiosity, demonstrate research, highlight the candidate\'s strengths, or uncover role details.\n' +
+        'You are cue. Suggest 2–4 sharp follow-up questions the user ("You") could ask the other person ("Them") next, ' +
+        'based strictly on what was actually said in this conversation.\n' +
+        'Each question must reference a specific point, name, number, or claim from the transcript — ' +
+        'dig into something they said, clarify an ambiguity, or probe a detail they skipped. ' +
+        'Never produce generic questions that could apply to any conversation. ' +
+        'If the context block shows this is a job interview, favour questions that also reflect well on the candidate.\n' +
         'Return as a bullet list only. No preamble.',
         contextBlock
       ), aiRules, 'followup');
     },
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 20);
-      return 'Conversation so far:\n' + (t || '(none)') + '\n\nSuggest follow-up questions for the interviewer.';
+      return 'Conversation so far:\n' + (t || '(none)') + '\n\nSuggest follow-up questions grounded in the specifics above.';
     }
   },
 
@@ -114,17 +123,23 @@ const MODES = {
     userBubble: 'Recap',
     small: true,
     resumeMode: 'recap',
+    transcriptRequired: true,
     buildSystem(contextBlock, aiRules) {
       return applyRules(buildSystem(
-        'You are cue. Summarize the interview so far:\n' +
-        '• Topics covered\n• Questions asked\n• Key answers given\n• Any red flags or areas to strengthen\n' +
+        'You are cue. Recap this conversation so far, using only what is in the transcript:\n' +
+        '• Topics covered — the actual subjects discussed, with the specifics (names, numbers, decisions) mentioned\n' +
+        '• Questions asked — by either side, as they were phrased\n' +
+        '• Key points made — what each side said or committed to\n' +
+        '• Open threads — anything unresolved, unclear, or worth strengthening\n' +
+        'If the context block shows this is a job interview, frame the last section as areas for the candidate to strengthen. ' +
+        'Do not pad thin sections with generic filler; omit a header that has nothing real under it. ' +
         'Use short bullets under bold headers. Be concise.',
         contextBlock
       ), aiRules, 'recap');
     },
     build(ctx) {
       const t = formatTranscript(ctx.transcript, 0);
-      return 'Full interview transcript:\n' + (t || '(nothing captured yet)') + '\n\nRecap this interview.';
+      return 'Full transcript of the conversation:\n' + (t || '(nothing captured yet)') + '\n\nRecap this conversation.';
     }
   },
 

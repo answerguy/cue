@@ -607,10 +607,17 @@
 
   // ---- capture: mic (renderer side) — uses AudioWorklet (modern, off-main-thread) ----
   let audioCtx = null, micStream = null, micWorklet = null;
+  // Generation counter: startMic() awaits getUserMedia, so a second call (or a
+  // stopMic()) can land mid-flight. Each start bumps the generation and bails
+  // if it is no longer current, otherwise two capture pipelines end up feeding
+  // the "you" channel at once — every slice of speech arrives twice, which the
+  // transcriber can't make sense of — and the orphaned one keeps the mic hot.
+  let micGen = 0;
   async function startMic() {
     if (micStream) return;
+    const gen = ++micGen;
     try {
-      micStream = await navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -619,6 +626,12 @@
           sampleRate: 16000
         }
       });
+      if (gen !== micGen || micStream) {
+        // Superseded while we were waiting: another start won, or a stop came in.
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      micStream = stream;
       // getUserMedia can resolve with a stream that has no usable audio track
       // (e.g. a virtual/placeholder device, or a device that was unplugged
       // between permission grant and capture start). Fail loudly here instead
@@ -682,6 +695,7 @@
     }
   }
   function stopMic() {
+    micGen++; // invalidate any startMic() still waiting on getUserMedia
     if (micWorklet) {
       if (micWorklet._legacy) {
         micWorklet.proc.disconnect(); micWorklet.proc.onaudioprocess = null;
@@ -1130,6 +1144,14 @@
     } else {
       // User spoke — soft clear (don't immediately wipe, wait to see if they're really answering)
       softClearSTTFill();
+    }
+  });
+  // Transcript of a meeting resumed at launch: sidebar rows only — no
+  // auto-fill of the input box, which is for live speech.
+  cue.on('transcript:restore', ({ turns }) => {
+    for (const t of turns || []) {
+      if (!t || !t.text || t.text.trim().length < 2) continue;
+      appendTranscriptHistoryTurn(t.channel, t.text, false);
     }
   });
   let statusTimer = null;

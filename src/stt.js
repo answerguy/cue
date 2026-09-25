@@ -2,7 +2,7 @@
 // no audio API — we transcribe with whatever audio-capable key is available, and
 // fall back across providers. Returns { text, provider } or { text:'', error }.
 const { pcmToWav } = require('./wav');
-const { formatProviderErrorMessage, isQuotaError, isRateLimitError, resolveGeminiModel } = require('./llm');
+const { formatProviderErrorMessage, isQuotaError, isRateLimitError, isNotFoundError, resolveGeminiModel, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL } = require('./llm');
 
 const BASE_VOCAB = 'CI/CD, Docker, Kubernetes, Terraform, Jenkins, AWS, Azure, GCP, ' +
   'CodeCommit, CodePipeline, CodeBuild, CodeDeploy, DevOps, SRE, microservices, deployment, ' +
@@ -45,17 +45,62 @@ async function transcribeOpenAI(apiKey, wav, model, baseURL, prompt) {
   return (res.text || '').trim();
 }
 
-async function transcribeGemini(apiKey, wav, model) {
-  const { GoogleGenAI } = require('@google/genai');
-  const ai = new GoogleGenAI({ apiKey });
+// gemini-*-transcribe models answer with { audioTranscription: { text } } parts,
+// which the SDK's res.text getter ignores (it only concatenates `text` parts),
+// so read both shapes off the raw candidate. Silence comes back as no parts.
+function extractGeminiTranscript(res) {
+  const parts = (res && res.candidates && res.candidates[0] && res.candidates[0].content &&
+    res.candidates[0].content.parts) || [];
+  let out = '';
+  for (const part of parts) {
+    if (!part || part.thought) continue;
+    if (part.audioTranscription && typeof part.audioTranscription.text === 'string') out += part.audioTranscription.text;
+    else if (typeof part.text === 'string') out += part.text;
+  }
+  return out.trim();
+}
+
+// gemini-3.5-transcribe is capped at 10 requests/min per model on free-tier
+// keys, and flushChannel in main.js sends a clip every ~900ms per channel
+// while someone is talking — so a 429 from it is routine, not a dead key.
+// Park the model for a minute and use the chat model (far higher per-minute
+// quota) for the same clip, instead of letting the error reach main.js's
+// handleSttError, which switches transcription off for the whole session.
+const TRANSCRIBE_MODEL_COOLDOWN_MS = 60000;
+let transcribeModelDownUntil = 0;
+
+// Split from transcribeGemini so tests can pass a fake client.
+async function transcribeGeminiWith(ai, wav, now = Date.now()) {
+  const audio = { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } };
+  if (now >= transcribeModelDownUntil) {
+    try {
+      // The dedicated transcription model needs no instruction prompt.
+      const res = await ai.models.generateContent({
+        model: GEMINI_TRANSCRIBE_MODEL,
+        contents: [{ role: 'user', parts: [audio] }]
+      });
+      return extractGeminiTranscript(res);
+    } catch (e) {
+      // Same key, same provider — only the model id changes, so a retired or
+      // rate-limited transcribe model degrades to the chat model rather than
+      // to a 404/429 loop. Anything else (bad key, network) still propagates.
+      if (!isNotFoundError(e) && !isQuotaError(e)) throw e;
+      transcribeModelDownUntil = now + TRANSCRIBE_MODEL_COOLDOWN_MS;
+    }
+  }
   const res = await ai.models.generateContent({
-    model,
+    model: CURRENT_GEMINI_DEFAULT,
     contents: [{ role: 'user', parts: [
       { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
-      { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } }
+      audio
     ] }]
   });
-  return ((res && res.text) || '').trim();
+  return extractGeminiTranscript(res);
+}
+
+async function transcribeGemini(apiKey, wav) {
+  const { GoogleGenAI } = require('@google/genai');
+  return transcribeGeminiWith(new GoogleGenAI({ apiKey }), wav);
 }
 
 function createSTT(settings) {
@@ -74,8 +119,12 @@ function createSTT(settings) {
     chain.push({ p: 'groq', m: model, fn: (wav) => transcribeOpenAI(keys.groq, wav, model, 'https://api.groq.com/openai/v1', vocabPrompt) });
   }
   if ((selectedProvider === 'auto' || selectedProvider === 'gemini') && keys.gemini) {
+    // transcribeGemini always tries the dedicated GEMINI_TRANSCRIBE_MODEL first
+    // (falling back to CURRENT_GEMINI_DEFAULT only on a 404/429 cooldown); `m`
+    // here is just what error messages/`stt.models` report, resolved the same
+    // way the chat path picks a model.
     const model = resolveGeminiModel(settings);
-    chain.push({ p: 'gemini', m: model, fn: (wav) => transcribeGemini(keys.gemini, wav, model) });
+    chain.push({ p: 'gemini', m: model, fn: (wav) => transcribeGemini(keys.gemini, wav) });
   }
   // Custom (OpenAI-compatible) endpoint: same shape as the Groq branch above,
   // just pointed at the user's own Base URL. Deliberately NOT part of 'auto' —
@@ -130,4 +179,4 @@ function createSTT(settings) {
   };
 }
 
-module.exports = { createSTT, looksLikeHallucination, buildVocabPrompt };
+module.exports = { createSTT, looksLikeHallucination, buildVocabPrompt, transcribeGemini, transcribeGeminiWith, extractGeminiTranscript };

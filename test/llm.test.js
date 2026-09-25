@@ -34,7 +34,7 @@ Module._load = function loadWithOpenAIStub(request, parent, isMain) {
   return originalModuleLoad.call(this, request, parent, isMain);
 };
 
-const { createLLM, formatProviderErrorMessage, isQuotaError, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER, isRateLimitError } = require('../src/llm');
+const { createLLM, formatProviderErrorMessage, isQuotaError, geminiGenerationConfig, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER, isRateLimitError } = require('../src/llm');
 
 test.after(() => {
   Module._load = originalModuleLoad;
@@ -330,7 +330,15 @@ test('createLLM: falls back to CURRENT_GEMINI_DEFAULT when no model is configure
 
 test('createLLM: a fresh install (store.js DEFAULTS shape) resolves to the current default', () => {
   const llm = createLLM(geminiSettings({
-    models: { gemini: { fast: 'gemini-3.6-flash', smart: 'gemini-3.6-flash' } }
+    models: { gemini: { fast: 'gemini-3.8-flash', smart: 'gemini-3.1-pro-preview' } }
+  }));
+  assert.equal(llm.model, CURRENT_GEMINI_DEFAULT);
+});
+
+test('createLLM: self-heals a settings file saved with the retired gemini-2.5-flash default', () => {
+  const llm = createLLM(geminiSettings({
+    models: { gemini: { fast: 'gemini-2.5-flash', smart: 'gemini-2.5-pro' } },
+    smart: true
   }));
   assert.equal(llm.model, CURRENT_GEMINI_DEFAULT);
 });
@@ -513,4 +521,19 @@ test('createLLM: self-heals gemini-2.5-* , which Google closed to new API keys',
     models: { gemini: { fast: 'gemini-2.5-flash', smart: 'gemini-2.5-flash-lite' } }
   }));
   assert.equal(llm.model, CURRENT_GEMINI_DEFAULT);
+});
+
+// Gemini 3.x bills thinking tokens against maxOutputTokens; the visible answer
+// must keep the budget the caller asked for.
+test('geminiGenerationConfig: fast tier turns thinking down and keeps headroom for it', () => {
+  const cfg = geminiGenerationConfig({ system: 'sys', maxTokens: 700, thinking: false });
+  assert.equal(cfg.systemInstruction, 'sys');
+  assert.deepEqual(cfg.thinkingConfig, { thinkingLevel: 'low' });
+  assert.ok(cfg.maxOutputTokens >= 700 + 1024, `fast cap ${cfg.maxOutputTokens} leaves no room for thoughts`);
+});
+
+test('geminiGenerationConfig: smart tier keeps the model default reasoning with a larger cap', () => {
+  const cfg = geminiGenerationConfig({ system: 'sys', maxTokens: 1400, thinking: true });
+  assert.equal(cfg.thinkingConfig, undefined);
+  assert.ok(cfg.maxOutputTokens >= 1400 + 4096);
 });
