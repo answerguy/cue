@@ -1,10 +1,14 @@
 // Simple JSON-file settings store (avoids native modules so `npm install` stays clean).
-const fs = require('fs');
-const path = require('path');
+//
+// The durable-write mechanics (atomic temp+rename, .bak snapshot, corruption
+// recovery, 0600 permissions) live in ./settings-store-core so they can be
+// unit tested without Electron; this file owns the schema, defaults and
+// public surface (getSettings/setSettings/etc.) as before.
 const { app } = require('electron');
+const { createFileStore } = require('./settings-store-core');
 const { normalizeBaseUrl } = require('./openai-compatible');
 
-const FILE = path.join(app.getPath('userData'), 'cue-data.json');
+const fileStore = createFileStore(() => app.getPath('userData'), 'cue-data.json');
 
 // Cap on the user's custom response rules. Generous but bounded: anything longer
 // should live in a real prompt file, not in a settings field.
@@ -126,6 +130,7 @@ function clampOpacity(value) {
 const RENDERER_READ_ONLY = ['publik'];
 
 let data = null;
+let lastError = null;
 
 function deepMerge(base, over) {
   const out = Array.isArray(base) ? base.slice() : { ...base };
@@ -145,14 +150,27 @@ function deepMerge(base, over) {
 
 function load() {
   if (data) return data;
-  try { data = deepMerge(DEFAULTS, JSON.parse(fs.readFileSync(FILE, 'utf8'))); }
-  catch { data = deepMerge(DEFAULTS, {}); }
-
-
+  const loaded = fileStore.load();
+  data = deepMerge(DEFAULTS, loaded ? loaded.data : {});
+  if (loaded && loaded.recoveredFromBackup) save(); // best-effort heal so the corruption doesn't linger
   return data;
 }
-// 0600: the file holds every BYO key and now a publik key. A no-op on Windows.
-function save() { try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2), { mode: 0o600 }); } catch (e) { /* ignore */ } }
+
+// Atomic temp+rename with a .bak snapshot and 0600 permissions — see
+// settings-store-core.js. Unlike the old bare writeFileSync, this never
+// swallows a failure: lastSaveError() lets a caller (e.g. the settings:set
+// IPC handler) surface it instead of pretending the save succeeded.
+function save() {
+  try {
+    fileStore.persist(data);
+    lastError = null;
+    return true;
+  } catch (e) {
+    lastError = e;
+    console.error('[cue] failed to save settings:', e && e.message);
+    return false;
+  }
+}
 
 // Called by main.js at launch, before the window exists. publik becomes the
 // selected provider only where nothing works today: a build that carries an
@@ -198,6 +216,8 @@ module.exports = {
   stripRendererPatch,
   redactForRenderer,
   getSettings() { return load(); },
+  /** Null when the last save succeeded; the Error otherwise. */
+  lastSaveError() { return lastError; },
   // Main-process only: the provisioning flow writes the key and its state here.
   setPublik(patch) {
     load();
