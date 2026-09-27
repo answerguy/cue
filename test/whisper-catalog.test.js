@@ -65,3 +65,38 @@ test('locates packaged and prepared development runtimes without downloading cod
   assert.equal(missing.available, false);
   assert.match(missing.message, /npm run prepare:whisper/);
 });
+
+test('locates system-installed whisper-server from PATH and environment overrides', (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-runtime-path-'));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const binDir = path.join(root, 'custom-bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const exePath = getRuntimeExecutablePath(binDir, 'win32', 'x64');
+  fs.writeFileSync(exePath, 'custom-runtime');
+
+  // 1. Found via PATH even when packaged and resourcesPath has no runtime
+  const fromPath = locateWhisperRuntime({
+    isPackaged: true,
+    resourcesPath: path.join(root, 'non-existent-resources'),
+    appPath: root,
+    platform: 'win32',
+    architecture: 'x64',
+    environment: { PATH: `${binDir}${path.delimiter}C:\\some\\other\\dir` }
+  });
+  assert.equal(fromPath.available, true);
+  assert.equal(fromPath.executablePath, exePath);
+  assert.equal(fromPath.runtimeDirectory, binDir);
+
+  // 2. Found via CUE_WHISPER_RUNTIME pointing directly to executable
+  const fromExeOverride = locateWhisperRuntime({
+    isPackaged: false,
+    platform: 'win32',
+    architecture: 'x64',
+    environment: { CUE_WHISPER_RUNTIME: exePath }
+  });
+  assert.equal(fromExeOverride.available, true);
+  assert.equal(fromExeOverride.executablePath, exePath);
+  assert.equal(fromExeOverride.runtimeDirectory, binDir);
+});
+

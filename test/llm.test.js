@@ -7,6 +7,7 @@ let capturedClientOptions = null;
 let capturedCompletionRequest = null;
 let fakeResponseHeaders = null; // when set, create() returns an APIPromise-like with withResponse()
 let fakeCreateError = null;     // when set, create() rejects with it (the SDK's APIError shape)
+let fakeCreateHandler = null;   // when set, create() delegates to this function
 const originalModuleLoad = Module._load;
 
 Module._load = function loadWithOpenAIStub(request, parent, isMain) {
@@ -18,6 +19,7 @@ Module._load = function loadWithOpenAIStub(request, parent, isMain) {
           completions: {
             create: (completionRequest) => {
               capturedCompletionRequest = completionRequest;
+              if (fakeCreateHandler) return fakeCreateHandler(completionRequest);
               const data = [{ choices: [{ delta: { content: 'ok' } }] }];
               if (fakeCreateError) return Promise.reject(fakeCreateError);
               if (!fakeResponseHeaders) return Promise.resolve(data);
@@ -34,7 +36,7 @@ Module._load = function loadWithOpenAIStub(request, parent, isMain) {
   return originalModuleLoad.call(this, request, parent, isMain);
 };
 
-const { createLLM, formatProviderErrorMessage, isQuotaError, geminiGenerationConfig, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER, isRateLimitError } = require('../src/llm');
+const { createLLM, formatProviderErrorMessage, isQuotaError, geminiGenerationConfig, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER, isRateLimitError, isVisionSupported, isMultimodalUnsupportedError } = require('../src/llm');
 
 test.after(() => {
   Module._load = originalModuleLoad;
@@ -56,6 +58,7 @@ test.beforeEach(() => {
   capturedCompletionRequest = null;
   fakeResponseHeaders = null;
   fakeCreateError = null;
+  fakeCreateHandler = null;
 });
 
 test('routes the Custom provider through the configured OpenAI-compatible endpoint', async () => {
@@ -610,3 +613,133 @@ test('geminiGenerationConfig: smart tier keeps the model default reasoning with 
   assert.equal(cfg.thinkingConfig, undefined);
   assert.ok(cfg.maxOutputTokens >= 1400 + 4096);
 });
+
+// ---- Vision support and multimodal error handling ---------------------------
+
+test('isVisionSupported: recognizes text-only vs vision-capable models across providers', () => {
+  // Groq: text models are false, vision models are true
+  assert.equal(isVisionSupported({ provider: 'groq', model: 'llama-3.1-8b-instant' }), false);
+  assert.equal(isVisionSupported({ provider: 'groq', model: 'llama-3.3-70b-versatile' }), false);
+  assert.equal(isVisionSupported({ provider: 'groq', model: 'llama-3.2-11b-vision-preview' }), true);
+  assert.equal(isVisionSupported({ provider: 'custom', model: 'llama-3.1-8b-instant', baseURL: 'https://api.groq.com/openai/v1' }), false);
+
+  // xAI / Grok: grok text models are false, grok vision models are true
+  assert.equal(isVisionSupported({ provider: 'custom', model: 'grok-2', baseURL: 'https://api.x.ai/v1' }), false);
+  assert.equal(isVisionSupported({ provider: 'custom', model: 'grok-beta', baseURL: 'https://api.x.ai/v1' }), false);
+  assert.equal(isVisionSupported({ provider: 'custom', model: 'grok-2-1212', baseURL: 'https://api.x.ai/v1' }), false);
+  assert.equal(isVisionSupported({ provider: 'custom', model: 'grok-2-vision-1212', baseURL: 'https://api.x.ai/v1' }), true);
+  assert.equal(isVisionSupported({ provider: 'custom', model: 'grok-vision-beta', baseURL: 'https://api.x.ai/v1' }), true);
+
+  // Cerebras: text-only
+  assert.equal(isVisionSupported({ provider: 'cerebras', model: 'qwen-3.8-27b' }), false);
+
+  // DeepSeek: text-only
+  assert.equal(isVisionSupported({ provider: 'deepseek', model: 'deepseek-flash' }), false);
+  assert.equal(isVisionSupported({ provider: 'deepseek', model: 'deepseek-v4-pro' }), false);
+
+  // MiniMax: M2.7 is text-only, M3 is vision
+  assert.equal(isVisionSupported({ provider: 'minimax', model: 'MiniMax-M2.7' }), false);
+  assert.equal(isVisionSupported({ provider: 'minimax', model: 'MiniMax-M3' }), true);
+
+  // OpenAI: modern models true, legacy text false
+  assert.equal(isVisionSupported({ provider: 'openai', model: 'gpt-4o-mini' }), true);
+  assert.equal(isVisionSupported({ provider: 'openai', model: 'gpt-4o' }), true);
+  assert.equal(isVisionSupported({ provider: 'openai', model: 'gpt-3.5-turbo' }), false);
+});
+
+test('isMultimodalUnsupportedError: identifies multimodal/string validation errors', () => {
+  assert.equal(isMultimodalUnsupportedError(new Error('400 messages[1].content must be a string')), true);
+  assert.equal(isMultimodalUnsupportedError(new Error('messages[0].content must be a string')), true);
+  assert.equal(isMultimodalUnsupportedError(new Error('Invalid parameter: messages[1].content must be a string')), true);
+  assert.equal(isMultimodalUnsupportedError(new Error('The model does not support images')), true);
+  assert.equal(isMultimodalUnsupportedError(new Error('unsupported multimodal input')), true);
+  assert.equal(isMultimodalUnsupportedError(new Error('rate_limit_exceeded')), false);
+  assert.equal(isMultimodalUnsupportedError(new Error('404 Not Found')), false);
+});
+
+test('formatProviderErrorMessage: formats multimodal unsupported error with actionable advice', () => {
+  const err = new Error('400 messages[1].content must be a string');
+  const formatted = formatProviderErrorMessage(err, 'groq', 'llama-3.1-8b-instant');
+  assert.match(formatted, /Groq model "llama-3\.1-8b-instant" does not support image or screenshot input/i);
+  assert.match(formatted, /vision-capable model/i);
+});
+
+test('Groq: automatically sends string content instead of array when screenshot is captured', async () => {
+  capturedCompletionRequest = null;
+  const llm = createLLM({
+    provider: 'groq',
+    smart: false,
+    apiKeys: { groq: 'gsk-test' },
+    models: { groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' } }
+  });
+
+  await llm.stream({
+    system: 'You are cue.',
+    turns: [{ role: 'user', text: 'Solve this' }],
+    imageDataUrl: 'data:image/png;base64,fakeimgdata',
+    onToken: () => {}
+  });
+
+  assert.ok(capturedCompletionRequest, 'completion request was made');
+  const userMsg = capturedCompletionRequest.messages.find(m => m.role === 'user');
+  assert.equal(typeof userMsg.content, 'string', 'messages[1].content must be a string');
+  assert.equal(userMsg.content, 'Solve this');
+});
+
+test('Custom Grok: sends string content instead of array when pointing to Grok text model', async () => {
+  capturedCompletionRequest = null;
+  const llm = createLLM({
+    provider: 'custom',
+    smart: false,
+    baseUrl: 'https://api.x.ai/v1',
+    apiKeys: { custom: 'xai-test' },
+    models: { custom: { fast: 'grok-2', smart: 'grok-2' } }
+  });
+
+  await llm.stream({
+    system: 'You are cue.',
+    turns: [{ role: 'user', text: 'Explain recursion' }],
+    imageDataUrl: 'data:image/png;base64,fakeimgdata',
+    onToken: () => {}
+  });
+
+  assert.ok(capturedCompletionRequest, 'completion request was made');
+  const userMsg = capturedCompletionRequest.messages.find(m => m.role === 'user');
+  assert.equal(typeof userMsg.content, 'string', 'messages[1].content must be a string');
+  assert.equal(userMsg.content, 'Explain recursion');
+});
+
+test('Transparent fallback: retries with string content if endpoint returns 400 messages[1].content must be a string', async () => {
+  const requests = [];
+  fakeCreateHandler = (req) => {
+    requests.push(req);
+    const userMsg = req.messages.find(m => m.role === 'user');
+    if (Array.isArray(userMsg.content)) {
+      return Promise.reject(new Error('400 messages[1].content must be a string'));
+    }
+    return Promise.resolve([{ choices: [{ delta: { content: 'recovered' } }] }]);
+  };
+
+  const llm = createLLM({
+    provider: 'custom',
+    smart: false,
+    baseUrl: 'https://gateway.example/v1',
+    apiKeys: { custom: 'key' },
+    models: { custom: { fast: 'custom-vision-v1', smart: 'custom-vision-v1' } }
+  });
+
+  const tokens = [];
+  const res = await llm.stream({
+    system: 'sys',
+    turns: [{ role: 'user', text: 'help' }],
+    imageDataUrl: 'data:image/png;base64,data',
+    onToken: (t) => tokens.push(t)
+  });
+
+  assert.equal(res, 'recovered');
+  assert.deepEqual(tokens, ['recovered']);
+  assert.equal(requests.length, 2, 'attempted twice: first with image, second with string fallback');
+  assert.ok(Array.isArray(requests[0].messages.find(m => m.role === 'user').content), 'first attempt had image array');
+  assert.equal(typeof requests[1].messages.find(m => m.role === 'user').content, 'string', 'second attempt was string');
+});
+

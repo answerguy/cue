@@ -80,7 +80,7 @@ const DEAD_DEEPSEEK_MODEL_RE = /^deepseek-(chat|reasoner)$/i;
 const CURRENT_DEEPSEEK_FAST_DEFAULT = 'deepseek-flash';
 const CURRENT_DEEPSEEK_SMART_DEFAULT = 'deepseek-v4-pro';
 
-const PROVIDER_LABELS = { azure: 'Azure AI Foundry', cerebras: 'Cerebras', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL, deepseek: 'DeepSeek' };
+const PROVIDER_LABELS = { azure: 'Azure AI Foundry', cerebras: 'Cerebras', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL, deepseek: 'DeepSeek', groq: 'Groq', custom: 'Custom' };
 
 // DeepSeek is OpenAI-compatible and reuses the OpenAI screenshot/streaming path via baseURL.
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
@@ -142,6 +142,64 @@ function isNotFoundError(error) {
   const rawMessage = (error && (error.message || String(error))) || '';
   const text = `${rawMessage} ${status || ''} ${code || ''}`.toLowerCase();
   return status === 404 || code === 404 || /\b404\b|is not found for api version|model not found/i.test(text);
+}
+
+function isMultimodalUnsupportedError(error) {
+  const rawMessage = (error && (error.message || (error.error && error.error.message) || (error.response?.data?.error?.message) || String(error))) || '';
+  return /content must be a string|must be a string|does not support (?:vision|image|multimodal)|unsupported (?:image|multimodal)|image_url is not supported|expected string, got|invalid content type/i.test(rawMessage);
+}
+
+/**
+ * Check whether an OpenAI-compatible model/provider endpoint supports vision (multimodal image_url).
+ * When false, the request uses plain string content to prevent "messages[N].content must be a string" errors
+ * from text-only models and endpoints (such as Groq, xAI Grok text models, DeepSeek, Cerebras, etc.).
+ */
+function isVisionSupported({ provider, model, baseURL } = {}) {
+  const p = String(provider || '').toLowerCase();
+  const m = String(model || '').toLowerCase();
+  const b = String(baseURL || '').toLowerCase();
+
+  // Explicit vision markers in model names:
+  // e.g. "vision", "visual", "vl", "-vl", "_vl", "pixtral", "omni", "gpt-4o", "scout", "multimodal"
+  const hasVisionKeyword = /vision|visual|\bvl\b|-vl\b|_vl\b|pixtral|omni|\bgpt-4o\b|scout|multimodal/i.test(m);
+
+  // Providers / gateways that only host text models on their API endpoints:
+  if (p === 'deepseek' || b.includes('api.deepseek.com')) return false;
+  if (p === 'cerebras' || b.includes('api.cerebras.ai')) return false;
+
+  // Groq: default models (llama-3.1-8b-instant, llama-3.3-70b-versatile) are text-only.
+  // Vision models on Groq include llama-3.2-11b-vision-preview, llama-4-scout, etc.
+  if (p === 'groq' || b.includes('api.groq.com')) {
+    return hasVisionKeyword;
+  }
+
+  // xAI / Grok: grok-2-vision, grok-vision-beta accept image_url;
+  // grok-2, grok-beta, grok-2-1212, grok-3 text models require string content.
+  if (b.includes('api.x.ai') || b.includes('x.ai') || m.startsWith('grok')) {
+    return hasVisionKeyword;
+  }
+
+  // MiniMax: M3 is vision-capable, M2.7 is text-only
+  if (p === 'minimax') {
+    return /m3|vision|vl/i.test(m);
+  }
+
+  // OpenAI:
+  if (p === 'openai') {
+    if (/gpt-3\.5|davinci|babbage|curie/i.test(m)) return false;
+    return true;
+  }
+
+  // Models with explicit vision markers are always treated as vision-capable
+  if (hasVisionKeyword) return true;
+
+  // Known text-only model patterns commonly hosted on custom OpenAI-compatible endpoints:
+  if (/^llama-3(?:\.[1-3])?-(?:8b|70b)/i.test(m) || /^deepseek/i.test(m) || /^qwen(?:-|\/)[^/]*(?:7b|14b|27b|32b|72b)(?!.*vl)/i.test(m)) {
+    return false;
+  }
+
+  // Defaults to true for other models (e.g. custom endpoints), with automatic fallback on 400
+  return true;
 }
 
 // Gemini 429 bodies often carry a google.rpc.RetryInfo detail like
@@ -216,6 +274,11 @@ function formatProviderErrorMessage(error, provider, model) {
     return `${label} model${modelHint} is unavailable (404) — it may have been renamed, retired by the provider, or misspelled. Open Settings and pick a current model for ${label} (or clear the field to use cue's default), then try again.`;
   }
 
+  if (isMultimodalUnsupportedError(error)) {
+    const modelHint = model ? ` "${model}"` : '';
+    return `${label} model${modelHint} does not support image or screenshot input (messages.content must be a string). Choose a vision-capable model in Settings or use a text-only mode.`;
+  }
+
   return rawMessage || 'Unknown LLM error.';
 }
 
@@ -236,34 +299,58 @@ function stripDataUrl(dataUrl) {
   return m ? { mime: m[1], b64: m[2] } : null;
 }
 
-async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUrl, maxTokens, onToken, onResponse }) {
+async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUrl, maxTokens, onToken, onResponse, provider }) {
   const OpenAI = require('openai');
   const client = new OpenAI(baseURL ? { apiKey, baseURL } : { apiKey });
-  const messages = [{ role: 'system', content: system }];
-  turns.forEach((t, i) => {
-    const last = i === turns.length - 1;
-    if (last && imageDataUrl && t.role === 'user') {
-      messages.push({
-        role: 'user', content: [
-          { type: 'text', text: t.text },
-          { type: 'image_url', image_url: { url: imageDataUrl } }
-        ]
-      });
-    } else {
-      messages.push({ role: t.role, content: t.text });
+
+  const visionAllowed = Boolean(imageDataUrl && isVisionSupported({ provider, model, baseURL }));
+
+  const buildMessages = (includeImage) => {
+    const messages = [{ role: 'system', content: system }];
+    turns.forEach((t, i) => {
+      const last = i === turns.length - 1;
+      if (last && includeImage && imageDataUrl && t.role === 'user') {
+        messages.push({
+          role: 'user', content: [
+            { type: 'text', text: t.text },
+            { type: 'image_url', image_url: { url: imageDataUrl } }
+          ]
+        });
+      } else {
+        messages.push({ role: t.role, content: t.text });
+      }
+    });
+    return messages;
+  };
+
+  const executeCompletion = async (msgs) => {
+    const pending = client.chat.completions.create({ model, messages: msgs, stream: true, max_tokens: maxTokens });
+    if (typeof onResponse === 'function' && pending && typeof pending.withResponse === 'function') {
+      // The gateway stamps x-publik-* headers at admission; hand the raw
+      // Response to the caller so the balance line can move before settlement.
+      const { data, response } = await pending.withResponse();
+      try { onResponse(response); } catch { /* a display hook must never break the answer */ }
+      return data;
     }
-  });
-  const pending = client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens });
+    return await pending;
+  };
+
+  let messages = buildMessages(visionAllowed);
   let stream;
-  if (typeof onResponse === 'function' && pending && typeof pending.withResponse === 'function') {
-    // The gateway stamps x-publik-* headers at admission; hand the raw
-    // Response to the caller so the balance line can move before settlement.
-    const { data, response } = await pending.withResponse();
-    try { onResponse(response); } catch { /* a display hook must never break the answer */ }
-    stream = data;
-  } else {
-    stream = await pending;
+  try {
+    stream = await executeCompletion(messages);
+  } catch (err) {
+    // If multimodal array format was rejected by the provider (e.g. Groq, xAI Grok,
+    // or text-only models where "messages[N].content must be a string"), transparently
+    // retry with plain string content so the user gets an answer.
+    if (visionAllowed && isMultimodalUnsupportedError(err)) {
+      messages = buildMessages(false);
+      stream = await executeCompletion(messages);
+    } else {
+      throw err;
+    }
   }
+
   let full = '';
   for await (const part of stream) {
     const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
@@ -286,18 +373,26 @@ function normalizeAzureBaseURL(raw) {
 async function streamAzure({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken, endpoint }) {
   const url = normalizeAzureBaseURL(endpoint);
   if (!url) throw new Error('Missing Azure endpoint. Add your Azure AI Foundry or Azure OpenAI endpoint in Settings.');
-  const messages = [{ role: 'system', content: system }];
-  turns.forEach((t, i) => {
-    const last = i === turns.length - 1;
-    if (last && imageDataUrl && t.role === 'user') {
-      messages.push({ role: 'user', content: [
-        { type: 'text', text: t.text },
-        { type: 'image_url', image_url: { url: imageDataUrl } }
-      ] });
-    } else {
-      messages.push({ role: t.role, content: t.text });
-    }
-  });
+
+  const visionAllowed = Boolean(imageDataUrl && isVisionSupported({ provider: 'azure', model, baseURL: url }));
+
+  const buildMessages = (includeImage) => {
+    const messages = [{ role: 'system', content: system }];
+    turns.forEach((t, i) => {
+      const last = i === turns.length - 1;
+      if (last && includeImage && imageDataUrl && t.role === 'user') {
+        messages.push({ role: 'user', content: [
+          { type: 'text', text: t.text },
+          { type: 'image_url', image_url: { url: imageDataUrl } }
+        ] });
+      } else {
+        messages.push({ role: t.role, content: t.text });
+      }
+    });
+    return messages;
+  };
+
+  let messages = buildMessages(visionAllowed);
   const OpenAI = require('openai');
   let client;
   if (/openai\.azure\.com/i.test(url)) {
@@ -313,7 +408,23 @@ async function streamAzure({ apiKey, model, system, turns, imageDataUrl, maxToke
     };
     client = new OpenAI({ baseURL: url, apiKey, fetch: azureFetch });
   }
-  const stream = await client.chat.completions.create({ model, messages, stream: true, max_completion_tokens: maxTokens });
+
+  const executeCompletion = async (msgs) => {
+    return await client.chat.completions.create({ model, messages: msgs, stream: true, max_completion_tokens: maxTokens });
+  };
+
+  let stream;
+  try {
+    stream = await executeCompletion(messages);
+  } catch (err) {
+    if (visionAllowed && isMultimodalUnsupportedError(err)) {
+      messages = buildMessages(false);
+      stream = await executeCompletion(messages);
+    } else {
+      throw err;
+    }
+  }
+
   let full = '';
   for await (const part of stream) {
     const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
@@ -524,7 +635,7 @@ function createLLM(settings) {
     configurationError,
     async stream(params) {
       if (!ready) throw new Error(configurationError || `Complete the ${provider} provider settings.`);
-      const args = { apiKey, baseURL, endpoint, model, maxTokens, thinking: !!settings.smart, ...params, turns: sanitizeTurns(params.turns) };
+      const args = { provider, apiKey, baseURL, endpoint, model, maxTokens, thinking: !!settings.smart, ...params, turns: sanitizeTurns(params.turns) };
       try {
         if (provider === 'openai') return await streamOpenAI(args);
         if (provider === CUSTOM_PROVIDER) return await streamOpenAI(args);
@@ -553,6 +664,9 @@ module.exports = {
   formatProviderErrorMessage,
   isQuotaError,
   isNotFoundError,
+  isRateLimitError,
+  isVisionSupported,
+  isMultimodalUnsupportedError,
   geminiGenerationConfig,
   resolveGeminiModel,
   CURRENT_GEMINI_DEFAULT,
@@ -560,6 +674,5 @@ module.exports = {
   GEMINI_TRANSCRIBE_LIVE_MODEL,
   CURRENT_ANTHROPIC_DEFAULT_FAST,
   CURRENT_ANTHROPIC_DEFAULT_SMART,
-  PUBLIK_PROVIDER,
-  isRateLimitError
+  PUBLIK_PROVIDER
 };

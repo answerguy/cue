@@ -32,7 +32,13 @@ function normalizeBaseUrl(value) {
     throw new Error('Base URL must not contain a query string or fragment.');
   }
 
-  return parsedUrl.toString().replace(/\/+$/, '');
+  let normalized = parsedUrl.toString().replace(/\/+$/, '');
+  if (/^https?:\/\/api\.x\.ai$/i.test(normalized)) {
+    normalized += '/v1';
+  } else if (/^https?:\/\/api\.groq\.com$/i.test(normalized)) {
+    normalized += '/openai/v1';
+  }
+  return normalized;
 }
 
 /**
