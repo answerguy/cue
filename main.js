@@ -76,7 +76,7 @@ const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
 
-let isNoFocusMode = false;
+let isNoFocusMode = true;
 
 function setNoFocusMode(enabled) {
   isNoFocusMode = Boolean(enabled);
@@ -324,6 +324,7 @@ function createWindow() {
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
+    focusable: !isNoFocusMode,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

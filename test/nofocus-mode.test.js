@@ -14,9 +14,10 @@ test('shortcuts include nofocus toggle and stealth typing', () => {
   assert.equal(DEFAULTS.type, 'Alt+C');
 });
 
-test('renderer/index.html contains focus-btn with aria-label and no title attribute', () => {
-  assert.match(htmlSrc, /<button\s+class="tb-focus"\s+id="focus-btn"/);
-  assert.match(htmlSrc, /id="focus-btn"[^>]*aria-label="Toggle no-focus mode/);
+test('renderer/index.html contains focus-btn defaulting to active on startup with no title attribute', () => {
+  assert.match(htmlSrc, /<button\s+class="tb-focus active"\s+id="focus-btn"/);
+  assert.match(htmlSrc, /id="focus-btn"[^>]*aria-label="No-focus mode active/);
+  assert.match(htmlSrc, /No-focus ON/);
   assert.ok(!htmlSrc.includes('id="focus-btn" title='), 'focus-btn must not use title attribute');
 });
 
@@ -33,6 +34,8 @@ test('preload.js exposes nofocus APIs and allowed IPC channels', () => {
 });
 
 test('main.js registers global shortcuts and IPC handlers for nofocus mode', () => {
+  assert.match(mainSrc, /let isNoFocusMode = true;/);
+  assert.match(mainSrc, /focusable:\s*!isNoFocusMode/);
   assert.match(mainSrc, /ipcMain\.handle\('nofocus:get'/);
   assert.match(mainSrc, /ipcMain\.handle\('nofocus:set'/);
   assert.match(mainSrc, /ipcMain\.handle\('nofocus:toggle'/);
@@ -44,6 +47,7 @@ test('main.js registers global shortcuts and IPC handlers for nofocus mode', () 
 });
 
 test('renderer.js implements setNoFocusUI and dynamic placeholder with shortcuts', () => {
+  assert.match(jsSrc, /let isNoFocusMode = true;/);
   assert.match(jsSrc, /function setNoFocusUI\(/);
   assert.match(jsSrc, /function updatePlaceholder\(/);
   assert.match(jsSrc, /No-focus mode active · <span class="keycap">/);

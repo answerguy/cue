@@ -503,7 +503,7 @@
   const composer = $('#composer');
 
   // ========== NO-FOCUS (STEALTH) MODE ==========
-  let isNoFocusMode = false;
+  let isNoFocusMode = true;
   let temporaryFocusActive = false;
   let isStealthTypingActive = false;
 
@@ -538,6 +538,9 @@
     }
     updatePlaceholder();
   }
+
+  // Initialize placeholder and button to default active state immediately
+  setNoFocusUI(true);
 
   // ========== SMART AUTO-FILL SYSTEM ==========
   // Track whether the current input text came from STT auto-fill (Them channel)
@@ -2569,10 +2572,10 @@
 
     // Initialize no-focus mode state and placeholder
     try {
-      const initialNoFocus = typeof cue.nofocusGet === 'function' ? await cue.nofocusGet() : false;
+      const initialNoFocus = typeof cue.nofocusGet === 'function' ? await cue.nofocusGet() : true;
       setNoFocusUI(initialNoFocus);
     } catch (_) {
-      setNoFocusUI(false);
+      setNoFocusUI(true);
     }
 
     applyOpacity(settings.opacity, false);
