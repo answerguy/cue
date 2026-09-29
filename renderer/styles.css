@@ -94,11 +94,11 @@ html, body {
   pointer-events: none;                  /* only the actual UI blocks; gaps pass through */
   opacity: var(--cue-opacity, 1);
 }
-#settings-scrim, #onboard-scrim, #consent-scrim {
+#settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim {
   opacity: var(--cue-opacity, 1);
 }
 #app.opacity-open { padding-top: 82px; }
-#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #consent-scrim { pointer-events: auto; }
+#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim, .custom-select-menu { pointer-events: auto; }
 /* #app is a flex column: without this the toolbar is a shrinkable flex item, so
    a tall panel (long transcript, long response) squeezes the Stop/Hide/Quit
    controls down to nothing and leaves no way to stop listening. */
@@ -565,6 +565,195 @@ button:focus { outline: none; }
 }
 .s-select:focus { border-color: var(--accent); }
 .s-select.compact { flex: 1; width: auto; }
+
+/* Custom in-DOM select to avoid native OS popup menus that bypass setContentProtection */
+.s-select-native-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.custom-select-wrap {
+  position: relative;
+  width: 100%;
+  display: block;
+}
+.custom-select-wrap.compact {
+  flex: 1;
+  width: auto;
+  display: inline-block;
+}
+.custom-select-trigger {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--r-8);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #17191f;
+  color: var(--tx-1);
+  font-size: 13px;
+  font-family: var(--font);
+  outline: none;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease;
+  user-select: none;
+}
+.custom-select-trigger:focus,
+.custom-select-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+.custom-select-trigger.compact {
+  flex: 1;
+  width: 100%;
+}
+.custom-select-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom-select-chevron {
+  font-size: 10px;
+  color: var(--tx-mut);
+  flex-shrink: 0;
+  transition: transform 140ms ease;
+}
+.custom-select-trigger[aria-expanded="true"] .custom-select-chevron {
+  transform: rotate(180deg);
+}
+.custom-select-menu {
+  position: fixed;
+  z-index: 100000;
+  background: #181a21;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+.custom-select-menu.hidden {
+  display: none !important;
+}
+.custom-select-menu::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-select-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-select-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+.custom-select-option {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--tx-2);
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  transition: background 80ms ease, color 80ms ease;
+  user-select: none;
+  white-space: nowrap;
+}
+.custom-select-option:hover,
+.custom-select-option.highlighted {
+  background: rgba(60, 131, 245, 0.22);
+  color: #fff;
+}
+.custom-select-option.selected {
+  color: #7FB0F9;
+  font-weight: 500;
+  background: rgba(60, 131, 245, 0.14);
+}
+
+/* In-DOM confirmation modal */
+.confirm-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100001;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+}
+.confirm-scrim.hidden {
+  display: none !important;
+}
+.confirm-dialog {
+  width: min(380px, 90vw);
+  padding: 18px 20px;
+  border-radius: 16px;
+  background: rgba(30, 26, 35, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.confirm-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tx-1);
+}
+.confirm-message {
+  font-size: 12.5px;
+  color: var(--tx-2);
+  line-height: 1.45;
+}
+.confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+.confirm-cancel {
+  padding: 6px 12px;
+  border-radius: var(--r-8);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--tx-2);
+  font: 500 12.5px var(--font);
+  cursor: default;
+}
+.confirm-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.confirm-ok {
+  padding: 6px 14px;
+  border-radius: var(--r-8);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font: 500 12.5px var(--font);
+  cursor: default;
+}
+.confirm-ok.danger {
+  background: #dc2626;
+}
+.confirm-ok:hover {
+  filter: brightness(1.1);
+}
+
 .s-note { color: var(--tx-mut); font-size: 11.5px; line-height: 1.45; }
 .whisper-card {
   display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 12px;
@@ -917,7 +1106,7 @@ button:focus { outline: none; }
 #consent-scrim { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(0,0,0,0.5); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 /* Keep full-window overlays over the main column, not the sidebar strips. Declared after
    each overlay's `inset: 0` so it wins. */
-#settings-scrim, #onboard-scrim, #consent-scrim { left: var(--side-w); right: auto; width: var(--main-w); }
+#settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim { left: var(--side-w); right: auto; width: var(--main-w); }
 #consent-scrim.hidden { display: none; }
 #consent { width: min(430px, 92vw); padding: 24px 26px 16px; text-align: center; animation: overlayIn 240ms cubic-bezier(0.22,1,0.36,1); }
 .cs-title { font-size: 15px; font-weight: 620; color: var(--tx-1); line-height: 1.35; }

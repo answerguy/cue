@@ -48,6 +48,65 @@ test('recap user turn carries the real conversation', () => {
   assert.match(turn, /You: How long did the deploy take\?/);
 });
 
+test('previous4 requires transcript and enforces interview first-person explaining terms', () => {
+  assert.equal(MODES.previous4.transcriptRequired, true, 'previous4 must require transcript');
+  assert.equal(MODES.previous4.userBubble, 'Prev 4', 'userBubble must be Prev 4');
+  const system = MODES.previous4.buildSystem(null);
+  assert.match(system, /first-person|first person/i, 'must instruct first person');
+  assert.match(system, /clear|confident/i, 'must instruct clear confident tone');
+  assert.match(system, /interview/i, 'must instruct interview perspective');
+  assert.match(system, /thank you/i, 'must instruct to ignore thank you');
+  assert.match(system, /let me think about it/i, 'must instruct to ignore let me think about it');
+  assert.match(system, /give me a minute/i, 'must instruct to ignore give me a minute');
+  assert.match(system, /precision, recall/i, 'must mention terms without full questions');
+  assert.match(system, /newest|most recent|increasing importance/i, 'must specify newest importance');
+  assert.match(system, /answer all/i, 'must instruct to answer all');
+  assert.match(system, /first priority|answered first/i, 'must instruct that newest is answered first');
+  assert.match(system, /thorough|not too short/i, 'must instruct thorough, not too short explanations');
+  assert.match(system, /textbook/i, 'must instruct to avoid dry textbook definitions');
+  assert.match(system, /no analogies/i, 'must forbid analogies');
+  assert.match(system, /accurate/i, 'must instruct accurate explanations');
+});
+
+test('previous4 builds latest up to 4 messages with increasing importance (last > second last > third last > fourth last)', () => {
+  const transcript = [
+    { channel: 'them', text: 'old message 0', ts: 0 },
+    { channel: 'them', text: 'message 1: sharding', ts: 1 },
+    { channel: 'you', text: 'message 2: replication', ts: 2 },
+    { channel: 'them', text: 'message 3: consistency', ts: 3 },
+    { channel: 'them', text: 'message 4: precision and recall', ts: 4 }
+  ];
+
+  const turn = MODES.previous4.build({ transcript });
+  // Should only take the last 4 (messages 1 to 4), dropping message 0
+  assert.ok(!turn.includes('old message 0'), 'must not include message older than the 4 most recent');
+  assert.match(turn, /message 1: sharding/);
+  assert.match(turn, /message 2: replication/);
+  assert.match(turn, /message 3: consistency/);
+  assert.match(turn, /message 4: precision and recall/);
+
+  // Check that importance is clearly tagged with newest having highest importance
+  assert.match(turn, /HIGHEST IMPORTANCE/);
+  assert.match(turn, /Last > Second last > Third last > Fourth last/i);
+  assert.match(turn, /ANSWER ALL/i);
+  assert.match(turn, /first priority and be answered FIRST/i);
+});
+
+test('previous4 is robust when transcript has fewer than 4 messages', () => {
+  const twoMessages = [
+    { channel: 'them', text: 'give me a minute, what about F1 score?', ts: 1 },
+    { channel: 'them', text: 'precision, recall', ts: 2 }
+  ];
+  const turn = MODES.previous4.build({ transcript: twoMessages });
+  assert.match(turn, /precision, recall/);
+  assert.match(turn, /F1 score/);
+  assert.match(turn, /HIGHEST IMPORTANCE/);
+  assert.match(turn, /2 messages/);
+
+  const emptyTurn = MODES.previous4.build({ transcript: [] });
+  assert.match(emptyTurn, /No recent transcript messages/i);
+});
+
 test('all modes have a build function', () => {
   for (const [name, mode] of Object.entries(MODES)) {
     assert.equal(typeof mode.build, 'function', `${name}.build must be a function`);

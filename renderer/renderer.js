@@ -6,10 +6,326 @@
   const isWindows = cue.platform === 'win32';
   const isMac = cue.platform === 'darwin';
 
-  // Exiting must work before settings or provider setup has completed.
+  // Disable all native Chromium tooltips globally so no floating dialogs pop up
+  // outside the protected window during screen sharing.
+  function stripTitles(root = document) {
+    if (!root || !root.querySelectorAll) return;
+    if (root.hasAttribute && root.hasAttribute('title')) {
+      const t = root.getAttribute('title');
+      if (t && !root.hasAttribute('aria-label')) root.setAttribute('aria-label', t);
+      root.removeAttribute('title');
+    }
+    const elements = root.querySelectorAll('[title]');
+    for (const el of elements) {
+      const t = el.getAttribute('title');
+      if (t && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', t);
+      el.removeAttribute('title');
+    }
+  }
+
+  try {
+    const origSetAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (name, value) {
+      if (name && typeof name === 'string' && name.toLowerCase() === 'title') {
+        if (value && !this.hasAttribute('aria-label')) {
+          origSetAttribute.call(this, 'aria-label', value);
+        }
+        return;
+      }
+      return origSetAttribute.apply(this, arguments);
+    };
+
+    Object.defineProperty(HTMLElement.prototype, 'title', {
+      get() {
+        return this.getAttribute('aria-label') || '';
+      },
+      set(val) {
+        if (val && !this.hasAttribute('aria-label')) {
+          this.setAttribute('aria-label', val);
+        }
+        this.removeAttribute('title');
+      },
+      configurable: true,
+      enumerable: true
+    });
+  } catch (err) {
+    console.warn('[cue] could not install title interceptor', err);
+  }
+
+  const titleObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type === 'attributes' && m.attributeName === 'title' && m.target) {
+        m.target.removeAttribute('title');
+      } else if (m.type === 'childList') {
+        for (const node of m.addedNodes) {
+          if (node.nodeType === 1) stripTitles(node);
+        }
+      }
+    }
+  });
+  if (document.documentElement) {
+    titleObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['title'],
+      childList: true,
+      subtree: true
+    });
+  }
+  stripTitles(document);
+
+  // Disable native context menu globally so right-clicking never spawns an OS window
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // In-DOM confirm dialog so confirmation prompts never open a native Win32 dialog
+  function showConfirmDialog({ title = 'Confirm', message = '', confirmText = 'OK', cancelText = 'Cancel', danger = false } = {}) {
+    return new Promise((resolve) => {
+      let scrim = document.getElementById('confirm-scrim');
+      if (!scrim) {
+        scrim = document.createElement('div');
+        scrim.id = 'confirm-scrim';
+        scrim.className = 'confirm-scrim hidden';
+        document.body.appendChild(scrim);
+      }
+      scrim.innerHTML = `
+        <div class="confirm-dialog">
+          <div class="confirm-title">${esc(title)}</div>
+          <div class="confirm-message">${esc(message)}</div>
+          <div class="confirm-buttons">
+            <button type="button" class="confirm-cancel">${esc(cancelText)}</button>
+            <button type="button" class="confirm-ok ${danger ? 'danger' : ''}">${esc(confirmText)}</button>
+          </div>
+        </div>
+      `;
+      scrim.classList.remove('hidden');
+      function cleanup(result) {
+        scrim.classList.add('hidden');
+        scrim.innerHTML = '';
+        resolve(result);
+      }
+      scrim.querySelector('.confirm-cancel').onclick = () => cleanup(false);
+      scrim.querySelector('.confirm-ok').onclick = () => cleanup(true);
+      scrim.onclick = (e) => { if (e.target === scrim) cleanup(false); };
+    });
+  }
+
+  // ---- Custom in-DOM select dropdowns ----
+  // Native <select> elements spawn Win32 popup menus that bypass setContentProtection.
+  // We keep the native <select> in the DOM for compatibility with all scripts and tests,
+  // but hide it from pointer events and render a 100% in-DOM dropdown menu.
+  let activeCustomDropdown = null;
+
+  function closeAllCustomSelects() {
+    if (activeCustomDropdown) {
+      activeCustomDropdown.close();
+      activeCustomDropdown = null;
+    }
+  }
+
+  function setupCustomSelect(select) {
+    if (!select || select._hasCustomSelect) return;
+    select._hasCustomSelect = true;
+
+    select.classList.add('s-select-native-hidden');
+    select.setAttribute('tabindex', '-1');
+    select.setAttribute('aria-hidden', 'true');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'custom-select-wrap' + (select.classList.contains('compact') ? ' compact' : '');
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 's-select custom-select-trigger' + (select.classList.contains('compact') ? ' compact' : '');
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'custom-select-label';
+
+    const chevron = document.createElement('span');
+    chevron.className = 'custom-select-chevron';
+    chevron.textContent = '▾';
+
+    trigger.append(labelSpan, chevron);
+
+    const menu = document.createElement('div');
+    menu.className = 'custom-select-menu hidden';
+    menu.setAttribute('role', 'listbox');
+
+    if (select.parentNode) {
+      select.parentNode.insertBefore(wrapper, select);
+      wrapper.appendChild(select);
+      wrapper.appendChild(trigger);
+    }
+    document.body.appendChild(menu);
+
+    function updateLabel() {
+      const selectedOption = select.selectedOptions && select.selectedOptions[0];
+      const text = selectedOption ? selectedOption.textContent : (select.value || '');
+      labelSpan.textContent = text;
+      trigger.setAttribute('aria-label', text);
+    }
+
+    function buildOptions() {
+      menu.innerHTML = '';
+      const options = Array.from(select.options);
+      for (const opt of options) {
+        const item = document.createElement('div');
+        item.className = 'custom-select-option' + (opt.value === select.value ? ' selected' : '');
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', opt.value === select.value ? 'true' : 'false');
+        item.dataset.value = opt.value;
+        item.textContent = opt.textContent;
+
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          select.value = opt.value;
+          updateLabel();
+          closeMenu();
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          select.dispatchEvent(new Event('input', { bubbles: true }));
+          trigger.focus();
+        });
+
+        menu.appendChild(item);
+      }
+    }
+
+    function positionMenu() {
+      const rect = trigger.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom - 10;
+      const spaceAbove = rect.top - 10;
+      const width = Math.max(rect.width, 240);
+      menu.style.width = `${width}px`;
+      menu.style.left = `${Math.min(rect.left, window.innerWidth - width - 10)}px`;
+
+      if (spaceBelow < 200 && spaceAbove > spaceBelow) {
+        menu.style.maxHeight = `${Math.min(260, spaceAbove)}px`;
+        menu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+        menu.style.top = 'auto';
+      } else {
+        menu.style.maxHeight = `${Math.min(260, spaceBelow)}px`;
+        menu.style.top = `${rect.bottom + 4}px`;
+        menu.style.bottom = 'auto';
+      }
+    }
+
+    function openMenu() {
+      if (activeCustomDropdown && activeCustomDropdown !== instance) {
+        closeAllCustomSelects();
+      }
+      buildOptions();
+      positionMenu();
+      menu.classList.remove('hidden');
+      trigger.setAttribute('aria-expanded', 'true');
+      activeCustomDropdown = instance;
+
+      const selectedItem = menu.querySelector('.custom-select-option.selected');
+      if (selectedItem) {
+        selectedItem.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    function closeMenu() {
+      menu.classList.add('hidden');
+      trigger.setAttribute('aria-expanded', 'false');
+      if (activeCustomDropdown === instance) {
+        activeCustomDropdown = null;
+      }
+    }
+
+    const instance = { close: closeMenu, update: updateLabel };
+
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (menu.classList.contains('hidden')) {
+        openMenu();
+      } else {
+        closeMenu();
+      }
+    });
+
+    trigger.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (menu.classList.contains('hidden')) {
+          openMenu();
+        } else {
+          const items = Array.from(menu.querySelectorAll('.custom-select-option'));
+          const currentIdx = items.findIndex((it) => it.classList.contains('selected') || it.classList.contains('highlighted'));
+          let nextIdx = currentIdx;
+          if (e.key === 'ArrowDown') nextIdx = Math.min(items.length - 1, currentIdx + 1);
+          if (e.key === 'ArrowUp') nextIdx = Math.max(0, currentIdx - 1);
+          if (nextIdx >= 0 && nextIdx < items.length) {
+            items.forEach((it) => it.classList.remove('highlighted'));
+            items[nextIdx].classList.add('highlighted');
+            items[nextIdx].scrollIntoView({ block: 'nearest' });
+            if (e.key === 'Enter' || e.key === ' ') {
+              items[nextIdx].click();
+            }
+          }
+        }
+      } else if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
+        e.preventDefault();
+        closeMenu();
+      }
+    });
+
+    // Intercept .value setter on the select element so programmatic changes update the custom label
+    const proto = HTMLSelectElement.prototype;
+    const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc) {
+      Object.defineProperty(select, 'value', {
+        get() {
+          return desc.get.call(this);
+        },
+        set(val) {
+          desc.set.call(this, val);
+          updateLabel();
+        },
+        configurable: true
+      });
+    }
+
+    // Observe changes to the native <select> options or attributes
+    const observer = new MutationObserver(() => {
+      updateLabel();
+      if (!menu.classList.contains('hidden')) {
+        buildOptions();
+        positionMenu();
+      }
+    });
+    observer.observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'selected'] });
+
+    // Initial label sync
+    updateLabel();
+  }
+
+  document.addEventListener('pointerdown', (e) => {
+    if (activeCustomDropdown && !e.target.closest('.custom-select-wrap') && !e.target.closest('.custom-select-menu')) {
+      closeAllCustomSelects();
+    }
+  });
+  window.addEventListener('scroll', closeAllCustomSelects, true);
+  window.addEventListener('resize', closeAllCustomSelects);
+
+  // Initialize existing selects and watch for dynamically added ones
+  document.querySelectorAll('select').forEach(setupCustomSelect);
+  const selectObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType === 1) {
+          if (node.tagName === 'SELECT') setupCustomSelect(node);
+          else if (node.querySelectorAll) node.querySelectorAll('select').forEach(setupCustomSelect);
+        }
+      }
+    }
+  });
+  if (document.documentElement) {
+    selectObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
   const quitButton = $('#quit-btn');
   quitButton.addEventListener('click', () => cue.quit());
-  quitButton.title = isMac ? 'Quit cue (⌘⇧X)' : 'Quit cue (Ctrl+Shift+X)';
+  quitButton.setAttribute('aria-label', isMac ? 'Quit cue (⌘⇧X)' : 'Quit cue (Ctrl+Shift+X)');
 
   // ---- paint icons -------------------------------------------------------
   $('#logo-btn').innerHTML = icon('badge-question-mark', { size: 16 });
@@ -20,6 +336,8 @@
   document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('monitor', { size: 16 });
   document.querySelector('.act[data-mode="say"] .ic').innerHTML = icon('wand-sparkles', { size: 16 });
   document.querySelector('.act[data-mode="recap"] .ic').innerHTML = icon('refresh-cw', { size: 16 });
+  const prev4IC = document.querySelector('.act[data-mode="previous4"] .ic');
+  if (prev4IC) prev4IC.innerHTML = icon('message-square-text', { size: 16 });
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
   $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
   $('#send-btn').innerHTML = icon('play', { size: 15 });
@@ -36,7 +354,6 @@
       : icon('play', { size: 14, filled: false });
     if (label) label.textContent = active ? 'End session' : 'Start session';
     const title = active ? 'End session' : 'Start session';
-    btn.title = title;
     btn.setAttribute('aria-label', title);
   }
   setSessionButton(false);
@@ -535,11 +852,11 @@
     }
   });
   
-  // FIX #4: Add tooltip with keyboard shortcuts to send button
+  // FIX #4: Add accessibility label with keyboard shortcuts to send button
   const sendBtn = document.getElementById('send-btn');
   if (sendBtn) {
     const forceKey = isWindows ? 'Ctrl+Shift+A' : '⌘⇧A';
-    sendBtn.title = `Send · ${forceKey} to force answer`;
+    sendBtn.setAttribute('aria-label', `Send · ${forceKey} to force answer`);
   }
 
   // Smart toggle
@@ -559,7 +876,6 @@
     const label = btn.querySelector('.tb-hide-label');
     const text = collapsed ? 'Show' : 'Hide';
     if (label) label.textContent = text;
-    btn.title = text;
     btn.setAttribute('aria-label', text);
     if (collapsed) {
       reopenSidebarOnExpand = sidebarOpen;
@@ -648,7 +964,11 @@
       // Also clear the floating interim bar
       if (interimEl) { interimEl.textContent = ''; interimEl.classList.remove('show'); }
       transcriptInterimEl = null;
+      clearTranscriptInterim();
+      clearInputInterim();
       clearTranscriptSidebar();
+      if (messages) { messages.innerHTML = ''; responseCount = 0; }
+      questionHistory.length = 0;
       // Only a question auto-filled from the transcript goes; anything the user typed stays.
       if (inputFromSTT) hardClearSTTFill();
       showToast('Transcript cleared.', 2500);
@@ -856,7 +1176,7 @@
       speaking:     'Speech detected',
       transcribing: 'Transcribing…'
     };
-    dot.title = labels[dotState] || '';
+    dot.setAttribute('aria-label', labels[dotState] || '');
   }
 
   let sttState = 'disconnected';
@@ -1283,7 +1603,7 @@
     const same = fast.toLowerCase() === smart.toLowerCase();
     btn.classList.toggle('hidden', same);
     if (same) return;
-    btn.title = 'Fast: ' + (fast || 'fast model') + ' · Smart: ' + (smart || 'smart model') + ' (higher quality, ~2× slower)';
+    btn.setAttribute('aria-label', 'Fast: ' + (fast || 'fast model') + ' · Smart: ' + (smart || 'smart model') + ' (higher quality, ~2× slower)');
   }
 
   // ---- microphone permission banner --------------------------------------
@@ -1330,6 +1650,7 @@
   async function closeSettings() {
     if (closingSettings) return;
     closingSettings = true;
+    closeAllCustomSelects();
     try {
       if (await saveSettings()) scrim.classList.add('hidden');
     } finally {
@@ -1344,6 +1665,7 @@
   // Tab switching
   document.querySelectorAll('.s-tab').forEach((tab) => {
     tab.addEventListener('click', async () => {
+      closeAllCustomSelects();
       if (tab.classList.contains('on')) return;
       if (!(await saveSettings())) return;
       document.querySelectorAll('.s-tab').forEach(t => t.classList.remove('on'));
@@ -1531,7 +1853,7 @@
       row.className = 's-caller';
       const label = document.createElement('span');
       label.textContent = name + ' — ' + (allowed.length ? allowed.join(' + ') : 'denied');
-      label.title = id;
+      label.dataset.callerId = id;
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = 'Forget';
@@ -1633,7 +1955,9 @@
       runtimeBadge.textContent = whisperOverview.runtime.available
         ? `Ready · v${whisperOverview.runtime.version} · ${whisperOverview.runtime.target}`
         : 'Not prepared';
-      runtimeBadge.title = whisperOverview.runtime.message || '';
+      if (whisperOverview.runtime.message) {
+        runtimeBadge.setAttribute('aria-label', whisperOverview.runtime.message);
+      }
 
       const select = $('#whisper-model');
       select.innerHTML = '';
@@ -1701,7 +2025,15 @@
 
   $('#whisper-delete').addEventListener('click', async () => {
     const model = getSelectedWhisperModel();
-    if (!model || !window.confirm(`Delete the ${model.id} model (${formatBytes(model.bytes)}) from this computer?`)) return;
+    if (!model) return;
+    const confirmed = await showConfirmDialog({
+      title: 'Delete Model',
+      message: `Delete the ${model.id} model (${formatBytes(model.bytes)}) from this computer?`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      danger: true
+    });
+    if (!confirmed) return;
     try {
       await cue.whisperModelDelete(model.id);
       $('#whisper-status').textContent = `${model.id} deleted.`;
@@ -1819,7 +2151,7 @@
     // The window trails the cursor while dragging; going click-through then would drop the release.
     if (draggingWindow) return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #settings-scrim, #onboard-scrim, #consent-scrim'));
+    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim, .custom-select-menu'));
     setIgnore(!overUI);
   });
   setIgnore(true); // start fully click-through; hovering the panel re-enables it
@@ -2051,12 +2383,12 @@
     if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
     const sayBtn = document.querySelector('.act[data-mode="say"]');
     const assistBtn = document.querySelector('.act[data-mode="assist"]');
-    if (sayBtn) sayBtn.title = isWindows
+    if (sayBtn) sayBtn.setAttribute('aria-label', isWindows
       ? 'Suggests what to say next based on the conversation (Ctrl+Enter)'
-      : 'Suggests what to say next based on the conversation (⌘↵)';
-    if (assistBtn) assistBtn.title = isWindows
+      : 'Suggests what to say next based on the conversation (⌘↵)');
+    if (assistBtn) assistBtn.setAttribute('aria-label', isWindows
       ? 'Scans your screen and conversation to decide what you need (Ctrl+Shift+Enter)'
-      : 'Scans your screen and conversation to decide what you need (⌘⇧↵)';
+      : 'Scans your screen and conversation to decide what you need (⌘⇧↵)');
 
     // R6: smart tooltip
     updateSmartTooltip();

@@ -25,7 +25,7 @@ test('getRecent returns newest N turns oldest-first', () => {
 
 test('buildSystem weaves profile into assist/say/ask but not leetcode', () => {
   const ctx = { profile: 'ZZ_PROFILE_SENTINEL_ZZ' };
-  for (const key of ['assist', 'say', 'ask']) {
+  for (const key of ['assist', 'say', 'ask', 'previous4']) {
     const def = { ...MODES[key], key };
     const sys = buildSystem(def, ctx);
     assert.ok(sys.includes('ZZ_PROFILE_SENTINEL_ZZ'), key + ' should inject profile');
@@ -44,5 +44,6 @@ test('buildUserTurn passes only the rolling window, not the full transcript', ()
 test('windowFor returns sensible sizes per mode', () => {
   assert.strictEqual(windowFor('assist'), 12);
   assert.strictEqual(windowFor('recap'), 0);
+  assert.strictEqual(windowFor('previous4'), 4);
   assert.strictEqual(windowFor('unknown'), 12);
 });

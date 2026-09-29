@@ -113,6 +113,69 @@ const MODES = {
     }
   },
 
+  // ── Previous 4: explain terms from the last up to 4 transcript turns ──────
+  previous4: {
+    needsScreen: false,
+    userBubble: 'Prev 4',
+    small: false,
+    resumeMode: 'say',
+    transcriptRequired: true,
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
+        'You are cue, an expert real-time copilot helping candidates prepare for mock interviews. This is a mock interview setting. You will be given transcripts of interviewer and candidate. You must help the candidate give the appropriate answer so they can build confidence for a real interview. ' +
+        BASE_RULES +
+        '"Them" is the interviewer; "You" is the candidate.\n\n' +
+        'Core Objective:\n' +
+        'Explain the key terms and concepts mentioned in the recent conversation turns, speaking in the first person as the candidate.\n\n' +
+        'Strict Instructions:\n' +
+        '• ANSWER ALL IN PRIORITY ORDER: You MUST answer all terms, questions, or concepts across ALL messages provided. Do not skip any message. Structure your answer in strict order of priority: the LAST (newest) message MUST be given first priority and be answered FIRST. The remaining messages must then also be answered in their order of priority (second last next, then third last, then fourth last).\n' +
+        '• THOROUGH & TECHNICALLY ACCURATE (NOT TOO SHORT, NO TEXTBOOK DEFINITIONS): Provide thorough, well-developed explanations (roughly 3–5 sentences per term/topic). Do NOT make explanations too short, brief, or surface-level. Do NOT recite rigid textbook or dictionary definitions. Instead, explain the technical mechanism in depth, why it matters in practice, how it is applied, and key engineering trade-offs an interviewer expects to hear.\n' +
+        '• NO ANALOGIES: Do NOT use analogies, metaphors, or story comparisons. They pollute the output. Keep explanations strictly accurate, direct, and technically grounded.\n' +
+        '• WEIGHTED IMPORTANCE: You will receive up to the last 4 messages from transcription history. Importance strictly increases towards the newest message: Last (newest) > Second last > Third last > Fourth last. Give the highest priority, depth, and focus to terms mentioned in the newest message.\n' +
+        '• IDENTIFY TERMS (NO FULL QUESTIONS GUARANTEED): The transcript will often not include questions such as "what is precision, what is recall". Instead, it may include simply the terms, like "precision, recall, f1 score, etc.", isolated buzzwords, or fragments. You must identify the key terms and concepts to explain.\n' +
+        '• FILTER OUT FILLER & NOISE: Strictly ignore conversational filler words and noise words like "thank you", "let me think about it", "give me a minute", "um", "uh", "okay", "yeah", etc. Never explain or quote filler phrases.\n' +
+        '• FIRST-PERSON PERSPECTIVE: Explain each identified term in clear, confident language from the first-person perspective ("I", "my") as if you were answering an interviewer in a live interview (e.g., "In my experience, precision is...", "To me, precision means...").\n' +
+        '• DIRECT SPOKEN OUTPUT: Write the exact words the candidate should say. No preamble, no meta-announcements (never say "Here are the terms:" or "Sure!").',
+        contextBlock
+      ), aiRules, 'previous4');
+    },
+    build(ctx) {
+      const allTurns = (ctx && ctx.transcript) || [];
+      const turns = allTurns.slice(-4);
+      if (turns.length === 0) {
+        return 'No recent transcript messages captured yet. Please speak or listen first.';
+      }
+      const count = turns.length;
+      const formatted = turns.map((t, idx) => {
+        const speaker = t.channel === 'them' ? 'Them' : 'You';
+        const offsetFromEnd = count - 1 - idx;
+        let priority;
+        if (offsetFromEnd === 0) {
+          priority = 'HIGHEST IMPORTANCE (Last / Newest message - Top Priority, Answer FIRST)';
+        } else if (offsetFromEnd === 1) {
+          priority = 'HIGH IMPORTANCE (Second last message - Answer Second)';
+        } else if (offsetFromEnd === 2) {
+          priority = 'MEDIUM IMPORTANCE (Third last message - Answer Third)';
+        } else {
+          priority = 'LOWER IMPORTANCE (Fourth last message - Answer Fourth)';
+        }
+        return `[${priority}]\n${speaker}: "${t.text}"`;
+      }).join('\n\n');
+
+      return `Latest transcription history (${count} message${count === 1 ? '' : 's'}, with increasing importance to the newest message: Last > Second last > Third last > Fourth last):\n\n` +
+        formatted +
+        '\n\nInstructions for response:\n' +
+        '1. ANSWER ALL IN PRIORITY ORDER: You must explain and answer ALL terms, questions, or concepts found across all messages above. Do not skip or omit any message.\n' +
+        '2. STRICT ANSWER ORDER: The last (newest) message MUST be given first priority and be answered FIRST. The remaining messages must also be answered in their order of priority, just not first (second last second, third last third, fourth last last).\n' +
+        '3. THOROUGH & TECHNICALLY ACCURATE (NOT TOO SHORT): Make explanations substantive, thorough, and well-developed (roughly 3–5 sentences per term). Do not keep them too short. Avoid dry textbook definitions while providing practical technical depth, real-world relevance, and trade-offs suitable for an interview.\n' +
+        '4. NO ANALOGIES: Do not use analogies, metaphors, or comparisons. Keep the explanation completely accurate, clean, and directly technical.\n' +
+        '5. The transcript will likely not include full questions like "what is precision, what is recall"; it may simply list terms like "precision, recall, f1 score, etc." Identify and extract those terms.\n' +
+        '6. Strictly ignore conversational filler words and noise (such as "thank you", "let me think about it", "give me a minute", etc.).\n' +
+        '7. Explain from the first-person perspective ("I", "my") as if you are answering an interviewer in a job interview.\n' +
+        '8. Speak directly with no preamble or introductory phrases.';
+    }
+  },
+
   // ── Ask: free-form question ────────────────────────────────────────────────
   ask: {
     needsScreen: true,
