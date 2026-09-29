@@ -147,6 +147,23 @@ html, body {
 .tb-hide:hover { background: rgba(255,255,255,0.08); }
 .tb-hide .chev { width: 14px; height: 14px; display: inline-flex; color: rgba(255,255,255,0.9); }
 .tb-hide.collapsed .chev { transform: rotate(180deg); }
+.tb-focus {
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: var(--r-pill);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--tx-mut);
+  background: rgba(255,255,255,0.04);
+  transition: all 140ms ease;
+}
+.tb-focus .ic { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
+.tb-focus:hover { background: rgba(255,255,255,0.08); color: var(--tx-2); }
+.tb-focus.active {
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
 .tb-opacity-wrap { position: relative; display: inline-flex; }
 .tb-opacity { width: 28px; height: 28px; padding: 0; border-radius: var(--r-pill); }
 .tb-opacity .ic { width: 14px; height: 14px; display: inline-flex; }

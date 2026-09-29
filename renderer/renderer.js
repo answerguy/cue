@@ -343,6 +343,8 @@
   $('#send-btn').innerHTML = icon('play', { size: 15 });
   const clearIC = document.querySelector('#clear-transcript-btn .ic');
   if (clearIC) clearIC.innerHTML = icon('trash-2', { size: 15 });
+  const focusBtnIC = document.querySelector('#focus-btn .ic');
+  if (focusBtnIC) focusBtnIC.innerHTML = icon('shield', { size: 14 });
 
   function setSessionButton(active) {
     const btn = $('#stop-btn');
@@ -499,6 +501,40 @@
   const input = $('#input');
   const placeholder = $('#placeholder');
   const composer = $('#composer');
+
+  // ========== NO-FOCUS (STEALTH) MODE ==========
+  let isNoFocusMode = false;
+  let temporaryFocusActive = false;
+
+  function updatePlaceholder() {
+    const altKey = isWindows ? 'Alt' : '⌥';
+    const ctrlKey = isWindows ? 'Ctrl' : '⌘';
+    if (isNoFocusMode) {
+      placeholder.innerHTML = `No-focus mode active · <span class="keycap">${altKey}</span><span class="keycap">C</span> to type · <span class="keycap">${ctrlKey}</span><span class="keycap">⇧</span><span class="keycap">F</span> toggle`;
+    } else if (isWindows) {
+      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⇧</span><span class="keycap">⏎</span> for Smart assist';
+    } else {
+      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">⌘</span><span class="keycap">⇧</span><span class="keycap">⏎</span> for Smart assist';
+    }
+    syncPlaceholder();
+  }
+
+  function setNoFocusUI(active) {
+    isNoFocusMode = Boolean(active);
+    const btn = $('#focus-btn');
+    if (btn) {
+      btn.classList.toggle('active', isNoFocusMode);
+      const label = btn.querySelector('.tb-focus-label');
+      if (label) {
+        label.textContent = isNoFocusMode ? 'No-focus ON' : 'No-focus';
+      }
+      const toggleKey = isWindows ? 'Ctrl+Shift+F' : '⌘⇧F';
+      btn.setAttribute('aria-label', isNoFocusMode
+        ? `No-focus mode active · Click to turn off (${toggleKey})`
+        : `Toggle no-focus mode (${toggleKey})`);
+    }
+    updatePlaceholder();
+  }
 
   // ========== SMART AUTO-FILL SYSTEM ==========
   // Track whether the current input text came from STT auto-fill (Them channel)
@@ -788,12 +824,40 @@
     syncPlaceholder();
     updateSendButtonState(); // FIX #9: Update send button on input change
   });
-  input.addEventListener('focus', () => { composer.classList.add('focused'); placeholder.classList.add('hidden'); });
-  input.addEventListener('blur', () => { composer.classList.remove('focused'); syncPlaceholder(); });
-  $('#input-area').addEventListener('click', () => input.focus());
+  input.addEventListener('focus', () => {
+    if (isNoFocusMode && !temporaryFocusActive) {
+      input.blur();
+      const altKey = isWindows ? 'Alt+C' : '⌥C';
+      showToast(`No-focus mode active · Press ${altKey} to type`, 2500);
+      return;
+    }
+    composer.classList.add('focused');
+    placeholder.classList.add('hidden');
+  });
+  input.addEventListener('blur', () => {
+    composer.classList.remove('focused');
+    if (temporaryFocusActive) {
+      temporaryFocusActive = false;
+      if (typeof cue.nofocusSet === 'function') cue.nofocusSet(true).catch(() => {});
+    }
+    syncPlaceholder();
+  });
+  $('#input-area').addEventListener('click', () => {
+    if (isNoFocusMode && !temporaryFocusActive) {
+      const altKey = isWindows ? 'Alt+C' : '⌥C';
+      showToast(`No-focus mode active · Press ${altKey} to type`, 2500);
+      return;
+    }
+    input.focus();
+  });
 
   function send() {
     const text = input.value.trim();
+    if (temporaryFocusActive) {
+      input.blur();
+      temporaryFocusActive = false;
+      if (typeof cue.nofocusSet === 'function') cue.nofocusSet(true).catch(() => {});
+    }
     if (!text) { runMode('assist', ''); return; }
     const wasFromSTT = inputFromSTT;
     
@@ -823,10 +887,17 @@
       restoreLastQuestion();
       return;
     }
-    // Escape: clear the input (with undo hint)
-    if (e.key === 'Escape' && input.value.trim()) {
-      e.preventDefault();
-      hardClearSTTFill(true); // FIX #10: Show undo hint
+    // Escape: clear the input (with undo hint) or exit temporary typing focus
+    if (e.key === 'Escape') {
+      if (input.value.trim()) {
+        e.preventDefault();
+        hardClearSTTFill(true); // FIX #10: Show undo hint
+      }
+      if (temporaryFocusActive) {
+        input.blur();
+        temporaryFocusActive = false;
+        if (typeof cue.nofocusSet === 'function') cue.nofocusSet(true).catch(() => {});
+      }
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); send(); }
@@ -953,6 +1024,17 @@
     const active = await cue.captureToggle();
     if (turningOn && !active) stopSystemAudio();
   });
+
+  const focusBtn = $('#focus-btn');
+  if (focusBtn) {
+    focusBtn.addEventListener('click', async () => {
+      if (typeof cue.nofocusToggle === 'function') {
+        const active = await cue.nofocusToggle();
+        setNoFocusUI(active);
+        showToast(active ? 'No-focus mode ON: window will not steal focus' : 'No-focus mode OFF: normal window focus', 2000);
+      }
+    });
+  }
 
   // Transcript toggle removed — sidebar now auto-opens with listening
 
@@ -1378,6 +1460,20 @@
     }
     if (active && mode === 'local') setSttState('local');
     else updateSttStatus({ active, streaming });
+  });
+
+  cue.on('nofocus:state', (active) => {
+    setNoFocusUI(active);
+  });
+
+  cue.on('composer:focus', ({ temporary } = {}) => {
+    temporaryFocusActive = Boolean(temporary);
+    const wrap = $('#panel-wrap');
+    if (wrap && wrap.classList.contains('collapsed')) {
+      toggleHide();
+    }
+    input.focus();
+    input.select();
   });
 
   // ---- real-time transcript display (interim + final) ----
@@ -2408,9 +2504,12 @@
     syncPlaceholder();
     updateSendButtonState(); // Initialize send button state
 
-    // Fix placeholder shortcut hint to match platform
-    if (isWindows) {
-      placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⇧</span><span class="keycap">⏎</span> for Smart assist';
+    // Initialize no-focus mode state and placeholder
+    try {
+      const initialNoFocus = typeof cue.nofocusGet === 'function' ? await cue.nofocusGet() : false;
+      setNoFocusUI(initialNoFocus);
+    } catch (_) {
+      setNoFocusUI(false);
     }
 
     applyOpacity(settings.opacity, false);

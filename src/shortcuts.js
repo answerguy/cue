@@ -9,7 +9,9 @@ const DEFAULTS = {
   hide: 'Shift+Q', // Windows-only convenience (no Cmd key)
   listening: 'CommandOrControl+Shift+L',
   passthrough: 'CommandOrControl+Shift+I',
-  screen: 'CommandOrControl+Shift+S'
+  screen: 'CommandOrControl+Shift+S',
+  nofocus: 'CommandOrControl+Shift+F',
+  type: 'Alt+C'
 };
 
 // Every action that maps to a shortcut. Values = defaults; can be overridden via settings.

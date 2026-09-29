@@ -54,10 +54,26 @@ let win = null;
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, quit: false };
+const shortcutState = { assist: false, say: false, leetcode: false, quit: false, nofocus: false, type: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
+
+let isNoFocusMode = false;
+
+function setNoFocusMode(enabled) {
+  isNoFocusMode = Boolean(enabled);
+  if (win && !win.isDestroyed()) {
+    if (typeof win.setFocusable === 'function') {
+      win.setFocusable(!isNoFocusMode);
+    }
+    send('nofocus:state', isNoFocusMode);
+  }
+}
+
+function toggleNoFocusMode() {
+  setNoFocusMode(!isNoFocusMode);
+}
 
 // -------- Windows version helpers --------
 // WDA_EXCLUDEFROMCAPTURE (setContentProtection) requires Windows 10 build 19041+.
@@ -334,6 +350,9 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'screen-saver', 1);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   if (isMac && typeof win.setHiddenInMissionControl === 'function') win.setHiddenInMissionControl(true);
+  if (isNoFocusMode && typeof win.setFocusable === 'function') {
+    win.setFocusable(false);
+  }
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
@@ -348,6 +367,7 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     win.showInactive();
     win.setTitle('Microsoft Edge Update');
+    send('nofocus:state', isNoFocusMode);
     if (restoredTurns.length) {
       // A meeting was in progress when cue last exited: put its transcript back
       // in the sidebar so Recap / Follow-up pick up where the conversation was.
@@ -1115,6 +1135,15 @@ ipcMain.handle('platform:info', () => ({
   winBuild: WIN_BUILD,
   winSupportsContentProtection: WIN_SUPPORTS_CONTENT_PROTECTION
 }));
+ipcMain.handle('nofocus:get', () => isNoFocusMode);
+ipcMain.handle('nofocus:set', (_e, enabled) => {
+  setNoFocusMode(enabled);
+  return isNoFocusMode;
+});
+ipcMain.handle('nofocus:toggle', () => {
+  toggleNoFocusMode();
+  return isNoFocusMode;
+});
 ipcMain.handle('transcript:clear', () => {
   if (meetingMemory) meetingMemory.end().catch(() => {}); // it stays in history with its notes
   transcript.splice(0, transcript.length);
@@ -1217,6 +1246,19 @@ function registerShortcuts() {
   shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
   shortcutState.hide = globalShortcut.register('CommandOrControl+Shift+/', () => send('hide:toggle', {}));
   shortcutState.quit = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
+  shortcutState.nofocus = globalShortcut.register('CommandOrControl+Shift+F', () => {
+    toggleNoFocusMode();
+  });
+  shortcutState.type = globalShortcut.register('Alt+C', () => {
+    if (win && !win.isDestroyed()) {
+      if (isNoFocusMode && typeof win.setFocusable === 'function') {
+        win.setFocusable(true);
+      }
+      win.show();
+      win.focus();
+      send('composer:focus', { temporary: isNoFocusMode });
+    }
+  });
   for (const [name, wasRegistered] of Object.entries(shortcutState)) {
     if (!wasRegistered) {
       recordEvent({ level: 'warn', event: 'shortcut_unavailable', msg: 'another application holds the ' + name + ' shortcut', frame: 'registerShortcuts', context: { shortcut: name } });

@@ -5,6 +5,8 @@ const { DEFAULTS, resolveShortcuts, findConflicts, isValid } = require('../src/s
 test('defaults cover the core actions', () => {
   assert.strictEqual(DEFAULTS.say, 'CommandOrControl+Return');
   assert.strictEqual(DEFAULTS.assist, 'CommandOrControl+Shift+Return');
+  assert.strictEqual(DEFAULTS.nofocus, 'CommandOrControl+Shift+F');
+  assert.strictEqual(DEFAULTS.type, 'Alt+C');
   assert.ok(DEFAULTS.leetcode);
   assert.ok(DEFAULTS.quit);
 });
