@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog, systemPreferences, clipboard } = require('electron');
 const path = require('path');
 const os = require('os');
 const store = require('./src/store');
@@ -49,7 +49,24 @@ const { requireWhisperModel } = require('./src/whisper-model-catalog');
 const { locateWhisperRuntime } = require('./src/whisper-runtime');
 const { LocalWhisperTranscriber } = require('./src/local-whisper-transcriber');
 
+const { createStealthHookManager } = require('./src/stealth-hook-manager');
+
 let win = null;
+let stealthHookManager = null;
+
+function initStealthHook() {
+  if (!isWindows) return;
+  stealthHookManager = createStealthHookManager({
+    onChar: (char) => send('stealth:char', { char }),
+    onBackspace: () => send('stealth:backspace'),
+    onEnter: () => send('stealth:submit'),
+    onEscape: () => send('stealth:cancel'),
+    onPaste: () => send('stealth:paste', { text: clipboard.readText() }),
+    onSelectAll: () => send('stealth:select-all'),
+    onStateChange: (capturing) => send('stealth:state', { capturing }),
+    log: (msg) => console.log(msg)
+  });
+}
 // Which global shortcuts cue actually holds. `globalShortcut.register` returns
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
@@ -1144,6 +1161,15 @@ ipcMain.handle('nofocus:toggle', () => {
   toggleNoFocusMode();
   return isNoFocusMode;
 });
+ipcMain.handle('stealth:get', () => Boolean(stealthHookManager && stealthHookManager.isCapturing()));
+ipcMain.handle('stealth:toggle', () => {
+  if (stealthHookManager) {
+    const active = stealthHookManager.toggle();
+    send('stealth:state', { capturing: active });
+    return active;
+  }
+  return false;
+});
 ipcMain.handle('transcript:clear', () => {
   if (meetingMemory) meetingMemory.end().catch(() => {}); // it stays in history with its notes
   transcript.splice(0, transcript.length);
@@ -1250,6 +1276,11 @@ function registerShortcuts() {
     toggleNoFocusMode();
   });
   shortcutState.type = globalShortcut.register('Alt+C', () => {
+    if (stealthHookManager && stealthHookManager.isAvailable()) {
+      const active = stealthHookManager.toggle();
+      send('stealth:state', { capturing: active });
+      return;
+    }
     if (win && !win.isDestroyed()) {
       if (isNoFocusMode && typeof win.setFocusable === 'function') {
         win.setFocusable(true);
@@ -1380,6 +1411,8 @@ function launchApp() {
     recordEvent({ level: 'info', event: 'publik_default_applied', msg: '', frame: 'launchApp', context: {} });
   }
 
+  initStealthHook();
+
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
 
   meetingMemory = createMeetingMemory({
@@ -1488,6 +1521,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('will-quit', () => {
+  if (stealthHookManager) stealthHookManager.dispose();
   globalShortcut.unregisterAll();
   // Quitting mid-meeting is a pause, not an end: the meeting stays open on disk
   // so a relaunch within the resume window picks it back up (a stale one is

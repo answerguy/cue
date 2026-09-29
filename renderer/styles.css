@@ -469,6 +469,10 @@ button:focus { outline: none; }
   transition: border-color 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
 }
 #composer.focused { border-color: var(--bd-strong); box-shadow: 0 0 0 3px rgba(60,131,245,0.15); }
+#composer.stealth-active {
+  border-color: rgba(34, 197, 94, 0.45);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
 #input-area { position: relative; min-height: 22px; }
 #placeholder {
   position: absolute; inset: 0; pointer-events: none;

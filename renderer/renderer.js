@@ -505,11 +505,14 @@
   // ========== NO-FOCUS (STEALTH) MODE ==========
   let isNoFocusMode = false;
   let temporaryFocusActive = false;
+  let isStealthTypingActive = false;
 
   function updatePlaceholder() {
     const altKey = isWindows ? 'Alt' : '⌥';
     const ctrlKey = isWindows ? 'Ctrl' : '⌘';
-    if (isNoFocusMode) {
+    if (isStealthTypingActive) {
+      placeholder.innerHTML = `<span style="color:#86efac;font-weight:600">⚡ Stealth typing active</span> · Enter sends · Esc/${altKey}+C exits`;
+    } else if (isNoFocusMode) {
       placeholder.innerHTML = `No-focus mode active · <span class="keycap">${altKey}</span><span class="keycap">C</span> to type · <span class="keycap">${ctrlKey}</span><span class="keycap">⇧</span><span class="keycap">F</span> toggle`;
     } else if (isWindows) {
       placeholder.innerHTML = 'Ask about your screen or conversation, or <span class="keycap">Ctrl</span><span class="keycap">⇧</span><span class="keycap">⏎</span> for Smart assist';
@@ -1474,6 +1477,61 @@
     }
     input.focus();
     input.select();
+  });
+
+  cue.on('stealth:state', ({ capturing }) => {
+    isStealthTypingActive = Boolean(capturing);
+    composer.classList.toggle('stealth-active', isStealthTypingActive);
+    if (isStealthTypingActive) {
+      const wrap = $('#panel-wrap');
+      if (wrap && wrap.classList.contains('collapsed')) {
+        toggleHide();
+      }
+      showToast('Stealth typing ON · Type question (Enter sends · Esc exits)', 2500);
+    } else {
+      showToast('Stealth typing OFF · Keyboard back to background app', 2000);
+    }
+    updatePlaceholder();
+  });
+
+  cue.on('stealth:char', ({ char }) => {
+    if (!char) return;
+    input.value += char;
+    syncPlaceholder();
+    updateSendButtonState();
+  });
+
+  cue.on('stealth:backspace', () => {
+    if (input.value.length > 0) {
+      input.value = input.value.slice(0, -1);
+      syncPlaceholder();
+      updateSendButtonState();
+    }
+  });
+
+  cue.on('stealth:submit', () => {
+    isStealthTypingActive = false;
+    composer.classList.remove('stealth-active');
+    updatePlaceholder();
+    send();
+  });
+
+  cue.on('stealth:cancel', () => {
+    isStealthTypingActive = false;
+    composer.classList.remove('stealth-active');
+    updatePlaceholder();
+  });
+
+  cue.on('stealth:paste', ({ text }) => {
+    if (text) {
+      input.value += text;
+      syncPlaceholder();
+      updateSendButtonState();
+    }
+  });
+
+  cue.on('stealth:select-all', () => {
+    // Selected in stealth mode
   });
 
   // ---- real-time transcript display (interim + final) ----

@@ -8,7 +8,8 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "postinstall": "node scripts/rename-electron.js",
+    "build:stealth": "node scripts/build-stealth-input.js",
+    "postinstall": "node scripts/rename-electron.js && node scripts/build-stealth-input.js",
     "prepare:whisper": "node scripts/prepare-whisper-runtime.js",
     "verify:whisper-runtime": "node scripts/verify-whisper-runtime.js",
     "pack": "electron-builder --dir",

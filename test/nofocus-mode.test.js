@@ -24,14 +24,20 @@ test('preload.js exposes nofocus APIs and allowed IPC channels', () => {
   assert.match(preloadSrc, /nofocusGet:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('nofocus:get'\)/);
   assert.match(preloadSrc, /nofocusSet:\s*\(enabled\)\s*=>\s*ipcRenderer\.invoke\('nofocus:set',\s*enabled\)/);
   assert.match(preloadSrc, /nofocusToggle:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('nofocus:toggle'\)/);
+  assert.match(preloadSrc, /stealthGet:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('stealth:get'\)/);
+  assert.match(preloadSrc, /stealthToggle:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('stealth:toggle'\)/);
   assert.match(preloadSrc, /'nofocus:state'/);
   assert.match(preloadSrc, /'composer:focus'/);
+  assert.match(preloadSrc, /'stealth:char'/);
+  assert.match(preloadSrc, /'stealth:state'/);
 });
 
 test('main.js registers global shortcuts and IPC handlers for nofocus mode', () => {
   assert.match(mainSrc, /ipcMain\.handle\('nofocus:get'/);
   assert.match(mainSrc, /ipcMain\.handle\('nofocus:set'/);
   assert.match(mainSrc, /ipcMain\.handle\('nofocus:toggle'/);
+  assert.match(mainSrc, /ipcMain\.handle\('stealth:get'/);
+  assert.match(mainSrc, /ipcMain\.handle\('stealth:toggle'/);
   assert.match(mainSrc, /globalShortcut\.register\('CommandOrControl\+Shift\+F'/);
   assert.match(mainSrc, /globalShortcut\.register\('Alt\+C'/);
   assert.match(mainSrc, /win\.setFocusable\(!isNoFocusMode\)/);
@@ -43,5 +49,8 @@ test('renderer.js implements setNoFocusUI and dynamic placeholder with shortcuts
   assert.match(jsSrc, /No-focus mode active · <span class="keycap">/);
   assert.match(jsSrc, /cue\.on\('nofocus:state'/);
   assert.match(jsSrc, /cue\.on\('composer:focus'/);
+  assert.match(jsSrc, /cue\.on\('stealth:state'/);
+  assert.match(jsSrc, /cue\.on\('stealth:char'/);
+  assert.match(jsSrc, /cue\.on\('stealth:submit'/);
   assert.match(jsSrc, /#focus-btn/);
 });
