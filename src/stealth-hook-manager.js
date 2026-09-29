@@ -84,6 +84,7 @@ function createStealthHookManager(options = {}) {
         onStateChange(capturing);
         break;
       case 'toggle_off':
+        lastToggleTime = Date.now();
         capturing = false;
         onStateChange(false);
         break;
@@ -96,11 +97,13 @@ function createStealthHookManager(options = {}) {
         onBackspace();
         break;
       case 'enter':
+        lastToggleTime = Date.now();
         capturing = false;
         onStateChange(false);
         onEnter();
         break;
       case 'escape':
+        lastToggleTime = Date.now();
         capturing = false;
         onStateChange(false);
         onEscape();
@@ -113,6 +116,8 @@ function createStealthHookManager(options = {}) {
         break;
     }
   }
+
+  let lastToggleTime = 0;
 
   function sendCommand(cmd) {
     if (!child || child.killed) {
@@ -127,6 +132,7 @@ function createStealthHookManager(options = {}) {
 
   function start() {
     if (!isAvailable()) return false;
+    lastToggleTime = Date.now();
     sendCommand('START');
     capturing = true;
     onStateChange(true);
@@ -135,6 +141,7 @@ function createStealthHookManager(options = {}) {
 
   function stop() {
     if (!isAvailable()) return false;
+    lastToggleTime = Date.now();
     sendCommand('STOP');
     capturing = false;
     onStateChange(false);
@@ -142,6 +149,11 @@ function createStealthHookManager(options = {}) {
   }
 
   function toggle() {
+    const now = Date.now();
+    if (now - lastToggleTime < 300) {
+      return capturing;
+    }
+    lastToggleTime = now;
     if (capturing) {
       stop();
     } else {

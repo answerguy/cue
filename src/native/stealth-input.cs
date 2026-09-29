@@ -167,6 +167,8 @@ namespace CueStealthInput
             }
         }
 
+        private const uint LLKHF_ALTDOWN = 0x20;
+
         private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
             if (nCode >= 0 && _capturing)
@@ -178,22 +180,26 @@ namespace CueStealthInput
                     uint vk = hookStruct.vkCode;
 
                     bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-                    bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+                    bool alt = (hookStruct.flags & LLKHF_ALTDOWN) != 0 ||
+                               (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 ||
+                               msg == WM_SYSKEYDOWN;
                     bool win = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
 
-                    // Pass through Windows key shortcuts and system combos like Alt+Tab, Ctrl+Alt+Del
-                    if (win || (alt && vk == VK_TAB))
-                    {
-                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
-                    }
-
                     // Alt+C toggles capture OFF
-                    if (alt && (vk == 0x43 || vk == 0x63)) // 'C'
+                    if (alt && (vk == 0x43 || vk == 0x63)) // 'C' key
                     {
                         _capturing = false;
                         Console.WriteLine("{\"event\":\"toggle_off\"}");
                         Console.Out.Flush();
-                        return (IntPtr)1; // swallow Alt+C
+                        // Allow CallNextHookEx so Electron's globalShortcut also registers it cleanly
+                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                    }
+
+                    // Pass through any other Alt shortcuts (Alt+Tab, Alt+F4, Alt+Space, etc.) and Windows key shortcuts
+                    // Never swallow Alt combinations as text characters
+                    if (win || (alt && !ctrl))
+                    {
+                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
                     }
 
                     // Handle Escape: cancel/stop capture
@@ -237,7 +243,6 @@ namespace CueStealthInput
                             Console.Out.Flush();
                             return (IntPtr)1;
                         }
-                        // Let other Ctrl combinations pass or swallow?
                         return CallNextHookEx(_hookID, nCode, wParam, lParam);
                     }
 
@@ -250,7 +255,12 @@ namespace CueStealthInput
                     if (caps) keyState[VK_CAPITAL] = 0x01;
 
                     StringBuilder sb = new StringBuilder(16);
-                    int rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0);
+                    // Use 0x04 flag on Windows 10/11 to avoid altering dead key buffer
+                    int rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0x04);
+                    if (rc <= 0)
+                    {
+                        rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0);
+                    }
 
                     if (rc > 0)
                     {

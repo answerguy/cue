@@ -830,8 +830,9 @@
   input.addEventListener('focus', () => {
     if (isNoFocusMode && !temporaryFocusActive) {
       input.blur();
-      const altKey = isWindows ? 'Alt+C' : '⌥C';
-      showToast(`No-focus mode active · Press ${altKey} to type`, 2500);
+      if (!isStealthTypingActive && typeof cue.stealthToggle === 'function') {
+        cue.stealthToggle().catch(() => {});
+      }
       return;
     }
     composer.classList.add('focused');
@@ -847,8 +848,9 @@
   });
   $('#input-area').addEventListener('click', () => {
     if (isNoFocusMode && !temporaryFocusActive) {
-      const altKey = isWindows ? 'Alt+C' : '⌥C';
-      showToast(`No-focus mode active · Press ${altKey} to type`, 2500);
+      if (!isStealthTypingActive && typeof cue.stealthToggle === 'function') {
+        cue.stealthToggle().catch(() => {});
+      }
       return;
     }
     input.focus();
@@ -856,6 +858,9 @@
 
   function send() {
     const text = input.value.trim();
+    if (isStealthTypingActive && typeof cue.stealthToggle === 'function') {
+      cue.stealthToggle().catch(() => {});
+    }
     if (temporaryFocusActive) {
       input.blur();
       temporaryFocusActive = false;
