@@ -11,6 +11,7 @@ function createStealthHookManager(options = {}) {
     onPaste = () => {},
     onSelectAll = () => {},
     onStateChange = () => {},
+    onNoFocusToggle = () => {},
     log = console.log
   } = options;
 
@@ -82,6 +83,14 @@ function createStealthHookManager(options = {}) {
       case 'state':
         capturing = Boolean(msg.capturing);
         onStateChange(capturing);
+        break;
+      case 'toggle':
+        lastToggleTime = Date.now();
+        capturing = Boolean(msg.capturing);
+        onStateChange(capturing);
+        break;
+      case 'nofocus_toggle':
+        onNoFocusToggle();
         break;
       case 'toggle_off':
         lastToggleTime = Date.now();

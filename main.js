@@ -64,6 +64,7 @@ function initStealthHook() {
     onPaste: () => send('stealth:paste', { text: clipboard.readText() }),
     onSelectAll: () => send('stealth:select-all'),
     onStateChange: (capturing) => send('stealth:state', { capturing }),
+    onNoFocusToggle: () => toggleNoFocusMode(),
     log: (msg) => console.log(msg)
   });
 }
@@ -88,7 +89,11 @@ function setNoFocusMode(enabled) {
   }
 }
 
+let lastNoFocusToggleTime = 0;
 function toggleNoFocusMode() {
+  const now = Date.now();
+  if (now - lastNoFocusToggleTime < 300) return;
+  lastNoFocusToggleTime = now;
   setNoFocusMode(!isNoFocusMode);
 }
 

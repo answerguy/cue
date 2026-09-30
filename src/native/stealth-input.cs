@@ -11,7 +11,9 @@ namespace CueStealthInput
     {
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
+        private const int WM_KEYUP = 0x0101;
         private const int WM_SYSKEYDOWN = 0x0104;
+        private const int WM_SYSKEYUP = 0x0105;
 
         private const int VK_BACK = 0x08;
         private const int VK_TAB = 0x09;
@@ -28,6 +30,10 @@ namespace CueStealthInput
         private static LowLevelKeyboardProc _proc = HookCallback;
         private static IntPtr _hookID = IntPtr.Zero;
         private static volatile bool _capturing = false;
+
+        private static long _lastAltCTicks = 0;
+        private static long _lastNoFocusTicks = 0;
+        private static readonly bool[] _swallowedKeys = new bool[256];
 
         [StructLayout(LayoutKind.Sequential)]
         private struct KBDLLHOOKSTRUCT
@@ -171,10 +177,13 @@ namespace CueStealthInput
 
         private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && _capturing)
+            if (nCode >= 0)
             {
                 int msg = wParam.ToInt32();
-                if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
+                bool isKeyDown = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+                bool isKeyUp = (msg == WM_KEYUP || msg == WM_SYSKEYUP);
+
+                if (isKeyDown || isKeyUp)
                 {
                     KBDLLHOOKSTRUCT hookStruct = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
                     uint vk = hookStruct.vkCode;
@@ -182,103 +191,158 @@ namespace CueStealthInput
                     bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
                     bool alt = (hookStruct.flags & LLKHF_ALTDOWN) != 0 ||
                                (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 ||
-                               msg == WM_SYSKEYDOWN;
+                               msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP;
                     bool win = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
-
-                    // Alt+C toggles capture OFF
-                    if (alt && (vk == 0x43 || vk == 0x63)) // 'C' key
-                    {
-                        _capturing = false;
-                        Console.WriteLine("{\"event\":\"toggle_off\"}");
-                        Console.Out.Flush();
-                        // Allow CallNextHookEx so Electron's globalShortcut also registers it cleanly
-                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
-                    }
-
-                    // Pass through any other Alt shortcuts (Alt+Tab, Alt+F4, Alt+Space, etc.) and Windows key shortcuts
-                    // Never swallow Alt combinations as text characters
-                    if (win || (alt && !ctrl))
-                    {
-                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
-                    }
-
-                    // Handle Escape: cancel/stop capture
-                    if (vk == VK_ESCAPE)
-                    {
-                        _capturing = false;
-                        Console.WriteLine("{\"event\":\"escape\"}");
-                        Console.Out.Flush();
-                        return (IntPtr)1; // swallow Escape
-                    }
-
-                    // Handle Enter: submit query
-                    if (vk == VK_RETURN)
-                    {
-                        _capturing = false;
-                        Console.WriteLine("{\"event\":\"enter\"}");
-                        Console.Out.Flush();
-                        return (IntPtr)1; // swallow Enter
-                    }
-
-                    // Handle Backspace: remove last character
-                    if (vk == VK_BACK)
-                    {
-                        Console.WriteLine("{\"event\":\"backspace\"}");
-                        Console.Out.Flush();
-                        return (IntPtr)1; // swallow Backspace
-                    }
-
-                    // For Ctrl shortcuts (like Ctrl+A, Ctrl+V, etc.)
-                    if (ctrl)
-                    {
-                        if (vk == 0x56) // Ctrl+V paste
-                        {
-                            Console.WriteLine("{\"event\":\"paste\"}");
-                            Console.Out.Flush();
-                            return (IntPtr)1;
-                        }
-                        if (vk == 0x41) // Ctrl+A select all
-                        {
-                            Console.WriteLine("{\"event\":\"select_all\"}");
-                            Console.Out.Flush();
-                            return (IntPtr)1;
-                        }
-                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
-                    }
-
-                    // Translate to Unicode character
-                    byte[] keyState = new byte[256];
                     bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-                    bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
 
-                    if (shift) keyState[VK_SHIFT] = 0x80;
-                    if (caps) keyState[VK_CAPITAL] = 0x01;
-
-                    StringBuilder sb = new StringBuilder(16);
-                    // Use 0x04 flag on Windows 10/11 to avoid altering dead key buffer
-                    int rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0x04);
-                    if (rc <= 0)
+                    // 1. Alt+C keybind: Toggle stealth typing ON/OFF
+                    // Must be swallowed completely on BOTH keydown and keyup so foreground apps never see it
+                    if (alt && !ctrl && !win && (vk == 0x43 || vk == 0x63)) // 'C' key
                     {
-                        rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0);
+                        if (isKeyDown)
+                        {
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltCTicks > TimeSpan.FromMilliseconds(250).Ticks)
+                            {
+                                _lastAltCTicks = nowTicks;
+                                _capturing = !_capturing;
+                                Console.WriteLine("{\"event\":\"toggle\",\"capturing\":" + (_capturing ? "true" : "false") + "}");
+                                Console.Out.Flush();
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Consume / Swallow Alt+C completely!
                     }
 
-                    if (rc > 0)
+                    // 2. Ctrl+Shift+F keybind: Toggle No-Focus mode
+                    if (ctrl && shift && !alt && !win && (vk == 0x46 || vk == 0x66)) // 'F' key
                     {
-                        string str = sb.ToString();
-                        string jsonChar = EscapeJson(str);
-                        Console.WriteLine("{\"event\":\"char\",\"char\":\"" + jsonChar + "\"}");
-                        Console.Out.Flush();
-                        return (IntPtr)1; // swallow character key
+                        if (isKeyDown)
+                        {
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastNoFocusTicks > TimeSpan.FromMilliseconds(250).Ticks)
+                            {
+                                _lastNoFocusTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"nofocus_toggle\"}");
+                                Console.Out.Flush();
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Consume / Swallow Ctrl+Shift+F completely!
                     }
 
-                    // If it's a modifier key itself (Shift, Ctrl, Alt, Caps), pass through
-                    if (vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU || vk == VK_CAPITAL)
+                    // 3. If this key was swallowed on keydown, swallow its keyup as well
+                    if (isKeyUp && vk < 256 && _swallowedKeys[vk])
                     {
-                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                        _swallowedKeys[vk] = false;
+                        return (IntPtr)1;
                     }
 
-                    // Swallow any other key while capturing to prevent leaking to background app
-                    return (IntPtr)1;
+                    // 4. While capturing stealth input, process and swallow keystrokes
+                    if (_capturing)
+                    {
+                        // Pass through OS shortcuts like Alt+Tab, Alt+F4, Win+...
+                        if (win || (alt && !ctrl))
+                        {
+                            return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                        }
+
+                        // Pass through pure modifier keys alone (Shift, Ctrl, Alt, Caps) so keyboard state works
+                        if (vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU || vk == VK_CAPITAL)
+                        {
+                            return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                        }
+
+                        // On keyup during capture, swallow non-modifier keys so nothing leaks
+                        if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                            return (IntPtr)1;
+                        }
+
+                        // All subsequent handling is for keydown while capturing
+                        if (vk < 256) _swallowedKeys[vk] = true;
+
+                        // Handle Escape: cancel/stop capture
+                        if (vk == VK_ESCAPE)
+                        {
+                            _capturing = false;
+                            Console.WriteLine("{\"event\":\"escape\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow Escape
+                        }
+
+                        // Handle Enter: submit query
+                        if (vk == VK_RETURN)
+                        {
+                            _capturing = false;
+                            Console.WriteLine("{\"event\":\"enter\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow Enter
+                        }
+
+                        // Handle Backspace: remove last character
+                        if (vk == VK_BACK)
+                        {
+                            Console.WriteLine("{\"event\":\"backspace\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow Backspace
+                        }
+
+                        // For Ctrl shortcuts (like Ctrl+A, Ctrl+V, etc.)
+                        if (ctrl)
+                        {
+                            if (vk == 0x56) // Ctrl+V paste
+                            {
+                                Console.WriteLine("{\"event\":\"paste\"}");
+                                Console.Out.Flush();
+                                return (IntPtr)1;
+                            }
+                            if (vk == 0x41) // Ctrl+A select all
+                            {
+                                Console.WriteLine("{\"event\":\"select_all\"}");
+                                Console.Out.Flush();
+                                return (IntPtr)1;
+                            }
+                            return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                        }
+
+                        // Translate to Unicode character
+                        byte[] keyState = new byte[256];
+                        bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+                        bool isCaps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+
+                        if (isShift) keyState[VK_SHIFT] = 0x80;
+                        if (isCaps) keyState[VK_CAPITAL] = 0x01;
+
+                        StringBuilder sb = new StringBuilder(16);
+                        // Use 0x04 flag on Windows 10/11 to avoid altering dead key buffer
+                        int rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0x04);
+                        if (rc <= 0)
+                        {
+                            rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0);
+                        }
+
+                        if (rc > 0)
+                        {
+                            string str = sb.ToString();
+                            string jsonChar = EscapeJson(str);
+                            Console.WriteLine("{\"event\":\"char\",\"char\":\"" + jsonChar + "\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow character key
+                        }
+
+                        // Swallow any other key while capturing to prevent leaking to background app
+                        return (IntPtr)1;
+                    }
                 }
             }
 
