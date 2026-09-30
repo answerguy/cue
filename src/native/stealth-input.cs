@@ -44,6 +44,17 @@ namespace CueStealthInput
 
         private static volatile bool _leftShiftDown = false;
         private static volatile bool _rightShiftDown = false;
+        private static volatile bool _shiftSwallowed = false;
+
+        private static readonly IntPtr CUE_MAGIC = (IntPtr)0x43554531; // "CUE1"
+        private static readonly object _altLock = new object();
+        private static volatile bool _altPending = false;
+        private static volatile bool _altSwallowed = false;
+        private static uint _pendingAltVk = 0;
+        private static uint _pendingAltScan = 0;
+        private static uint _pendingAltFlags = 0;
+        private static System.Threading.Timer _altTimer = null;
+        private const int ALT_BUFFER_TIMEOUT_MS = 400;
 
         private static bool IsShiftKey(uint vk)
         {
@@ -71,6 +82,49 @@ namespace CueStealthInput
                    (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 ||
                    (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0 ||
                    (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
+        }
+
+        private static void FlushPendingAlt()
+        {
+            lock (_altLock)
+            {
+                if (_altPending)
+                {
+                    _altPending = false;
+                    try
+                    {
+                        if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                    }
+                    catch { }
+
+                    byte vk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                    byte scan = (byte)_pendingAltScan;
+                    uint flags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                    keybd_event(vk, scan, flags, CUE_MAGIC);
+                }
+            }
+        }
+
+        private static void FlushPendingAltTap()
+        {
+            lock (_altLock)
+            {
+                if (_altPending)
+                {
+                    _altPending = false;
+                    try
+                    {
+                        if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                    }
+                    catch { }
+
+                    byte vk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                    byte scan = (byte)_pendingAltScan;
+                    uint flags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                    keybd_event(vk, scan, flags, CUE_MAGIC);
+                    keybd_event(vk, scan, flags | 2, CUE_MAGIC); // KEYEVENTF_KEYUP = 2
+                }
+            }
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -141,6 +195,9 @@ namespace CueStealthInput
         [DllImport("user32.dll")]
         private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
+        [DllImport("user32.dll")]
+        private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
+
         static void Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
@@ -156,6 +213,11 @@ namespace CueStealthInput
                 Console.WriteLine("{\"test\":true,\"char\":\"" + sb.ToString() + "\"}");
                 return;
             }
+
+            _altTimer = new System.Threading.Timer((state) =>
+            {
+                FlushPendingAlt();
+            }, null, Timeout.Infinite, Timeout.Infinite);
 
             // Thread for reading commands from stdin
             Thread stdinThread = new Thread(() =>
@@ -181,6 +243,7 @@ namespace CueStealthInput
                         else if (line.Equals("QUIT", StringComparison.OrdinalIgnoreCase) ||
                                  line.Equals("EXIT", StringComparison.OrdinalIgnoreCase))
                         {
+                            if (_altTimer != null) { try { _altTimer.Dispose(); } catch { } }
                             Environment.Exit(0);
                         }
                     }
@@ -222,13 +285,20 @@ namespace CueStealthInput
         {
             if (nCode >= 0)
             {
+                KBDLLHOOKSTRUCT hookStruct = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+
+                // Recursion guard: synthetic keys injected by CUE bypass all interception
+                if ((hookStruct.flags & 0x10) != 0 || hookStruct.dwExtraInfo == CUE_MAGIC)
+                {
+                    return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                }
+
                 int msg = wParam.ToInt32();
                 bool isKeyDown = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
                 bool isKeyUp = (msg == WM_KEYUP || msg == WM_SYSKEYUP);
 
                 if (isKeyDown || isKeyUp)
                 {
-                    KBDLLHOOKSTRUCT hookStruct = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
                     uint vk = hookStruct.vkCode;
 
                     // Update shift state tracking on any Shift key event
@@ -251,12 +321,69 @@ namespace CueStealthInput
                     bool win = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
                     bool shift = IsShiftActive();
 
-                    // 1. Alt+C keybind: Toggle stealth typing ON/OFF
-                    // Must be swallowed completely on BOTH keydown and keyup so foreground apps never see it
-                    if (alt && !ctrl && !win && (vk == 0x43 || vk == 0x63)) // 'C' key
+                    bool isMenu = IsMenuKey(vk);
+                    bool isC = (vk == 0x43 || vk == 0x63); // 'C' key
+
+                    // 1. Buffer Alt keydown when pressed alone (without Ctrl or Win)
+                    if (isKeyDown && isMenu && !ctrl && !win)
+                    {
+                        lock (_altLock)
+                        {
+                            if (!_altPending && !_altSwallowed)
+                            {
+                                _altPending = true;
+                                _pendingAltVk = vk;
+                                _pendingAltScan = hookStruct.scanCode;
+                                _pendingAltFlags = hookStruct.flags;
+                                if (_altTimer != null)
+                                {
+                                    _altTimer.Change(ALT_BUFFER_TIMEOUT_MS, Timeout.Infinite);
+                                }
+                                return (IntPtr)1; // Swallow initial Alt down into buffer!
+                            }
+                            else if (_altPending)
+                            {
+                                // Repeated Alt down while already pending: keep swallowed
+                                return (IntPtr)1;
+                            }
+                        }
+                    }
+
+                    // 2. Alt keyup handling
+                    if (isKeyUp && isMenu)
+                    {
+                        lock (_altLock)
+                        {
+                            if (_altPending)
+                            {
+                                // User released Alt alone before timeout: flush down + up tap
+                                FlushPendingAltTap();
+                                return (IntPtr)1;
+                            }
+                            if (_altSwallowed)
+                            {
+                                // Alt was consumed as part of Alt+C: swallow Alt up completely!
+                                _altSwallowed = false;
+                                return (IntPtr)1;
+                            }
+                        }
+                    }
+
+                    // 3. 'C' key pressed while Alt is pending or Alt is held (Alt+C toggle)
+                    if (isC && (alt || _altPending) && !ctrl && !win)
                     {
                         if (isKeyDown)
                         {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
                             long nowTicks = DateTime.UtcNow.Ticks;
                             if (nowTicks - _lastAltCTicks > TimeSpan.FromMilliseconds(250).Ticks)
                             {
@@ -266,6 +393,7 @@ namespace CueStealthInput
                                 {
                                     _leftShiftDown = false;
                                     _rightShiftDown = false;
+                                    _shiftSwallowed = false;
                                 }
                                 Console.WriteLine("{\"event\":\"toggle\",\"capturing\":" + (_capturing ? "true" : "false") + "}");
                                 Console.Out.Flush();
@@ -276,10 +404,16 @@ namespace CueStealthInput
                         {
                             if (vk < 256) _swallowedKeys[vk] = false;
                         }
-                        return (IntPtr)1; // Consume / Swallow Alt+C completely!
+                        return (IntPtr)1; // Swallow 'C' down and up completely!
                     }
 
-                    // 2. Ctrl+Shift+F keybind: Toggle No-Focus mode
+                    // 4. Any other key arrived while Alt is pending: flush buffered Alt down immediately!
+                    if (_altPending && !isMenu)
+                    {
+                        FlushPendingAlt();
+                    }
+
+                    // 5. Ctrl+Shift+F keybind: Toggle No-Focus mode
                     if (ctrl && shift && !alt && !win && (vk == 0x46 || vk == 0x66)) // 'F' key
                     {
                         if (isKeyDown)
@@ -300,14 +434,31 @@ namespace CueStealthInput
                         return (IntPtr)1; // Consume / Swallow Ctrl+Shift+F completely!
                     }
 
-                    // 3. If this key was swallowed on keydown, swallow its keyup as well
+                    // 6. In focus/stealth mode (_capturing == true), consume Shift keypresses completely!
+                    if (_capturing && IsShiftKey(vk))
+                    {
+                        if (isKeyDown)
+                        {
+                            _shiftSwallowed = true;
+                        }
+                        return (IntPtr)1; // Consume / Swallow Shift down and up!
+                    }
+
+                    // If Shift was swallowed while in focus mode, swallow its trailing keyup as well
+                    if (isKeyUp && IsShiftKey(vk) && _shiftSwallowed)
+                    {
+                        _shiftSwallowed = false;
+                        return (IntPtr)1;
+                    }
+
+                    // 7. If this key was swallowed on keydown, swallow its keyup as well
                     if (isKeyUp && vk < 256 && _swallowedKeys[vk])
                     {
                         _swallowedKeys[vk] = false;
                         return (IntPtr)1;
                     }
 
-                    // 4. While capturing stealth input, process and swallow keystrokes
+                    // 8. While capturing stealth input, process and swallow keystrokes
                     if (_capturing)
                     {
                         // Pass through OS shortcuts like Alt+Tab, Alt+F4, Win+...
@@ -316,8 +467,9 @@ namespace CueStealthInput
                             return CallNextHookEx(_hookID, nCode, wParam, lParam);
                         }
 
-                        // Pass through pure modifier keys alone (Shift, Ctrl, Alt, Caps) so keyboard state works
-                        if (IsModifierKey(vk))
+                        // Pass through pure modifier keys alone (Ctrl, Caps, Win) so keyboard state works
+                        // Note: Shift is already consumed above!
+                        if (IsControlKey(vk) || IsMenuKey(vk) || vk == VK_CAPITAL || vk == VK_LWIN || vk == VK_RWIN)
                         {
                             return CallNextHookEx(_hookID, nCode, wParam, lParam);
                         }
@@ -338,6 +490,7 @@ namespace CueStealthInput
                             _capturing = false;
                             _leftShiftDown = false;
                             _rightShiftDown = false;
+                            _shiftSwallowed = false;
                             Console.WriteLine("{\"event\":\"escape\"}");
                             Console.Out.Flush();
                             return (IntPtr)1; // swallow Escape
@@ -355,6 +508,7 @@ namespace CueStealthInput
                             _capturing = false;
                             _leftShiftDown = false;
                             _rightShiftDown = false;
+                            _shiftSwallowed = false;
                             Console.WriteLine("{\"event\":\"enter\"}");
                             Console.Out.Flush();
                             return (IntPtr)1; // swallow Enter
