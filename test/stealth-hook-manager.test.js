@@ -14,13 +14,17 @@ test('stealth hook manager initializes and provides isAvailable', async () => {
   }
 });
 
-test('stealth hook manager handles onNoFocusToggle and onStateChange callbacks', async () => {
+test('stealth hook manager handles onNoFocusToggle, onStateChange, onShortcut, and onDelete callbacks', async () => {
   let toggledNoFocus = false;
   let stateChanged = null;
+  let receivedShortcut = null;
+  let receivedDelete = false;
 
   const manager = createStealthHookManager({
     onNoFocusToggle: () => { toggledNoFocus = true; },
-    onStateChange: (state) => { stateChanged = state; }
+    onStateChange: (state) => { stateChanged = state; },
+    onShortcut: (action) => { receivedShortcut = action; },
+    onDelete: () => { receivedDelete = true; }
   });
 
   assert.equal(manager.isAvailable(), process.platform === 'win32');

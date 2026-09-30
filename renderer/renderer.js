@@ -501,11 +501,50 @@
   const input = $('#input');
   const placeholder = $('#placeholder');
   const composer = $('#composer');
+  const clearInputBtn = $('#clear-input-btn');
+  const caretMirrorText = $('#stealth-caret-text');
 
   // ========== NO-FOCUS (STEALTH) MODE ==========
   let isNoFocusMode = true;
   let temporaryFocusActive = false;
   let isStealthTypingActive = false;
+
+  function syncCaretMirror() {
+    if (!caretMirrorText) return;
+    let val = input.value || '';
+    if (val.endsWith('\n')) {
+      val += '\u200B';
+    }
+    caretMirrorText.textContent = val;
+  }
+
+  function updateDeleteButton() {
+    if (!clearInputBtn) return;
+    const hasText = Boolean(input.value && input.value.length > 0);
+    if (isStealthTypingActive) {
+      clearInputBtn.classList.remove('hidden');
+      clearInputBtn.classList.toggle('empty', !hasText);
+    } else {
+      clearInputBtn.classList.toggle('hidden', !hasText);
+      clearInputBtn.classList.remove('empty');
+    }
+  }
+
+  function clearComposerInput() {
+    input.value = '';
+    inputFromSTT = false;
+    lastSTTValue = '';
+    composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
+    syncPlaceholder();
+    updateSendButtonState();
+  }
+
+  if (clearInputBtn) {
+    clearInputBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearComposerInput();
+    });
+  }
 
   function updatePlaceholder() {
     const altKey = isWindows ? 'Alt' : '⌥';
@@ -794,6 +833,8 @@
     placeholder.classList.toggle('hidden', input.value.length > 0 || document.activeElement === input);
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+    syncCaretMirror();
+    updateDeleteButton();
   }
   
   // FIX #6: Track last STT value to detect substantial edits vs minor corrections
@@ -1510,6 +1551,14 @@
   });
 
   cue.on('stealth:backspace', () => {
+    if (input.value.length > 0) {
+      input.value = input.value.slice(0, -1);
+      syncPlaceholder();
+      updateSendButtonState();
+    }
+  });
+
+  cue.on('stealth:delete', () => {
     if (input.value.length > 0) {
       input.value = input.value.slice(0, -1);
       syncPlaceholder();

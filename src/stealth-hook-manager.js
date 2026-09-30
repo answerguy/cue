@@ -6,12 +6,14 @@ function createStealthHookManager(options = {}) {
   const {
     onChar = () => {},
     onBackspace = () => {},
+    onDelete = () => {},
     onEnter = () => {},
     onEscape = () => {},
     onPaste = () => {},
     onSelectAll = () => {},
     onStateChange = () => {},
     onNoFocusToggle = () => {},
+    onShortcut = () => {},
     log = console.log
   } = options;
 
@@ -122,6 +124,14 @@ function createStealthHookManager(options = {}) {
         break;
       case 'select_all':
         onSelectAll();
+        break;
+      case 'delete':
+        onDelete();
+        break;
+      case 'shortcut':
+        if (typeof msg.action === 'string') {
+          onShortcut(msg.action);
+        }
         break;
     }
   }

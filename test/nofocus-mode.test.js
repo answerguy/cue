@@ -58,3 +58,34 @@ test('renderer.js implements setNoFocusUI and dynamic placeholder with shortcuts
   assert.match(jsSrc, /cue\.on\('stealth:submit'/);
   assert.match(jsSrc, /#focus-btn/);
 });
+
+test('composer input area includes blinking caret mirror and fixed delete button', () => {
+  const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'styles.css'), 'utf8');
+
+  // HTML structure
+  assert.match(htmlSrc, /<div\s+id="stealth-caret-mirror"\s+class="stealth-caret-mirror"/);
+  assert.match(htmlSrc, /<span\s+id="stealth-caret-text"><\/span><span\s+id="stealth-caret"\s+class="stealth-caret"><\/span>/);
+  assert.match(htmlSrc, /<button\s+id="clear-input-btn"\s+class="input-delete-btn hidden"\s+aria-label="Clear input">✕<\/button>/);
+  assert.ok(!htmlSrc.includes('id="clear-input-btn" title='), 'clear-input-btn must not use native title attribute');
+
+  // CSS rules
+  assert.match(cssSrc, /\.stealth-caret-mirror\s*\{/);
+  assert.match(cssSrc, /#composer\.stealth-active \.stealth-caret-mirror\s*\{/);
+  assert.match(cssSrc, /@keyframes stealth-caret-blink/);
+  assert.match(cssSrc, /\.input-delete-btn\s*\{/);
+  assert.match(cssSrc, /#composer\.stealth-active \.input-delete-btn/);
+
+  // Preload IPC allowed channels
+  assert.match(preloadSrc, /'stealth:delete'/);
+
+  // Renderer logic
+  assert.match(jsSrc, /cue\.on\('stealth:delete'/);
+  assert.match(jsSrc, /clearComposerInput/);
+  assert.match(jsSrc, /syncCaretMirror/);
+  assert.match(jsSrc, /updateDeleteButton/);
+
+  // Main logic for masked shortcuts and delete
+  assert.match(mainSrc, /triggerShortcutAction/);
+  assert.match(mainSrc, /onShortcut:\s*\(action\)\s*=>\s*triggerShortcutAction\(action\)/);
+  assert.match(mainSrc, /onDelete:\s*\(\)\s*=>\s*send\('stealth:delete'\)/);
+});

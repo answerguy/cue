@@ -54,17 +54,31 @@ const { createStealthHookManager } = require('./src/stealth-hook-manager');
 let win = null;
 let stealthHookManager = null;
 
+let lastShortcutActionTime = 0;
+let lastShortcutAction = '';
+function triggerShortcutAction(action) {
+  const now = Date.now();
+  if (action === lastShortcutAction && (now - lastShortcutActionTime < 350)) {
+    return;
+  }
+  lastShortcutAction = action;
+  lastShortcutActionTime = now;
+  runFeature(action, '');
+}
+
 function initStealthHook() {
   if (!isWindows) return;
   stealthHookManager = createStealthHookManager({
     onChar: (char) => send('stealth:char', { char }),
     onBackspace: () => send('stealth:backspace'),
+    onDelete: () => send('stealth:delete'),
     onEnter: () => send('stealth:submit'),
     onEscape: () => send('stealth:cancel'),
     onPaste: () => send('stealth:paste', { text: clipboard.readText() }),
     onSelectAll: () => send('stealth:select-all'),
     onStateChange: (capturing) => send('stealth:state', { capturing }),
     onNoFocusToggle: () => toggleNoFocusMode(),
+    onShortcut: (action) => triggerShortcutAction(action),
     log: (msg) => console.log(msg)
   });
 }
@@ -1273,9 +1287,9 @@ ipcMain.on('permissions:continue', async () => {
 
 // -------- shortcuts --------
 function registerShortcuts() {
-  shortcutState.say = globalShortcut.register('CommandOrControl+Return', () => runFeature('say', ''));
-  shortcutState.assist = globalShortcut.register('CommandOrControl+Shift+Return', () => runFeature('assist', ''));
-  shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
+  shortcutState.say = globalShortcut.register('CommandOrControl+Return', () => triggerShortcutAction('say'));
+  shortcutState.assist = globalShortcut.register('CommandOrControl+Shift+Return', () => triggerShortcutAction('assist'));
+  shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => triggerShortcutAction('leetcode'));
   shortcutState.hide = globalShortcut.register('CommandOrControl+Shift+/', () => send('hide:toggle', {}));
   shortcutState.quit = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
   shortcutState.nofocus = globalShortcut.register('CommandOrControl+Shift+F', () => {

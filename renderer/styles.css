@@ -495,6 +495,93 @@ button:focus { outline: none; }
   font-family: var(--font); font-size: 15px; line-height: 22px;
   max-height: 140px; overflow-y: auto;
   -webkit-user-select: text; user-select: text;
+  padding: 0 28px 0 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+.stealth-caret-mirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 28px;
+  bottom: 0;
+  pointer-events: none;
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  display: none;
+}
+#composer.stealth-active .stealth-caret-mirror {
+  display: block;
+}
+#stealth-caret-text {
+  visibility: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.stealth-caret {
+  display: inline-block;
+  width: 2px;
+  height: 18px;
+  background-color: #22c55e;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: stealth-caret-blink 1s cubic-bezier(1, 0, 0, 1) infinite;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+  border-radius: 1px;
+}
+@keyframes stealth-caret-blink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+.input-delete-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--tx-2);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  transition: all 140ms ease;
+  z-index: 10;
+}
+.input-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
+}
+.input-delete-btn.hidden {
+  display: none;
+}
+#composer.stealth-active .input-delete-btn {
+  display: flex;
+}
+#composer.stealth-active .input-delete-btn.empty {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
 }
 #composer-bottom { display: flex; align-items: center; gap: 8px; }
 .spacer { flex: 1; }

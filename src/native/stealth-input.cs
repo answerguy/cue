@@ -20,6 +20,7 @@ namespace CueStealthInput
         private const int VK_RETURN = 0x0D;
         private const int VK_ESCAPE = 0x1B;
         private const int VK_SPACE = 0x20;
+        private const int VK_DELETE = 0x2E;
         private const int VK_SHIFT = 0x10;
         private const int VK_CONTROL = 0x11;
         private const int VK_MENU = 0x12; // Alt
@@ -40,6 +41,7 @@ namespace CueStealthInput
 
         private static long _lastAltCTicks = 0;
         private static long _lastNoFocusTicks = 0;
+        private static long _lastShortcutTicks = 0;
         private static readonly bool[] _swallowedKeys = new bool[256];
 
         private static volatile bool _leftShiftDown = false;
@@ -434,6 +436,49 @@ namespace CueStealthInput
                         return (IntPtr)1; // Consume / Swallow Ctrl+Shift+F completely!
                     }
 
+                    // 5b. Global shortcuts: Ctrl+Return (say), Ctrl+Shift+Return (assist), Ctrl+H (leetcode)
+                    // These keybinds must NEVER leak while cue is running, whether in focus mode or not.
+                    if (ctrl && !alt && !win)
+                    {
+                        string shortcutAction = null;
+                        if (vk == VK_RETURN)
+                        {
+                            shortcutAction = shift ? "assist" : "say";
+                        }
+                        else if (!shift && (vk == 0x48 || vk == 0x68)) // 'H' key
+                        {
+                            shortcutAction = "leetcode";
+                        }
+
+                        if (shortcutAction != null)
+                        {
+                            if (isKeyDown)
+                            {
+                                long nowTicks = DateTime.UtcNow.Ticks;
+                                if (nowTicks - _lastShortcutTicks > TimeSpan.FromMilliseconds(300).Ticks)
+                                {
+                                    _lastShortcutTicks = nowTicks;
+                                    if (_capturing)
+                                    {
+                                        _capturing = false;
+                                        _leftShiftDown = false;
+                                        _rightShiftDown = false;
+                                        _shiftSwallowed = false;
+                                        Console.WriteLine("{\"event\":\"state\",\"capturing\":false}");
+                                    }
+                                    Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"" + shortcutAction + "\"}");
+                                    Console.Out.Flush();
+                                }
+                                if (vk < 256) _swallowedKeys[vk] = true;
+                            }
+                            else if (isKeyUp)
+                            {
+                                if (vk < 256) _swallowedKeys[vk] = false;
+                            }
+                            return (IntPtr)1; // Completely swallow and mask the shortcut!
+                        }
+                    }
+
                     // 6. In focus/stealth mode (_capturing == true), consume Shift keypresses completely!
                     if (_capturing && IsShiftKey(vk))
                     {
@@ -520,6 +565,14 @@ namespace CueStealthInput
                             Console.WriteLine("{\"event\":\"backspace\"}");
                             Console.Out.Flush();
                             return (IntPtr)1; // swallow Backspace
+                        }
+
+                        // Handle Delete: delete character
+                        if (vk == VK_DELETE)
+                        {
+                            Console.WriteLine("{\"event\":\"delete\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow Delete
                         }
 
                         // For Ctrl shortcuts (like Ctrl+A, Ctrl+V, etc.)
