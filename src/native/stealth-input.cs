@@ -19,12 +19,19 @@ namespace CueStealthInput
         private const int VK_TAB = 0x09;
         private const int VK_RETURN = 0x0D;
         private const int VK_ESCAPE = 0x1B;
+        private const int VK_SPACE = 0x20;
         private const int VK_SHIFT = 0x10;
         private const int VK_CONTROL = 0x11;
         private const int VK_MENU = 0x12; // Alt
         private const int VK_CAPITAL = 0x14; // Caps Lock
         private const int VK_LWIN = 0x5B;
         private const int VK_RWIN = 0x5C;
+        private const int VK_LSHIFT = 0xA0;
+        private const int VK_RSHIFT = 0xA1;
+        private const int VK_LCONTROL = 0xA2;
+        private const int VK_RCONTROL = 0xA3;
+        private const int VK_LMENU = 0xA4;
+        private const int VK_RMENU = 0xA5;
 
         private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
         private static LowLevelKeyboardProc _proc = HookCallback;
@@ -34,6 +41,37 @@ namespace CueStealthInput
         private static long _lastAltCTicks = 0;
         private static long _lastNoFocusTicks = 0;
         private static readonly bool[] _swallowedKeys = new bool[256];
+
+        private static volatile bool _leftShiftDown = false;
+        private static volatile bool _rightShiftDown = false;
+
+        private static bool IsShiftKey(uint vk)
+        {
+            return vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT;
+        }
+
+        private static bool IsControlKey(uint vk)
+        {
+            return vk == VK_CONTROL || vk == VK_LCONTROL || vk == VK_RCONTROL;
+        }
+
+        private static bool IsMenuKey(uint vk)
+        {
+            return vk == VK_MENU || vk == VK_LMENU || vk == VK_RMENU;
+        }
+
+        private static bool IsModifierKey(uint vk)
+        {
+            return IsShiftKey(vk) || IsControlKey(vk) || IsMenuKey(vk) || vk == VK_CAPITAL || vk == VK_LWIN || vk == VK_RWIN;
+        }
+
+        private static bool IsShiftActive()
+        {
+            return _leftShiftDown || _rightShiftDown ||
+                   (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 ||
+                   (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0 ||
+                   (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct KBDLLHOOKSTRUCT
@@ -100,6 +138,9 @@ namespace CueStealthInput
             int cchBuff,
             uint wFlags);
 
+        [DllImport("user32.dll")]
+        private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
         static void Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
@@ -108,8 +149,10 @@ namespace CueStealthInput
             if (args.Length > 0 && args[0] == "--test")
             {
                 byte[] keyState = new byte[256];
+                keyState[VK_SHIFT] = 0x80;
+                keyState[VK_LSHIFT] = 0x80;
                 StringBuilder sb = new StringBuilder(16);
-                int rc = ToUnicode(0x41, 0x1E, keyState, sb, sb.Capacity, 0);
+                int rc = ToUnicode(0x31, 0x02, keyState, sb, sb.Capacity, 0); // '1' shifted = '!'
                 Console.WriteLine("{\"test\":true,\"char\":\"" + sb.ToString() + "\"}");
                 return;
             }
@@ -188,12 +231,25 @@ namespace CueStealthInput
                     KBDLLHOOKSTRUCT hookStruct = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
                     uint vk = hookStruct.vkCode;
 
-                    bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+                    // Update shift state tracking on any Shift key event
+                    if (vk == VK_LSHIFT) _leftShiftDown = isKeyDown;
+                    else if (vk == VK_RSHIFT) _rightShiftDown = isKeyDown;
+                    else if (vk == VK_SHIFT)
+                    {
+                        if (isKeyDown) { _leftShiftDown = true; }
+                        else { _leftShiftDown = false; _rightShiftDown = false; }
+                    }
+
+                    bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
+                                (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0 ||
+                                (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0;
                     bool alt = (hookStruct.flags & LLKHF_ALTDOWN) != 0 ||
                                (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 ||
+                               (GetAsyncKeyState(VK_LMENU) & 0x8000) != 0 ||
+                               (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0 ||
                                msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP;
                     bool win = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
-                    bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+                    bool shift = IsShiftActive();
 
                     // 1. Alt+C keybind: Toggle stealth typing ON/OFF
                     // Must be swallowed completely on BOTH keydown and keyup so foreground apps never see it
@@ -206,6 +262,11 @@ namespace CueStealthInput
                             {
                                 _lastAltCTicks = nowTicks;
                                 _capturing = !_capturing;
+                                if (!_capturing)
+                                {
+                                    _leftShiftDown = false;
+                                    _rightShiftDown = false;
+                                }
                                 Console.WriteLine("{\"event\":\"toggle\",\"capturing\":" + (_capturing ? "true" : "false") + "}");
                                 Console.Out.Flush();
                             }
@@ -256,7 +317,7 @@ namespace CueStealthInput
                         }
 
                         // Pass through pure modifier keys alone (Shift, Ctrl, Alt, Caps) so keyboard state works
-                        if (vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU || vk == VK_CAPITAL)
+                        if (IsModifierKey(vk))
                         {
                             return CallNextHookEx(_hookID, nCode, wParam, lParam);
                         }
@@ -275,15 +336,25 @@ namespace CueStealthInput
                         if (vk == VK_ESCAPE)
                         {
                             _capturing = false;
+                            _leftShiftDown = false;
+                            _rightShiftDown = false;
                             Console.WriteLine("{\"event\":\"escape\"}");
                             Console.Out.Flush();
                             return (IntPtr)1; // swallow Escape
                         }
 
-                        // Handle Enter: submit query
+                        // Handle Enter: submit query (or newline if Shift+Enter)
                         if (vk == VK_RETURN)
                         {
+                            if (shift)
+                            {
+                                Console.WriteLine("{\"event\":\"char\",\"char\":\"\\n\"}");
+                                Console.Out.Flush();
+                                return (IntPtr)1;
+                            }
                             _capturing = false;
+                            _leftShiftDown = false;
+                            _rightShiftDown = false;
                             Console.WriteLine("{\"event\":\"enter\"}");
                             Console.Out.Flush();
                             return (IntPtr)1; // swallow Enter
@@ -317,18 +388,26 @@ namespace CueStealthInput
 
                         // Translate to Unicode character
                         byte[] keyState = new byte[256];
-                        bool isShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+                        bool isShift = IsShiftActive();
                         bool isCaps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
 
-                        if (isShift) keyState[VK_SHIFT] = 0x80;
+                        if (isShift)
+                        {
+                            keyState[VK_SHIFT] = 0x80;
+                            keyState[VK_LSHIFT] = 0x80;
+                            keyState[VK_RSHIFT] = 0x80;
+                        }
                         if (isCaps) keyState[VK_CAPITAL] = 0x01;
+
+                        uint scanCode = hookStruct.scanCode;
+                        if (scanCode == 0) scanCode = MapVirtualKey(vk, 0);
 
                         StringBuilder sb = new StringBuilder(16);
                         // Use 0x04 flag on Windows 10/11 to avoid altering dead key buffer
-                        int rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0x04);
+                        int rc = ToUnicode(vk, scanCode, keyState, sb, sb.Capacity, 0x04);
                         if (rc <= 0)
                         {
-                            rc = ToUnicode(vk, hookStruct.scanCode, keyState, sb, sb.Capacity, 0);
+                            rc = ToUnicode(vk, scanCode, keyState, sb, sb.Capacity, 0);
                         }
 
                         if (rc > 0)

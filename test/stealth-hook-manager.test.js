@@ -26,3 +26,14 @@ test('stealth hook manager handles onNoFocusToggle and onStateChange callbacks',
   assert.equal(manager.isAvailable(), process.platform === 'win32');
   manager.dispose();
 });
+
+test('native stealth-input outputs shifted characters like exclamation mark', async () => {
+  if (process.platform !== 'win32') return;
+  const cp = require('node:child_process');
+  const path = require('node:path');
+  const exePath = path.join(__dirname, '..', 'src', 'native', 'stealth-input.exe');
+  const out = cp.execFileSync(exePath, ['--test'], { encoding: 'utf8' }).trim();
+  const parsed = JSON.parse(out);
+  assert.equal(parsed.test, true);
+  assert.equal(parsed.char, '!');
+});
