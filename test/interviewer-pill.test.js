@@ -94,3 +94,35 @@ test('insertInterviewerQuestion preserves existing typed text without overwritin
   
   assert.equal(inputValue, 'My existing notes Can you explain Dijkstra algorithm?');
 });
+
+test('interviewer-pill displays Alt+A for answer and Alt+I for insert buttons', () => {
+  assert.match(htmlSrc, /id="ip-answer-btn"[^>]*>[\s\S]*?<span class="ip-key">Alt\+A<\/span>\s*Answer/, 'Answer button must show Alt+A');
+  assert.match(htmlSrc, /id="ip-insert-btn"[^>]*>[\s\S]*?<span class="ip-key">Alt\+I<\/span>\s*Insert/, 'Insert button must show Alt+I');
+});
+
+test('renderer.js and stealth hook support Alt+A and Alt+I for STT answer and insert', () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const hookManagerSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'stealth-hook-manager.js'), 'utf8');
+
+  // Verify stealth hook manager dispatches events
+  assert.match(hookManagerSrc, /case 'stt_answer':\s*onSttAnswer\(\);/);
+  assert.match(hookManagerSrc, /case 'stt_insert':\s*onSttInsert\(\);/);
+
+  // Verify main.js wires stealth hook callbacks to IPC
+  assert.match(mainSrc, /onSttAnswer:\s*\(\)\s*=>\s*send\('stt:answer-question'\)/);
+  assert.match(mainSrc, /onSttInsert:\s*\(\)\s*=>\s*send\('stt:insert-question'\)/);
+
+  // Verify preload.js allows IPC STT events
+  const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+  assert.match(preloadSrc, /'stt:answer-question'/);
+  assert.match(preloadSrc, /'stt:insert-question'/);
+
+  // Verify renderer.js listens for IPC STT events
+  assert.match(jsSrc, /cue\.on\('stt:answer-question',\s*\(\)\s*=>\s*\{[\s\S]*?answerInterviewerQuestion\(\)/);
+  assert.match(jsSrc, /cue\.on\('stt:insert-question',\s*\(\)\s*=>\s*\{[\s\S]*?insertInterviewerQuestion\(\)/);
+
+  // Verify renderer.js keydown handlers support Alt+A and Alt+I
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'a' \|\| e\.key === 'A'\)[\s\S]*?answerInterviewerQuestion\(\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'i' \|\| e\.key === 'I'\)[\s\S]*?insertInterviewerQuestion\(\)/);
+});
+

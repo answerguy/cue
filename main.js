@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
-const { createSTT } = require('./src/stt');
+const { createSTT, looksLikeHallucination } = require('./src/stt');
 const { parseDocumentFile } = require('./src/resume');
 const { createLLM } = require('./src/llm');
 const { MODES } = require('./src/prompts');
@@ -101,6 +101,9 @@ function initStealthHook() {
     onTransparencyState: (enabled) => {
       setTransparencyMode(Boolean(enabled), false);
     },
+    onSttAnswer: () => send('stt:answer-question'),
+    onSttInsert: () => send('stt:insert-question'),
+    onHistoryToggle: () => send('history:toggle'),
     onShortcut: (action) => triggerShortcutAction(action),
     log: (msg) => console.log(msg)
   });
@@ -109,7 +112,7 @@ function initStealthHook() {
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, quit: false, nofocus: false, type: false, transparency: false };
+const shortcutState = { assist: false, say: false, leetcode: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
@@ -281,7 +284,7 @@ function getWhisperRuntime() {
 }
 
 function publishTranscript(channel, text) {
-  if (!text || !text.trim()) return;
+  if (!text || !text.trim() || looksLikeHallucination(text)) return;
   const turn = { channel, text: text.trim(), ts: Date.now() };
   pushTranscript(turn);
   send('transcript', turn);
@@ -355,7 +358,7 @@ async function getWhisperOverview() {
 // The window has a transparent, click-through strip on each side of the main column so
 // the history sidebar can slide out left or right. Must match --main-w/--side-w in
 // styles.css. Saved windowX is the main column's x, not the window's.
-const MAIN_W = 700, SIDE_W = 300;
+const MAIN_W = 730, SIDE_W = 300;
 
 function saveWindowPosition() {
   if (!win || win.isDestroyed()) return;
@@ -1395,6 +1398,12 @@ function registerShortcuts() {
     if (now - lastTransparencyToggleTime < 350) return;
     lastTransparencyToggleTime = now;
     toggleTransparencyMode(true);
+  });
+  shortcutState.previous4 = globalShortcut.register('Alt+B', () => {
+    triggerShortcutAction('previous4');
+  });
+  shortcutState.history = globalShortcut.register('Alt+N', () => {
+    send('history:toggle');
   });
   for (const [name, wasRegistered] of Object.entries(shortcutState)) {
     if (!wasRegistered) {

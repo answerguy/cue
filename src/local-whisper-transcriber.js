@@ -1,8 +1,11 @@
 const { UtteranceSegmenter } = require('./utterance-segmenter');
 const { WhisperServerSession } = require('./whisper-server-session');
+const { looksLikeHallucination } = require('./stt');
+const { rms16 } = require('./wav');
 
 const CHANNELS = Object.freeze(['you', 'them']);
 const DEFAULT_DRAIN_TIMEOUT_MS = 15000;
+const DEFAULT_RMS_GATE = 120;
 
 class LocalWhisperTranscriber {
   /** Coordinate two audio channels through one sequential, persistent model session. */
@@ -11,6 +14,7 @@ class LocalWhisperTranscriber {
     sessionFactory = (options) => new WhisperServerSession(options),
     segmenterFactory = (options) => new UtteranceSegmenter(options),
     drainTimeoutMs = DEFAULT_DRAIN_TIMEOUT_MS,
+    rmsGate = DEFAULT_RMS_GATE,
     onTranscript = () => {},
     onSpeechState = () => {},
     onStatus = () => {},
@@ -19,6 +23,7 @@ class LocalWhisperTranscriber {
     this.session = sessionFactory({ ...sessionOptions, onState: onStatus });
     this.segmenterFactory = segmenterFactory;
     this.drainTimeoutMs = drainTimeoutMs;
+    this.rmsGate = Number.isFinite(rmsGate) ? rmsGate : DEFAULT_RMS_GATE;
     this.onTranscript = onTranscript;
     this.onSpeechState = onSpeechState;
     this.onStatus = onStatus;
@@ -80,13 +85,15 @@ class LocalWhisperTranscriber {
   }
 
   _enqueue(channel, pcm) {
+    if (this.rmsGate > 0 && rms16(pcm) < this.rmsGate) return;
+
     this.pendingJobs += 1;
     this.onStatus({ status: 'transcribing', channel, pending: this.pendingJobs });
 
     const job = this.queueTail.then(async () => {
       if (this.discardPendingJobs) return;
       const text = await this.session.transcribe(pcm);
-      if (text) this.onTranscript(channel, text);
+      if (text && !looksLikeHallucination(text)) this.onTranscript(channel, text);
     });
 
     this.queueTail = job

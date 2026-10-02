@@ -91,3 +91,61 @@ test('bounds shutdown drain time before aborting an in-flight inference', async 
   assert.deepEqual(reportedErrors, []);
   assert.deepEqual(stopOptions, [{ force: true }]);
 });
+
+test('drops Whisper silence hallucinations and skips inference for silent buffers under rms gate', async () => {
+  let transcribeCalls = 0;
+  const transcripts = [];
+  const fakeSession = {
+    async start() {},
+    async transcribe(pcm) {
+      transcribeCalls += 1;
+      const str = pcm.toString();
+      if (str === 'hallucination') return 'Thank you for watching.';
+      if (str === 'repetition') return 'Thank you. Thank you!';
+      if (str === 'speech') return 'Tell me about Kubernetes.';
+      return '';
+    },
+    abortInferences() {},
+    async stop() {}
+  };
+
+  const transcriber = new LocalWhisperTranscriber({
+    sessionOptions: {},
+    sessionFactory: () => fakeSession,
+    segmenterFactory: (options) => ({
+      push(pcm) { options.onUtterance(options.channel, Buffer.from(pcm)); },
+      stop() {}
+    }),
+    rmsGate: 100,
+    onTranscript: (channel, text) => transcripts.push({ channel, text })
+  });
+
+  await transcriber.start();
+
+  // 1. Silent buffer (all zeros, RMS = 0 < 100) -> should be skipped entirely
+  const silentBuffer = Buffer.alloc(1600);
+  transcriber.push('you', silentBuffer);
+  await transcriber.queueTail;
+  assert.equal(transcribeCalls, 0, 'Silent buffer below RMS gate must not trigger Whisper inference');
+
+  // 2. Audio that Whisper transcribes as a known hallucination -> dropped from onTranscript
+  transcriber.push('you', Buffer.from('hallucination'));
+  await transcriber.queueTail;
+  assert.equal(transcribeCalls, 1);
+  assert.deepEqual(transcripts, []);
+
+  // 3. Audio that Whisper transcribes as repeated hallucination -> dropped from onTranscript
+  transcriber.push('them', Buffer.from('repetition'));
+  await transcriber.queueTail;
+  assert.equal(transcribeCalls, 2);
+  assert.deepEqual(transcripts, []);
+
+  // 4. Real speech -> emitted normally
+  transcriber.push('you', Buffer.from('speech'));
+  await transcriber.queueTail;
+  assert.equal(transcribeCalls, 3);
+  assert.deepEqual(transcripts, [{ channel: 'you', text: 'Tell me about Kubernetes.' }]);
+
+  await transcriber.stop();
+});
+

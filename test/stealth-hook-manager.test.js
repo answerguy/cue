@@ -29,6 +29,7 @@ test('stealth hook manager handles onNoFocusToggle, onTransparencyToggle, onStat
   let receivedHome = false;
   let receivedEnd = false;
   let receivedSelectAll = false;
+  let receivedHistoryToggle = false;
 
   const manager = createStealthHookManager({
     onNoFocusToggle: () => { toggledNoFocus = true; },
@@ -44,7 +45,8 @@ test('stealth hook manager handles onNoFocusToggle, onTransparencyToggle, onStat
     onPageDown: () => { receivedPageDown = true; },
     onHome: () => { receivedHome = true; },
     onEnd: () => { receivedEnd = true; },
-    onSelectAll: () => { receivedSelectAll = true; }
+    onSelectAll: () => { receivedSelectAll = true; },
+    onHistoryToggle: () => { receivedHistoryToggle = true; }
   });
 
   assert.equal(manager.isAvailable(), process.platform === 'win32');

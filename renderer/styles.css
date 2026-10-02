@@ -1,7 +1,7 @@
 /* cue — glassmorphism overlay. Tokens reconstructed from the Cluely screenshot. */
 
 :root {
-  --main-w: 700px;                       /* matches MAIN_W in main.js */
+  --main-w: 730px;                       /* matches MAIN_W in main.js */
   --side-w: 300px;                       /* matches SIDE_W in main.js */
   --bg: #2b013d;
   --panel-bg: #3f3642;
@@ -239,7 +239,13 @@ html, body {
 .mic-perm-actions button.dismiss:hover { background: rgba(255,255,255,0.10); color: var(--tx-2); }
 
 /* ============================ Panel ============================ */
-#panel-wrap { position: relative; margin-top: 12px; width: 624px; }
+#panel-wrap {
+  position: relative;
+  margin-top: 12px;
+  width: fit-content;
+  min-width: 650px;
+  max-width: calc(var(--main-w) - 20px);
+}
 button:focus { outline: none; }
 #live-dot {
   position: absolute; top: -3px; left: -5px; z-index: 4;
@@ -326,31 +332,45 @@ button:focus { outline: none; }
 
 /* ============================ Action row ============================ */
 #action-row {
-  display: flex; align-items: center; flex-wrap: nowrap; gap: 4px;
-  margin-top: 6px; white-space: nowrap;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 3px;
+  margin-top: 6px;
+  white-space: nowrap;
 }
 .act {
-  display: inline-flex; align-items: center; gap: 6px;
-  border: none; background: transparent; cursor: default;
-  color: var(--tx-2); font-size: 14px; font-weight: 500; font-family: var(--font);
-  padding: 5px 7px; border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  cursor: default;
+  color: var(--tx-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: var(--font);
+  padding: 5px 7px;
+  border-radius: 8px;
   transition: background 140ms ease, color 140ms ease;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.act .ic { display: inline-flex; color: var(--ic); }
+.act .ic { display: inline-flex; color: var(--ic); flex-shrink: 0; }
 .act:hover { color: #fff; background: rgba(255,255,255,0.06); }
 .act:active { transform: translateY(0.5px); }
 .act:disabled { opacity: 0.5; cursor: default; }
-.sep { color: rgba(255,255,255,0.35); font-size: 14px; margin: 0 2px; }
+.sep { color: rgba(255,255,255,0.35); font-size: 14px; margin: 0 1px; flex-shrink: 0; }
 .act-primary {
-  font-size: 15px; font-weight: 600; padding: 6px 12px;
+  font-size: 14.5px; font-weight: 600; padding: 5px 10px;
   background: rgba(60,131,245,0.14); border: 1px solid rgba(60,131,245,0.30);
   color: #a8c8ff; border-radius: 10px;
 }
 .act-primary:hover { background: rgba(60,131,245,0.22); color: #fff; }
-.act-secondary { font-size: 13px; font-weight: 500; padding: 5px 9px;
+.act-secondary { font-size: 13px; font-weight: 500; padding: 5px 8px;
   border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; }
 .act-secondary:hover { background: rgba(255,255,255,0.07); }
-.shortcut-hint { font-size: 10.5px; font-weight: 500; color: var(--tx-mut); margin-left: 4px; }
+.shortcut-hint { font-size: 10px; font-weight: 500; color: var(--tx-mut); margin-left: 3px; white-space: nowrap; flex-shrink: 0; }
 
 /* FIX #4: Visual indication that listening is active in input box */
 #composer.listening {
@@ -710,6 +730,18 @@ body.transparency-mode .stealth-pill-dot {
 .history-btn .ic { display: inline-flex; }
 .history-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
 .history-btn.active { color: var(--live); border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.12); }
+.history-btn .shortcut-hint {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--tx-mut);
+  margin-left: 2px;
+}
+.history-btn:hover .shortcut-hint {
+  color: rgba(255,255,255,0.7);
+}
+.history-btn.active .shortcut-hint {
+  color: rgba(34,197,94,0.75);
+}
 
 .more-btn {
   width: 28px; height: 28px; border-radius: var(--r-8);

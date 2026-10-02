@@ -13,12 +13,17 @@ function looksLikeHallucination(raw) {
   const trimmed = (raw || '').trim();
   if (!trimmed) return true;
   if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u.test(trimmed)) return true;
-  const t = trimmed.replace(/[.,!?…]+$/g, '').trim().toLowerCase();
+  const t = trimmed.replace(/^[.,!?:;…\s]+|[.,!?:;…\s]+$/g, '').trim().toLowerCase();
   const artifacts = new Set([
     'thank you', 'thank you very much', 'thank you for watching', 'thanks for watching',
-    'please subscribe', 'like and subscribe', 'bye-bye', 'bye bye', 'bye', 'you', 'okay'
+    'thank you so much', 'thank you so much for watching', 'thanks for listening',
+    'thank you for listening', 'please subscribe', 'like and subscribe', 'please like and subscribe',
+    'subscribe', 'bye-bye', 'bye bye', 'bye', 'you', 'okay', 'subtitles by'
   ]);
-  return artifacts.has(t);
+  if (artifacts.has(t)) return true;
+  const phrases = t.split(/[.,!?:;…\n]+/).map((s) => s.trim()).filter(Boolean);
+  if (phrases.length > 1 && phrases.every((p) => artifacts.has(p))) return true;
+  return false;
 }
 
 function buildVocabPrompt(settings) {

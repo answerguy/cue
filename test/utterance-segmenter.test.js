@@ -63,3 +63,27 @@ test('splits long speech into bounded segments with overlap', () => {
   assert.equal(utterances[1].length, FRAME_BYTES * 10);
   assert.ok(utterances.every((pcm) => pcm.length <= FRAME_BYTES * 10));
 });
+
+test('aborts transient noises shorter than minSpeechFrames without buffering silence', () => {
+  const utterances = [];
+  const speechStates = [];
+  const segmenter = new UtteranceSegmenter({
+    channel: 'you',
+    onSpeechState: (_channel, speaking) => speechStates.push(speaking),
+    onUtterance: (_channel, pcm) => utterances.push(pcm)
+  });
+
+  // Push 2 frames of loud noise (60ms < minSpeechFrames of 4 = 120ms)
+  pushFrames(segmenter, 1200, 2);
+  // Push 25 frames of silence (exceeds silenceFrames = 18)
+  pushFrames(segmenter, 0, 25);
+
+  assert.equal(segmenter.collecting, false);
+  assert.equal(utterances.length, 0);
+
+  // Push 900 frames of silence (~27 seconds, exceeding maxUtteranceMs of 25s)
+  pushFrames(segmenter, 0, 900);
+  assert.equal(segmenter.collecting, false);
+  assert.equal(utterances.length, 0);
+});
+

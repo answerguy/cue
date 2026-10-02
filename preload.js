@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld('cue', {
   transparencySet: (enabled) => ipcRenderer.invoke('transparency:set', enabled),
   transparencyToggle: () => ipcRenderer.invoke('transparency:toggle'),
   on: (channel, cb) => {
-    const allowed = ['capture:state', 'llm:start', 'llm:token', 'llm:done', 'llm:error', 'status', 'transcript', 'transcript:restore', 'stt:interim', 'stt:final', 'stt:status', 'vad:state', 'applink:consent-request', 'hide:toggle', 'whisper:download-progress', 'whisper:models-changed', 'publik:state', 'slides:update', 'nofocus:state', 'transparency:state', 'composer:focus', 'stealth:char', 'stealth:backspace', 'stealth:delete', 'stealth:arrow-left', 'stealth:arrow-right', 'stealth:arrow-up', 'stealth:arrow-down', 'stealth:page-up', 'stealth:page-down', 'stealth:home', 'stealth:end', 'stealth:submit', 'stealth:cancel', 'stealth:paste', 'stealth:select-all', 'stealth:state'];
+    const allowed = ['capture:state', 'llm:start', 'llm:token', 'llm:done', 'llm:error', 'status', 'transcript', 'transcript:restore', 'stt:interim', 'stt:final', 'stt:status', 'stt:answer-question', 'stt:insert-question', 'history:toggle', 'vad:state', 'applink:consent-request', 'hide:toggle', 'whisper:download-progress', 'whisper:models-changed', 'publik:state', 'slides:update', 'nofocus:state', 'transparency:state', 'composer:focus', 'stealth:char', 'stealth:backspace', 'stealth:delete', 'stealth:arrow-left', 'stealth:arrow-right', 'stealth:arrow-up', 'stealth:arrow-down', 'stealth:page-up', 'stealth:page-down', 'stealth:home', 'stealth:end', 'stealth:submit', 'stealth:cancel', 'stealth:paste', 'stealth:select-all', 'stealth:state'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

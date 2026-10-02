@@ -12,7 +12,9 @@ const DEFAULTS = {
   screen: 'CommandOrControl+Shift+S',
   nofocus: 'CommandOrControl+Shift+F',
   type: 'Alt+C',
-  transparency: 'Alt+V'
+  transparency: 'Alt+V',
+  previous4: 'Alt+B',
+  history: 'Alt+N'
 };
 
 // Every action that maps to a shortcut. Values = defaults; can be overridden via settings.

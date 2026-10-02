@@ -4,13 +4,13 @@ const { looksLikeHallucination, buildVocabPrompt } = require('../src/stt');
 const { DeepgramStreamingSTT } = require('../src/stt-streaming');
 
 test('looksLikeHallucination drops Whisper silence artifacts', () => {
-  ['', '   ', 'Thank you for watching.', 'thanks for watching', 'Bye-bye!', '👍👍'].forEach((s) => {
+  ['', '   ', 'Thank you.', 'Thank you for watching.', 'thanks for watching', 'Thank you so much', 'Thank you so much for watching.', 'Thanks for listening.', 'Thank you. Thank you!', 'Bye-bye!', 'you', '👍👍'].forEach((s) => {
     assert.equal(looksLikeHallucination(s), true, JSON.stringify(s));
   });
 });
 
 test('looksLikeHallucination keeps real speech', () => {
-  ['Tell me about your experience with Kubernetes.', 'You know, I led the migration.'].forEach((s) => {
+  ['Tell me about your experience with Kubernetes.', 'You know, I led the migration.', 'Thank you for explaining the microservices architecture.'].forEach((s) => {
     assert.equal(looksLikeHallucination(s), false, JSON.stringify(s));
   });
 });

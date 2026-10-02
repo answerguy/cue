@@ -24,6 +24,9 @@ function createStealthHookManager(options = {}) {
     onTransparencyToggle = () => {},
     onTransparencyState = () => {},
     onShortcut = () => {},
+    onSttAnswer = () => {},
+    onSttInsert = () => {},
+    onHistoryToggle = () => {},
     log = console.log
   } = options;
 
@@ -176,6 +179,15 @@ function createStealthHookManager(options = {}) {
         if (typeof msg.action === 'string') {
           onShortcut(msg.action);
         }
+        break;
+      case 'stt_answer':
+        onSttAnswer();
+        break;
+      case 'stt_insert':
+        onSttInsert();
+        break;
+      case 'history_toggle':
+        onHistoryToggle();
         break;
     }
   }

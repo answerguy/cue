@@ -1154,6 +1154,7 @@
     const q = stagedInterviewerQuestion.trim();
     saveToQuestionHistory(q);
     dismissInterviewerPill();
+    deactivateStealthTyping();
     runMode('answerThis', q);
   }
 
@@ -1207,7 +1208,9 @@
     syncPlaceholder();
     updateSendButtonState();
     updateDeleteButton();
-    input.focus();
+    if (!isStealthTypingActive && !isNoFocusMode) {
+      input.focus();
+    }
   }
 
   // ---- Soft clear: Dim interviewer pill when user speaks, clear after >2s sustained speech ----
@@ -1258,6 +1261,20 @@
       dismissInterviewerPill();
     });
   }
+
+  // Global IPC events for STT actions from stealth hook (Alt+A / Alt+I)
+  cue.on('stt:answer-question', () => {
+    if (stagedInterviewerQuestion) {
+      answerInterviewerQuestion();
+    } else if (input.value.trim()) {
+      send();
+    }
+  });
+  cue.on('stt:insert-question', () => {
+    if (stagedInterviewerQuestion) {
+      insertInterviewerQuestion();
+    }
+  });
 
   // Legacy compatibility wrappers (keeps existing call-sites safe)
   function autoFillInputFromSTT(text) {
@@ -1404,6 +1421,34 @@
   }
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
+    // Alt+A: Answer staged interviewer question
+    if (e.altKey && (e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey) {
+      if (stagedInterviewerQuestion) {
+        e.preventDefault();
+        answerInterviewerQuestion();
+        return;
+      }
+    }
+    // Alt+I: Insert staged interviewer question into input box at caret
+    if (e.altKey && (e.key === 'i' || e.key === 'I') && !e.ctrlKey && !e.metaKey) {
+      if (stagedInterviewerQuestion) {
+        e.preventDefault();
+        insertInterviewerQuestion();
+        return;
+      }
+    }
+    // Alt+B: Explain terms from last 4 messages (previous4)
+    if (e.altKey && (e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      runMode('previous4', '');
+      return;
+    }
+    // Alt+N: Toggle transcription history sidebar
+    if (e.altKey && (e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      toggleSidebar();
+      return;
+    }
     // Tab: insert staged interviewer question into input box at caret
     if (e.key === 'Tab' && stagedInterviewerQuestion && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
@@ -1439,8 +1484,36 @@
     }
   });
   
-  // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A) and Tab to insert
+  // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A), STT Answer (Alt+A), STT Insert (Alt+I), and Tab to insert
   document.addEventListener('keydown', (e) => {
+    // Alt+A: Answer staged interviewer question
+    if (e.altKey && (e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey) {
+      if (stagedInterviewerQuestion) {
+        e.preventDefault();
+        answerInterviewerQuestion();
+        return;
+      }
+    }
+    // Alt+I: Insert staged interviewer question into input box
+    if (e.altKey && (e.key === 'i' || e.key === 'I') && !e.ctrlKey && !e.metaKey) {
+      if (stagedInterviewerQuestion) {
+        e.preventDefault();
+        insertInterviewerQuestion();
+        return;
+      }
+    }
+    // Alt+B: Explain terms from last 4 messages (previous4)
+    if (e.altKey && (e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      runMode('previous4', '');
+      return;
+    }
+    // Alt+N: Toggle transcription history sidebar
+    if (e.altKey && (e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      toggleSidebar();
+      return;
+    }
     // Tab when interviewer question is staged and focus is not already inside another text input
     if (e.key === 'Tab' && stagedInterviewerQuestion && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
       if (document.activeElement !== input && document.activeElement && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
@@ -1910,6 +1983,7 @@
     historyBtn.querySelector('.ic').innerHTML = icon('message-square-text', { size: 14 });
     historyBtn.addEventListener('click', toggleSidebar);
   }
+  cue.on('history:toggle', toggleSidebar);
 
   // Close sidebar button
   const closeSidebarBtn = document.getElementById('close-sidebar-btn');
@@ -2098,6 +2172,10 @@
 
   cue.on('stealth:char', ({ char }) => {
     if (!char) return;
+    if (char === '\t' && stagedInterviewerQuestion) {
+      insertInterviewerQuestion();
+      return;
+    }
     if (isStealthSelectAll) {
       input.value = char;
       isStealthSelectAll = false;
@@ -3168,6 +3246,15 @@
     if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
   }, { passive: true });
 
+  // Dynamically synchronize --main-w with window width so all buttons are accommodated
+  function syncWindowWidth() {
+    const sideW = 300;
+    const dynamicMainW = Math.max(700, window.innerWidth - (sideW * 2));
+    document.documentElement.style.setProperty('--main-w', `${dynamicMainW}px`);
+  }
+  window.addEventListener('resize', syncWindowWidth);
+  syncWindowWidth();
+
   // ---- click-through: only the UI blocks the mouse; empty gaps pass to your screen ----
   let ignoring = null;
   let draggingWindow = false;
@@ -3405,16 +3492,28 @@
     // R4: shortcut hints
     const sayHintEl = document.getElementById('say-shortcut-hint');
     const assistHintEl = document.getElementById('assist-shortcut-hint');
+    const prev4HintEl = document.getElementById('prev4-shortcut-hint');
+    const historyHintEl = document.getElementById('history-shortcut-hint');
     if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
     if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
+    if (prev4HintEl) prev4HintEl.textContent = isWindows ? 'Alt+B' : '⌥B';
+    if (historyHintEl) historyHintEl.textContent = isWindows ? 'Alt+N' : '⌥N';
     const sayBtn = document.querySelector('.act[data-mode="say"]');
     const assistBtn = document.querySelector('.act[data-mode="assist"]');
+    const prev4Btn = document.querySelector('.act[data-mode="previous4"]');
+    const historyBtnEl = document.getElementById('history-btn');
     if (sayBtn) sayBtn.setAttribute('aria-label', isWindows
       ? 'Suggests what to say next based on the conversation (Ctrl+Enter)'
       : 'Suggests what to say next based on the conversation (⌘↵)');
     if (assistBtn) assistBtn.setAttribute('aria-label', isWindows
       ? 'Scans your screen and conversation to decide what you need (Ctrl+Shift+Enter)'
       : 'Scans your screen and conversation to decide what you need (⌘⇧↵)');
+    if (prev4Btn) prev4Btn.setAttribute('aria-label', isWindows
+      ? 'Explain terms from the last 4 messages with priority on newest (Alt+B)'
+      : 'Explain terms from the last 4 messages with priority on newest (⌥B)');
+    if (historyBtnEl) historyBtnEl.setAttribute('aria-label', isWindows
+      ? 'Transcription history (Alt+N)'
+      : 'Transcription history (⌥N)');
 
     // R6: smart tooltip
     updateSmartTooltip();

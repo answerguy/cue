@@ -67,14 +67,17 @@ test('renderer.js routes arrow keys to input box during typing mode and gives ty
   assert.match(rendererSrc, /cue\.on\('stealth:arrow-down',\s*\(\)\s*=>\s*\{[^}]*if\s*\(isStealthTypingActive\)\s*\{[^}]*moveStealthCaretVertical\(1\);[^}]*\}\s*else if\s*\(isTransparencyMode\)\s*\{/s);
 });
 
-test('stealth-input.cs strictly reserves Up/Down arrows in either mode and guarantees clean modifier release without leaks', () => {
+test('stealth-input.cs strictly reserves Up/Down arrows in either mode and guarantees zero modifier flush leaks', () => {
   const csSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'native', 'stealth-input.cs'), 'utf8');
   // Strict arrow key reservation whenever Cue is in stealth typing or transparency mode
   assert.match(csSrc, /if\s*\(_capturing\s*\|\|\s*_transparencyMode\)[\s\S]*?VK_UP/);
   assert.match(csSrc, /if\s*\(_capturing\s*\|\|\s*_transparencyMode\)[\s\S]*?VK_DOWN/);
   // Auto-repeat swallowing for Alt when _altSwallowed is true
   assert.match(csSrc, /if\s*\(_altSwallowed\)\s*\{[\s\S]*?return\s*\(IntPtr\)1;\s*\}/);
-  // ReleaseAllModifiers called when leaving modes or releasing swallowed Alt
-  assert.match(csSrc, /_altSwallowed\s*=\s*false;[\s\S]*?ReleaseAllModifiers\(\);/);
+  // Alt up is swallowed cleanly without leaking or flushing modifiers
+  assert.match(csSrc, /if\s*\(_altSwallowed\)[\s\S]*?_altSwallowed\s*=\s*false;[\s\S]*?return\s*\(IntPtr\)1;/);
+  // Alt+C toggle preserves _altSwallowed on exit so releasing Alt does not leak
+  assert.doesNotMatch(csSrc, /_capturing\s*=\s*!_capturing;\s*if\s*\(!_capturing\)\s*\{[^}]*_altSwallowed/);
 });
+
 
