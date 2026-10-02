@@ -72,12 +72,35 @@ function initStealthHook() {
     onChar: (char) => send('stealth:char', { char }),
     onBackspace: () => send('stealth:backspace'),
     onDelete: () => send('stealth:delete'),
+    onArrowLeft: () => send('stealth:arrow-left'),
+    onArrowRight: () => send('stealth:arrow-right'),
+    onArrowUp: () => send('stealth:arrow-up'),
+    onArrowDown: () => send('stealth:arrow-down'),
+    onPageUp: () => send('stealth:page-up'),
+    onPageDown: () => send('stealth:page-down'),
+    onHome: () => send('stealth:home'),
+    onEnd: () => send('stealth:end'),
     onEnter: () => send('stealth:submit'),
-    onEscape: () => send('stealth:cancel'),
+    onEscape: () => {
+      if (isTransparencyMode) {
+        setTransparencyMode(false, false);
+      }
+      send('stealth:cancel');
+    },
     onPaste: () => send('stealth:paste', { text: clipboard.readText() }),
     onSelectAll: () => send('stealth:select-all'),
     onStateChange: (capturing) => send('stealth:state', { capturing }),
     onNoFocusToggle: () => toggleNoFocusMode(),
+    onTransparencyToggle: (enabled) => {
+      if (typeof enabled === 'boolean') {
+        setTransparencyMode(enabled, false);
+      } else {
+        toggleTransparencyMode(false);
+      }
+    },
+    onTransparencyState: (enabled) => {
+      setTransparencyMode(Boolean(enabled), false);
+    },
     onShortcut: (action) => triggerShortcutAction(action),
     log: (msg) => console.log(msg)
   });
@@ -86,7 +109,7 @@ function initStealthHook() {
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, quit: false, nofocus: false, type: false };
+const shortcutState = { assist: false, say: false, leetcode: false, quit: false, nofocus: false, type: false, transparency: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
@@ -109,6 +132,37 @@ function toggleNoFocusMode() {
   if (now - lastNoFocusToggleTime < 300) return;
   lastNoFocusToggleTime = now;
   setNoFocusMode(!isNoFocusMode);
+}
+
+let isTransparencyMode = false;
+let lastTransparencyToggleTime = 0;
+
+function setTransparencyMode(enabled, syncToHelper = true) {
+  const nextState = Boolean(enabled);
+  if (isTransparencyMode === nextState) return;
+  isTransparencyMode = nextState;
+  lastTransparencyToggleTime = Date.now();
+  if (win && !win.isDestroyed()) {
+    if (isTransparencyMode) {
+      // Complete hit-test transparency: all clicks and mouse movement pass through to the window below.
+      // forward: false ensures Electron does not install a mouse hook or capture mousemove.
+      win.setIgnoreMouseEvents(true, { forward: false });
+    } else {
+      // Normal interactive mode: restore dynamic hit-testing with forwarding
+      win.setIgnoreMouseEvents(true, { forward: true });
+    }
+    send('transparency:state', isTransparencyMode);
+  }
+  if (syncToHelper && stealthHookManager && stealthHookManager.isAvailable()) {
+    stealthHookManager.setTransparency(isTransparencyMode);
+  }
+}
+
+function toggleTransparencyMode(syncToHelper = true) {
+  const now = Date.now();
+  if (now - lastTransparencyToggleTime < 350) return;
+  lastTransparencyToggleTime = now;
+  setTransparencyMode(!isTransparencyMode, syncToHelper);
 }
 
 // -------- Windows version helpers --------
@@ -405,6 +459,7 @@ function createWindow() {
     win.showInactive();
     win.setTitle('Microsoft Edge Update');
     send('nofocus:state', isNoFocusMode);
+    send('transparency:state', isTransparencyMode);
     if (restoredTurns.length) {
       // A meeting was in progress when cue last exited: put its transcript back
       // in the sidebar so Recap / Follow-up pick up where the conversation was.
@@ -830,7 +885,7 @@ async function runFeature(mode, userText) {
       ? def.userBubble
       : (mode === 'ask' ? userText : mode === 'answerThis' ? `"${(userText || '').slice(0, 60)}${userText && userText.length > 60 ? '…' : ''}"` : null);
     const category = mode !== 'leetcode' ? detectCategory(transcript) : null;
-    send('llm:start', { userBubble, small: !!def.small, category });
+    send('llm:start', { userBubble, small: !!def.small, category, mode, text: userText || '' });
 
     if (!llm.ready) {
       const message = llm.configurationError || ('Complete the ' + settings.provider + ' provider settings. Model: ' + (llm.model || 'unset') + '.');
@@ -1182,6 +1237,18 @@ ipcMain.handle('nofocus:toggle', () => {
   return isNoFocusMode;
 });
 ipcMain.handle('stealth:get', () => Boolean(stealthHookManager && stealthHookManager.isCapturing()));
+ipcMain.handle('stealth:set', (_e, enabled) => {
+  if (stealthHookManager && stealthHookManager.isAvailable()) {
+    const shouldCapture = Boolean(enabled);
+    if (shouldCapture) {
+      stealthHookManager.start();
+    } else {
+      stealthHookManager.stop();
+    }
+    return stealthHookManager.isCapturing();
+  }
+  return false;
+});
 ipcMain.handle('stealth:toggle', () => {
   if (stealthHookManager) {
     const active = stealthHookManager.toggle();
@@ -1189,6 +1256,15 @@ ipcMain.handle('stealth:toggle', () => {
     return active;
   }
   return false;
+});
+ipcMain.handle('transparency:get', () => isTransparencyMode);
+ipcMain.handle('transparency:set', (_e, enabled) => {
+  setTransparencyMode(enabled);
+  return isTransparencyMode;
+});
+ipcMain.handle('transparency:toggle', () => {
+  toggleTransparencyMode();
+  return isTransparencyMode;
 });
 ipcMain.handle('transcript:clear', () => {
   if (meetingMemory) meetingMemory.end().catch(() => {}); // it stays in history with its notes
@@ -1212,7 +1288,10 @@ ipcMain.handle('slides:clear', () => {
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('you', arrayBuffer); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('them', arrayBuffer); });
-ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
+ipcMain.on('mouse:ignore', (_e, v) => {
+  if (isTransparencyMode) return;
+  if (win) win.setIgnoreMouseEvents(!!v, { forward: true });
+});
 // Window dragging is done here rather than with CSS drag regions, which misbehave while the
 // renderer toggles click-through. The window follows the cursor until the renderer says stop.
 let windowDrag = null;
@@ -1297,8 +1376,6 @@ function registerShortcuts() {
   });
   shortcutState.type = globalShortcut.register('Alt+C', () => {
     if (stealthHookManager && stealthHookManager.isAvailable()) {
-      const active = stealthHookManager.toggle();
-      send('stealth:state', { capturing: active });
       return;
     }
     if (win && !win.isDestroyed()) {
@@ -1309,6 +1386,15 @@ function registerShortcuts() {
       win.focus();
       send('composer:focus', { temporary: isNoFocusMode });
     }
+  });
+  shortcutState.transparency = globalShortcut.register('Alt+V', () => {
+    if (stealthHookManager && stealthHookManager.isAvailable()) {
+      return;
+    }
+    const now = Date.now();
+    if (now - lastTransparencyToggleTime < 350) return;
+    lastTransparencyToggleTime = now;
+    toggleTransparencyMode(true);
   });
   for (const [name, wasRegistered] of Object.entries(shortcutState)) {
     if (!wasRegistered) {

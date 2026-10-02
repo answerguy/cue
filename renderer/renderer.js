@@ -400,7 +400,9 @@
     return html;
   }
 
-  function clearMessages() { messages.innerHTML = ''; aiEl = null; caretEl = null; }
+  let retryingGroup = null;
+
+  function clearMessages() { messages.innerHTML = ''; aiEl = null; caretEl = null; retryingGroup = null; }
 
   function addUserBubble(text) {
     const b = document.createElement('div');
@@ -410,13 +412,19 @@
   }
 
   function startAi(small) {
+    let group = messages.querySelector('.response-group:last-child');
+    if (!group) {
+      group = document.createElement('div');
+      group.className = 'response-group';
+      messages.appendChild(group);
+    }
     aiEl = document.createElement('div');
     aiEl.className = 'ai-text' + (small ? ' small' : '');
     aiEl.dataset.raw = '';
     caretEl = document.createElement('span');
     caretEl.className = 'ai-caret';
     aiEl.appendChild(caretEl);
-    messages.appendChild(aiEl);
+    group.appendChild(aiEl);
   }
 
   function appendToken(t) {
@@ -433,12 +441,289 @@
     }
   }
 
-  function finalizeAi() {
+  function showIteration(group, index) {
+    if (!group._iterations || index < 0 || index >= group._iterations.length) return;
+    group._currentIterationIndex = index;
+    const iter = group._iterations[index];
+    const ai = group.querySelector('.ai-text');
+    if (ai) {
+      ai.dataset.raw = iter.raw;
+      ai.innerHTML = renderMarkdown(iter.raw);
+      ai.classList.toggle('error', !!iter.isError);
+    }
+    // Update pagination controls
+    const pagination = group.querySelector('.resp-pagination');
+    if (pagination) {
+      pagination.classList.toggle('hidden', group._iterations.length <= 1);
+      const pageNum = pagination.querySelector('.resp-page-num');
+      if (pageNum) pageNum.textContent = `${index + 1}/${group._iterations.length}`;
+      const prevBtn = pagination.querySelector('.resp-act-prev');
+      if (prevBtn) {
+        prevBtn.disabled = (index <= 0);
+        prevBtn.classList.toggle('disabled', index <= 0);
+      }
+      const nextBtn = pagination.querySelector('.resp-act-next');
+      if (nextBtn) {
+        nextBtn.disabled = (index >= group._iterations.length - 1);
+        nextBtn.classList.toggle('disabled', index >= group._iterations.length - 1);
+      }
+    }
+    // Update retry button label
+    const retryBtn = group.querySelector('.resp-act-retry');
+    if (retryBtn) {
+      retryBtn.setAttribute('aria-label', iter.isError ? 'Retry failed prompt' : 'Retry prompt');
+    }
+  }
+
+  function createResponseActions(group, rawText, isError) {
+    const wrap = document.createElement('div');
+    wrap.className = 'response-actions';
+    wrap.setAttribute('role', 'toolbar');
+    wrap.setAttribute('aria-label', 'Response actions');
+
+    if (!group._iterations) {
+      group._iterations = [];
+    }
+    if (rawText != null) {
+      const last = group._iterations[group._iterations.length - 1];
+      if (!last || last.raw !== rawText || last.isError !== isError) {
+        group._iterations.push({ raw: rawText, isError: !!isError });
+        group._currentIterationIndex = group._iterations.length - 1;
+      }
+    }
+    if (group._currentIterationIndex == null || group._currentIterationIndex < 0) {
+      group._currentIterationIndex = Math.max(0, group._iterations.length - 1);
+    }
+
+    // 0. Version Pagination (< 1/2 >)
+    const pagination = document.createElement('div');
+    pagination.className = 'resp-pagination' + (group._iterations.length > 1 ? '' : ' hidden');
+
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'resp-act-btn resp-act-prev' + (group._currentIterationIndex <= 0 ? ' disabled' : '');
+    prevBtn.setAttribute('aria-label', 'Previous iteration');
+    prevBtn.innerHTML = icon('chevron-left', { size: 13, stroke: 2 });
+    if (group._currentIterationIndex <= 0) prevBtn.disabled = true;
+
+    const pageNum = document.createElement('span');
+    pageNum.className = 'resp-page-num';
+    pageNum.textContent = `${group._currentIterationIndex + 1}/${Math.max(1, group._iterations.length)}`;
+
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'resp-act-btn resp-act-next' + (group._currentIterationIndex >= group._iterations.length - 1 ? ' disabled' : '');
+    nextBtn.setAttribute('aria-label', 'Next iteration');
+    nextBtn.innerHTML = icon('chevron-right', { size: 13, stroke: 2 });
+    if (group._currentIterationIndex >= group._iterations.length - 1) nextBtn.disabled = true;
+
+    prevBtn.addEventListener('click', () => {
+      if (group._currentIterationIndex > 0) {
+        showIteration(group, group._currentIterationIndex - 1);
+      }
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (group._currentIterationIndex < group._iterations.length - 1) {
+        showIteration(group, group._currentIterationIndex + 1);
+      }
+    });
+
+    pagination.appendChild(prevBtn);
+    pagination.appendChild(pageNum);
+    pagination.appendChild(nextBtn);
+    wrap.appendChild(pagination);
+
+    // 1. Thumbs Up
+    const thumbsUpBtn = document.createElement('button');
+    thumbsUpBtn.type = 'button';
+    thumbsUpBtn.className = 'resp-act-btn resp-act-thumbs-up';
+    thumbsUpBtn.setAttribute('aria-label', 'Good response');
+    thumbsUpBtn.innerHTML = icon('thumbs-up', { size: 14, stroke: 1.8 });
+
+    // 2. Thumbs Down
+    const thumbsDownBtn = document.createElement('button');
+    thumbsDownBtn.type = 'button';
+    thumbsDownBtn.className = 'resp-act-btn resp-act-thumbs-down';
+    thumbsDownBtn.setAttribute('aria-label', 'Bad response');
+    thumbsDownBtn.innerHTML = icon('thumbs-down', { size: 14, stroke: 1.8 });
+
+    thumbsUpBtn.addEventListener('click', () => {
+      const active = thumbsUpBtn.classList.toggle('active');
+      if (active) {
+        thumbsDownBtn.classList.remove('active');
+        showToast('Thanks for the feedback!', 1800);
+      }
+    });
+
+    thumbsDownBtn.addEventListener('click', () => {
+      const active = thumbsDownBtn.classList.toggle('active');
+      if (active) {
+        thumbsUpBtn.classList.remove('active');
+        showToast('Thanks for the feedback!', 1800);
+      }
+    });
+
+    // 3. Retry Button (below every prompt / response)
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'resp-act-btn resp-act-retry';
+    const currentIsError = group._iterations[group._currentIterationIndex] ? group._iterations[group._currentIterationIndex].isError : isError;
+    retryBtn.setAttribute('aria-label', currentIsError ? 'Retry failed prompt' : 'Retry prompt');
+    retryBtn.innerHTML = icon('rotate-cw', { size: 14, stroke: 1.8 });
+
+    retryBtn.addEventListener('click', () => {
+      if (busy) {
+        showToast('Please wait for the current response to finish', 2000);
+        return;
+      }
+      retryResponse(group);
+    });
+
+    // 4. Copy Button
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'resp-act-btn resp-act-copy';
+    copyBtn.setAttribute('aria-label', 'Copy response');
+    copyBtn.innerHTML = icon('copy', { size: 14, stroke: 1.8 });
+
+    let copyResetTimer = null;
+    copyBtn.addEventListener('click', () => {
+      const currentIter = (group._iterations && group._iterations[group._currentIterationIndex]) ? group._iterations[group._currentIterationIndex].raw : '';
+      const textToCopy = currentIter || rawText || (group.querySelector('.ai-text') ? group.querySelector('.ai-text').innerText : '');
+      if (!textToCopy) return;
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        copyBtn.classList.add('copied');
+        copyBtn.innerHTML = icon('check', { size: 14, stroke: 2 });
+        showToast('Copied to clipboard', 1800);
+        clearTimeout(copyResetTimer);
+        copyResetTimer = setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyBtn.innerHTML = icon('copy', { size: 14, stroke: 1.8 });
+        }, 1500);
+      }).catch(() => {
+        showToast('Failed to copy', 1800);
+      });
+    });
+
+    // 5. More Options Button
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'resp-act-btn resp-act-more';
+    moreBtn.setAttribute('aria-label', 'More options');
+    moreBtn.innerHTML = icon('more-horizontal', { size: 14, stroke: 1.8 });
+
+    const menu = document.createElement('div');
+    menu.className = 'resp-more-menu hidden';
+
+    const copyAllItem = document.createElement('button');
+    copyAllItem.type = 'button';
+    copyAllItem.className = 'resp-menu-item';
+    copyAllItem.setAttribute('aria-label', 'Copy prompt and response');
+    copyAllItem.textContent = 'Copy prompt & response';
+    copyAllItem.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.add('hidden');
+      const userBubble = group.querySelector('.user-bubble');
+      const promptText = userBubble ? userBubble.textContent : (group.dataset.text || group.dataset.mode || '');
+      const currentIter = (group._iterations && group._iterations[group._currentIterationIndex]) ? group._iterations[group._currentIterationIndex].raw : '';
+      const aiText = currentIter || rawText || (group.querySelector('.ai-text') ? group.querySelector('.ai-text').innerText : '');
+      const fullText = (promptText ? `Q: ${promptText}\n\n` : '') + `A: ${aiText}`;
+      navigator.clipboard.writeText(fullText).then(() => {
+        showToast('Copied prompt & response', 1800);
+      }).catch(() => {});
+    });
+
+    const deleteItem = document.createElement('button');
+    deleteItem.type = 'button';
+    deleteItem.className = 'resp-menu-item danger';
+    deleteItem.setAttribute('aria-label', 'Delete this response');
+    deleteItem.textContent = 'Delete response';
+    deleteItem.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.add('hidden');
+      group.remove();
+      if (responseCount > 0) responseCount--;
+    });
+
+    menu.appendChild(copyAllItem);
+    menu.appendChild(deleteItem);
+
+    moreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = menu.classList.contains('hidden');
+      document.querySelectorAll('.resp-more-menu').forEach((m) => m.classList.add('hidden'));
+      if (isHidden) menu.classList.remove('hidden');
+    });
+
+    wrap.appendChild(thumbsUpBtn);
+    wrap.appendChild(thumbsDownBtn);
+    wrap.appendChild(retryBtn);
+    wrap.appendChild(copyBtn);
+    wrap.appendChild(moreBtn);
+    wrap.appendChild(menu);
+
+    return wrap;
+  }
+
+  function retryResponse(group) {
+    if (busy) {
+      showToast('Please wait for the current response to finish', 2000);
+      return;
+    }
+    const mode = group.dataset.mode || 'ask';
+    const text = group.dataset.text || '';
+    retryingGroup = group;
+
+    const retryBtn = group.querySelector('.resp-act-retry');
+    if (retryBtn) retryBtn.classList.add('spinning');
+
+    let textEl = group.querySelector('.ai-text');
+    if (!textEl) {
+      textEl = document.createElement('div');
+      textEl.className = 'ai-text' + (group.dataset.small === 'true' ? ' small' : '');
+      group.appendChild(textEl);
+    } else {
+      textEl.classList.remove('error');
+    }
+    textEl.dataset.raw = '';
+    textEl.innerHTML = '';
+    caretEl = document.createElement('span');
+    caretEl.className = 'ai-caret';
+    textEl.appendChild(caretEl);
+    aiEl = textEl;
+
+    const actionsEl = group.querySelector('.response-actions');
+    if (actionsEl) actionsEl.remove();
+
+    showToast('Retrying...', 1500);
+    runMode(mode, text);
+  }
+
+  function finalizeAi(isError = false) {
     if (!aiEl) return;
     const raw = aiEl.dataset.raw || '';
     aiEl.innerHTML = renderMarkdown(raw);
-    aiEl = null; caretEl = null;
+    if (isError) {
+      aiEl.classList.add('error');
+    }
+    const group = aiEl.closest('.response-group');
+    if (group) {
+      const oldActions = group.querySelector('.response-actions');
+      if (oldActions) oldActions.remove();
+      const actions = createResponseActions(group, raw, isError);
+      group.appendChild(actions);
+    }
+    aiEl = null;
+    caretEl = null;
+    retryingGroup = null;
   }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.resp-more-menu') && !e.target.closest('.resp-act-more')) {
+      document.querySelectorAll('.resp-more-menu').forEach((m) => m.classList.add('hidden'));
+    }
+  });
 
   let busyFailsafe = null;
   function setBusy(v) {
@@ -495,27 +780,105 @@
   }
 
   document.querySelectorAll('.act').forEach((btn) => {
-    btn.addEventListener('click', () => runMode(btn.dataset.mode, ''));
+    btn.addEventListener('click', () => {
+      retryingGroup = null;
+      runMode(btn.dataset.mode, '');
+    });
   });
 
   const input = $('#input');
   const placeholder = $('#placeholder');
   const composer = $('#composer');
   const clearInputBtn = $('#clear-input-btn');
+  const caretMirror = $('#stealth-caret-mirror');
   const caretMirrorText = $('#stealth-caret-text');
+  const caretMirrorAfter = $('#stealth-caret-after');
+  const stealthCaretEl = $('#stealth-caret');
+  const stealthIndicator = $('#stealth-indicator');
 
   // ========== NO-FOCUS (STEALTH) MODE ==========
   let isNoFocusMode = true;
   let temporaryFocusActive = false;
   let isStealthTypingActive = false;
+  let isTransparencyMode = false;
+  let lastStealthNotified = false;
+  let lastTransparencyNotified = false;
+  let stealthCaretPos = -1;
+  let isStealthSelectAll = false;
+
+  function getStealthCaretPos() {
+    const len = input.value.length;
+    if (stealthCaretPos < 0 || stealthCaretPos > len) {
+      stealthCaretPos = len;
+    }
+    return stealthCaretPos;
+  }
+
+  function setStealthCaretPos(pos) {
+    const len = input.value.length;
+    stealthCaretPos = Math.max(0, Math.min(len, pos));
+    try {
+      input.setSelectionRange(stealthCaretPos, stealthCaretPos);
+    } catch (_) {}
+  }
+
+  function isInsideInputArea(target) {
+    if (!target) return false;
+    const el = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
+    return Boolean(el && typeof el.closest === 'function' && el.closest('#input-area'));
+  }
+
+  function activateStealthTyping() {
+    if (!isStealthTypingActive) {
+      if (typeof cue.stealthSet === 'function') {
+        cue.stealthSet(true).catch(() => {});
+      } else if (typeof cue.stealthToggle === 'function') {
+        cue.stealthToggle().catch(() => {});
+      }
+    }
+  }
+
+  function deactivateStealthTyping() {
+    isStealthSelectAll = false;
+    if (isStealthTypingActive) {
+      if (typeof cue.stealthSet === 'function') {
+        cue.stealthSet(false).catch(() => {});
+      } else if (typeof cue.stealthToggle === 'function') {
+        cue.stealthToggle().catch(() => {});
+      }
+    }
+  }
 
   function syncCaretMirror() {
     if (!caretMirrorText) return;
-    let val = input.value || '';
-    if (val.endsWith('\n')) {
-      val += '\u200B';
+    const val = input.value || '';
+    if (isStealthSelectAll && val.length > 0) {
+      caretMirrorText.textContent = val;
+      caretMirrorText.classList.add('selected');
+      if (caretMirrorAfter) caretMirrorAfter.textContent = '';
+      if (stealthCaretEl) stealthCaretEl.style.display = 'none';
+      if (caretMirror) caretMirror.scrollTop = input.scrollTop;
+      return;
     }
-    caretMirrorText.textContent = val;
+
+    caretMirrorText.classList.remove('selected');
+    if (stealthCaretEl) stealthCaretEl.style.display = '';
+
+    const pos = getStealthCaretPos();
+    let before = val.slice(0, pos);
+    let after = val.slice(pos);
+
+    if (before.endsWith('\n')) {
+      before += '\u200B';
+    }
+
+    caretMirrorText.textContent = before;
+    if (caretMirrorAfter) {
+      caretMirrorAfter.textContent = after;
+    }
+    if (caretMirror) {
+      caretMirror.scrollTop = input.scrollTop;
+    }
   }
 
   function updateDeleteButton() {
@@ -532,6 +895,8 @@
 
   function clearComposerInput() {
     input.value = '';
+    stealthCaretPos = 0;
+    isStealthSelectAll = false;
     inputFromSTT = false;
     lastSTTValue = '';
     composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
@@ -549,8 +914,12 @@
   function updatePlaceholder() {
     const altKey = isWindows ? 'Alt' : '⌥';
     const ctrlKey = isWindows ? 'Ctrl' : '⌘';
-    if (isStealthTypingActive) {
-      placeholder.innerHTML = `<span style="color:#86efac;font-weight:600">⚡ Stealth typing active</span> · Enter sends · Esc/${altKey}+C exits`;
+    if (isTransparencyMode && isStealthTypingActive) {
+      placeholder.innerHTML = `<span style="color:#93c5fd;font-weight:600">⚡ Stealth + Click-Through</span> · Arrow keys navigate · Enter sends · ${altKey}+C / ${altKey}+V`;
+    } else if (isTransparencyMode) {
+      placeholder.innerHTML = `<span style="color:#60a5fa;font-weight:600">⚡ Transparent click-through</span> · Arrow keys scroll · ${altKey}+C to type · ${altKey}+V exits`;
+    } else if (isStealthTypingActive) {
+      placeholder.innerHTML = `<span style="color:#86efac;font-weight:600">⚡ Stealth typing active</span> · Arrow keys navigate · Enter sends · Esc/${altKey}+C exits`;
     } else if (isNoFocusMode) {
       placeholder.innerHTML = `No-focus mode active · <span class="keycap">${altKey}</span><span class="keycap">C</span> to type · <span class="keycap">${ctrlKey}</span><span class="keycap">⇧</span><span class="keycap">F</span> toggle`;
     } else if (isWindows) {
@@ -581,8 +950,19 @@
   // Initialize placeholder and button to default active state immediately
   setNoFocusUI(true);
 
-  // ========== SMART AUTO-FILL SYSTEM ==========
-  // Track whether the current input text came from STT auto-fill (Them channel)
+  // ========== INTERVIEWER PILL & SMART BUFFER SYSTEM ==========
+  const interviewerPill = document.getElementById('interviewer-pill');
+  const ipText = document.getElementById('ip-text');
+  const ipAnswerBtn = document.getElementById('ip-answer-btn');
+  const ipInsertBtn = document.getElementById('ip-insert-btn');
+  const ipDismissBtn = document.getElementById('ip-dismiss-btn');
+
+  let stagedInterviewerQuestion = '';
+  let pillAccumulateTimer = null;
+  let pillSoftClearTimer = null;
+  let pillUserSpeechStart = null;
+
+  // Track whether the current input text came from STT (via Insert or restore)
   let inputFromSTT = false;
   let sttFillTimer = null;
   let questionFinalizeTimer = null;
@@ -642,16 +1022,14 @@
   }
 
   // ---- Update visual state based on question readiness ----
-  // FIX #8: Batch class updates to avoid flicker
+  // Batch class updates to avoid flicker
   function updateQuestionReadyState() {
     const text = input.value;
     const confidence = getQuestionConfidence(text);
     
-    // Batch the class changes to minimize repaints
     const shouldBeReady = confidence === 'high' || confidence === 'medium';
     const shouldBeAccumulating = confidence === 'accumulating';
     
-    // Only update if state actually changed
     const isReady = composer.classList.contains('stt-ready');
     const isAccumulating = composer.classList.contains('stt-accumulating');
     
@@ -664,19 +1042,21 @@
       }
     }
     
-    updateSendButtonState(); // FIX #9: Keep send button in sync
+    updateSendButtonState();
   }
   
-  // FIX #9: Send button visual "ready" state
+  // Send button visual "ready" state
   function updateSendButtonState() {
     const sendBtn = document.getElementById('send-btn');
     if (!sendBtn) return;
     
     const hasText = input.value.trim().length > 0;
     const isReady = composer.classList.contains('stt-ready');
+    const hasStaged = Boolean(!hasText && stagedInterviewerQuestion);
     
-    sendBtn.classList.toggle('ready', hasText && isReady);
-    sendBtn.classList.toggle('has-text', hasText);
+    sendBtn.classList.toggle('ready', (hasText && isReady) || hasStaged);
+    sendBtn.classList.toggle('has-text', hasText || hasStaged);
+    sendBtn.classList.toggle('has-staged', hasStaged);
   }
 
   // ---- Save question to history for undo ----
@@ -702,131 +1082,215 @@
   function restoreLastQuestion() {
     const last = questionHistory.pop();
     if (last) {
-      input.value = last.text;
-      inputFromSTT = true;
-      lastSTTValue = last.text; // FIX #8: Track restored value for edit detection
-      composer.classList.add('stt-filling');
-      updateQuestionReadyState();
-      syncPlaceholder();
-      showToast('Question restored', 1500);
+      stagedInterviewerQuestion = last.text;
+      showInterviewerPill(last.text);
+      showToast('Question restored to pill', 1500);
       return true;
     }
     showToast('No question to restore', 1500);
     return false;
   }
 
-  // ---- Auto-fill the input box with transcribed speech from interviewer ----
-  function autoFillInputFromSTT(text) {
-    // If user has manually typed something different, don't overwrite
-    if (!inputFromSTT && input.value.trim().length > 0) return;
-
-    // Cancel any pending soft-clear (interviewer is still talking)
-    clearTimeout(softClearTimer);
-    composer.classList.remove('stt-dimmed');
-
-    const current = input.value.trim();
-    const newText = current ? current + ' ' + text : text;
-    input.value = newText;
-    inputFromSTT = true;
-    lastSTTValue = newText; // FIX #6: Track the STT value for edit detection
-    syncPlaceholder();
-
-    // Show filling state
-    composer.classList.add('stt-filling');
-    updateQuestionReadyState();
-    updateSendButtonState(); // FIX #9: Update send button state
-
-    // Reset the idle timer — after 2s of silence, check if question is complete
-    clearTimeout(questionFinalizeTimer);
-    questionFinalizeTimer = setTimeout(() => {
-      if (isLikelyCompleteQuestion(input.value)) {
-        composer.classList.add('stt-ready');
-        updateSendButtonState(); // FIX #9: Update send button when ready
-        // Subtle notification that question is ready
-        showToast('Press Enter to answer', 2500);
-      }
+  // ---- Show Interviewer Pill with text ----
+  function showInterviewerPill(text) {
+    if (!interviewerPill || !ipText) return;
+    ipText.textContent = text;
+    interviewerPill.classList.remove('hidden', 'ip-dimmed');
+    interviewerPill.classList.add('ip-accumulating');
+    ipText.scrollTop = ipText.scrollHeight;
+    
+    clearTimeout(pillAccumulateTimer);
+    pillAccumulateTimer = setTimeout(() => {
+      if (interviewerPill) interviewerPill.classList.remove('ip-accumulating');
     }, 1800);
 
-    // After 8s of no new words, save to history and keep stable
-    clearTimeout(sttFillTimer);
-    sttFillTimer = setTimeout(() => {
-      saveToQuestionHistory(input.value);
-      composer.classList.remove('stt-filling');
-      // Keep stt-ready if applicable
-      updateQuestionReadyState();
-      updateSendButtonState(); // FIX #9
-    }, 8000);
+    updateSendButtonState();
   }
 
-  // ---- Soft clear: don't immediately wipe question when user speaks ----
-  function softClearSTTFill() {
-    // When the user speaks (You channel), don't immediately clear
-    // Instead, dim the input and wait — they might just be acknowledging
-    if (!inputFromSTT) return;
+  // ---- Show live interim words in interviewer pill ----
+  function showInterviewerPillInterim(interimText) {
+    if (!interviewerPill || !ipText) return;
+    const combined = stagedInterviewerQuestion 
+      ? stagedInterviewerQuestion + ' ' + interimText 
+      : interimText;
+    ipText.textContent = combined;
+    interviewerPill.classList.remove('hidden', 'ip-dimmed');
+    interviewerPill.classList.add('ip-accumulating');
+    ipText.scrollTop = ipText.scrollHeight;
+  }
+
+  // ---- Accumulate incoming speech from interviewer (Them channel) ----
+  function accumulateInterviewerQuestion(text) {
+    if (!text || text.trim().length === 0) return;
+    cancelPillSoftClear();
     
-    // FIX #3: Reset userSpeechStart at the beginning before setting new timestamp
-    // This ensures we always track from fresh when a new soft-clear cycle begins
-    const now = Date.now();
-    if (!userSpeechStart) {
-      userSpeechStart = now;
+    const incoming = text.trim();
+    if (stagedInterviewerQuestion) {
+      stagedInterviewerQuestion += ' ' + incoming;
+    } else {
+      stagedInterviewerQuestion = incoming;
     }
-
-    // Dim the input to show it's in "pending clear" state
-    composer.classList.add('stt-dimmed');
     
-    // Clear the finalization timer (user is responding)
-    clearTimeout(questionFinalizeTimer);
+    showInterviewerPill(stagedInterviewerQuestion);
+  }
 
-    // Re-armed on every 'you' final, so this fires ~800ms after the user stops.
-    // The 2s test below is measured from the FIRST final of this cycle, so a brief
-    // acknowledgement ("mm-hm") leaves the question on screen while a sustained
-    // answer clears it. Firing at 2.5s instead would make that test always true.
-    clearTimeout(softClearTimer);
-    softClearTimer = setTimeout(() => {
-      const speechDuration = userSpeechStart ? Date.now() - userSpeechStart : 0;
+  // ---- Dismiss Interviewer Pill ----
+  function dismissInterviewerPill() {
+    stagedInterviewerQuestion = '';
+    clearTimeout(pillAccumulateTimer);
+    clearTimeout(pillSoftClearTimer);
+    pillUserSpeechStart = null;
+    if (interviewerPill) {
+      interviewerPill.classList.add('hidden');
+      interviewerPill.classList.remove('ip-dimmed', 'ip-accumulating');
+    }
+    if (ipText) ipText.textContent = '';
+    updateSendButtonState();
+  }
+
+  // ---- Answer Interviewer Question directly ----
+  function answerInterviewerQuestion() {
+    if (!stagedInterviewerQuestion) return;
+    const q = stagedInterviewerQuestion.trim();
+    saveToQuestionHistory(q);
+    dismissInterviewerPill();
+    runMode('answerThis', q);
+  }
+
+  // ---- Insert Interviewer Question into Input box without destroying typed text ----
+  function insertInterviewerQuestion() {
+    if (!stagedInterviewerQuestion) return;
+    const q = stagedInterviewerQuestion.trim();
+    
+    if (isStealthTypingActive) {
+      // In stealth typing mode, insert at stealth caret position
+      const val = input.value || '';
+      if (isStealthSelectAll) {
+        input.value = q;
+        isStealthSelectAll = false;
+        setStealthCaretPos(q.length);
+      } else {
+        const pos = getStealthCaretPos();
+        const before = val.slice(0, pos);
+        const after = val.slice(pos);
+        const prefixSpace = (before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
+        const suffixSpace = (after.length > 0 && !after.startsWith(' ') && !after.startsWith('\n')) ? ' ' : '';
+        const insertion = prefixSpace + q + suffixSpace;
+        input.value = before + insertion + after;
+        setStealthCaretPos(pos + insertion.length);
+      }
+      syncCaretMirror();
+    } else {
+      // Standard input textarea
+      const val = input.value || '';
+      const start = input.selectionStart != null ? input.selectionStart : val.length;
+      const end = input.selectionEnd != null ? input.selectionEnd : val.length;
+      const before = val.slice(0, start);
+      const after = val.slice(end);
+      const prefixSpace = (before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
+      const suffixSpace = (after.length > 0 && !after.startsWith(' ') && !after.startsWith('\n')) ? ' ' : '';
+      const insertion = prefixSpace + q + suffixSpace;
+      input.value = before + insertion + after;
+      const newCursor = start + insertion.length;
+      try {
+        input.setSelectionRange(newCursor, newCursor);
+      } catch (_) {}
+    }
+    
+    // If input was empty before, mark as from STT so answering logic still recognizes it
+    if (!input.value.trim() || input.value.trim() === q) {
+      inputFromSTT = true;
+      lastSTTValue = input.value;
+    }
+    
+    dismissInterviewerPill();
+    syncPlaceholder();
+    updateSendButtonState();
+    updateDeleteButton();
+    input.focus();
+  }
+
+  // ---- Soft clear: Dim interviewer pill when user speaks, clear after >2s sustained speech ----
+  function softClearInterviewerPill() {
+    if (!stagedInterviewerQuestion) return;
+    const now = Date.now();
+    if (!pillUserSpeechStart) {
+      pillUserSpeechStart = now;
+    }
+    if (interviewerPill) {
+      interviewerPill.classList.add('ip-dimmed');
+    }
+    clearTimeout(pillSoftClearTimer);
+    pillSoftClearTimer = setTimeout(() => {
+      const speechDuration = pillUserSpeechStart ? Date.now() - pillUserSpeechStart : 0;
       if (speechDuration > 2000) {
-        // User has been speaking for a while — they're answering, clear the box
-        saveToQuestionHistory(input.value);
-        input.value = '';
-        inputFromSTT = false;
-        composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
-        syncPlaceholder();
-        updateSendButtonState(); // FIX #9: Update send button state
-        userSpeechStart = null;
+        saveToQuestionHistory(stagedInterviewerQuestion);
+        dismissInterviewerPill();
       }
     }, 800);
   }
 
+  // ---- Cancel soft clear when interviewer resumes talking ----
+  function cancelPillSoftClear() {
+    pillUserSpeechStart = null;
+    clearTimeout(pillSoftClearTimer);
+    if (interviewerPill) {
+      interviewerPill.classList.remove('ip-dimmed');
+    }
+  }
+
+  // Pill action button handlers
+  if (ipAnswerBtn) {
+    ipAnswerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      answerInterviewerQuestion();
+    });
+  }
+  if (ipInsertBtn) {
+    ipInsertBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      insertInterviewerQuestion();
+    });
+  }
+  if (ipDismissBtn) {
+    ipDismissBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dismissInterviewerPill();
+    });
+  }
+
+  // Legacy compatibility wrappers (keeps existing call-sites safe)
+  function autoFillInputFromSTT(text) {
+    accumulateInterviewerQuestion(text);
+  }
+  function softClearSTTFill() {
+    softClearInterviewerPill();
+  }
+  function cancelSoftClear() {
+    cancelPillSoftClear();
+  }
+
   // ---- Hard clear (called when user explicitly clears or types) ----
-  // FIX #10: Add option to show toast when clearing
   function hardClearSTTFill(showUndoHint = false) {
     const hadContent = input.value.trim().length > 0;
     saveToQuestionHistory(input.value);
     input.value = '';
     inputFromSTT = false;
-    lastSTTValue = ''; // FIX #6: Clear the tracked STT value
+    lastSTTValue = '';
     userSpeechStart = null;
     composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
     clearTimeout(softClearTimer);
     clearTimeout(questionFinalizeTimer);
     clearTimeout(sttFillTimer);
-    clearInputInterim(); // FIX #5: Clear interim when clearing input
+    clearInputInterim();
+    dismissInterviewerPill();
     syncPlaceholder();
-    updateSendButtonState(); // FIX #9
+    updateSendButtonState();
     
-    // FIX #10: Show undo hint when explicitly cleared
     if (showUndoHint && hadContent) {
       const undoHint = isWindows ? 'Ctrl+Z to undo' : '⌘Z to undo';
       showToast(`Cleared · ${undoHint}`, 2000);
     }
-  }
-
-  // ---- Reset soft-clear state (interviewer spoke again) ----
-  // FIX #16: Reset userSpeechStart properly when cancelSoftClear is called
-  function cancelSoftClear() {
-    userSpeechStart = null; // Reset timestamp so next soft-clear starts fresh
-    clearTimeout(softClearTimer);
-    composer.classList.remove('stt-dimmed');
   }
 
   function syncPlaceholder() {
@@ -835,7 +1299,11 @@
     input.style.height = Math.min(input.scrollHeight, 140) + 'px';
     syncCaretMirror();
     updateDeleteButton();
+    if (caretMirror) caretMirror.scrollTop = input.scrollTop;
   }
+  input.addEventListener('scroll', () => {
+    if (caretMirror) caretMirror.scrollTop = input.scrollTop;
+  });
   
   // FIX #6: Track last STT value to detect substantial edits vs minor corrections
   let lastSTTValue = '';
@@ -874,9 +1342,7 @@
   input.addEventListener('focus', () => {
     if (isNoFocusMode && !temporaryFocusActive) {
       input.blur();
-      if (!isStealthTypingActive && typeof cue.stealthToggle === 'function') {
-        cue.stealthToggle().catch(() => {});
-      }
+      activateStealthTyping();
       return;
     }
     composer.classList.add('focused');
@@ -892,25 +1358,29 @@
   });
   $('#input-area').addEventListener('click', () => {
     if (isNoFocusMode && !temporaryFocusActive) {
-      if (!isStealthTypingActive && typeof cue.stealthToggle === 'function') {
-        cue.stealthToggle().catch(() => {});
-      }
+      activateStealthTyping();
       return;
     }
     input.focus();
   });
 
   function send() {
+    retryingGroup = null;
     const text = input.value.trim();
-    if (isStealthTypingActive && typeof cue.stealthToggle === 'function') {
-      cue.stealthToggle().catch(() => {});
-    }
+    deactivateStealthTyping();
     if (temporaryFocusActive) {
       input.blur();
       temporaryFocusActive = false;
       if (typeof cue.nofocusSet === 'function') cue.nofocusSet(true).catch(() => {});
     }
-    if (!text) { runMode('assist', ''); return; }
+    if (!text) {
+      if (stagedInterviewerQuestion) {
+        answerInterviewerQuestion();
+        return;
+      }
+      runMode('assist', '');
+      return;
+    }
     const wasFromSTT = inputFromSTT;
     
     // Save to history before clearing (in case user wants to redo)
@@ -924,6 +1394,7 @@
     clearTimeout(softClearTimer);
     clearTimeout(questionFinalizeTimer);
     clearTimeout(sttFillTimer);
+    dismissInterviewerPill();
     syncPlaceholder();
     updateSendButtonState(); // FIX #9
     
@@ -933,17 +1404,26 @@
   }
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
+    // Tab: insert staged interviewer question into input box at caret
+    if (e.key === 'Tab' && stagedInterviewerQuestion && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      insertInterviewerQuestion();
+      return;
+    }
     // Ctrl+Z / Cmd+Z: restore last question if input is empty
     if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !input.value.trim()) {
       e.preventDefault();
       restoreLastQuestion();
       return;
     }
-    // Escape: clear the input (with undo hint) or exit temporary typing focus
+    // Escape: clear the input (with undo hint) or dismiss staged question or exit temporary typing focus
     if (e.key === 'Escape') {
       if (input.value.trim()) {
         e.preventDefault();
         hardClearSTTFill(true); // FIX #10: Show undo hint
+      } else if (stagedInterviewerQuestion) {
+        e.preventDefault();
+        dismissInterviewerPill();
       }
       if (temporaryFocusActive) {
         input.blur();
@@ -959,13 +1439,23 @@
     }
   });
   
-  // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A)
+  // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A) and Tab to insert
   document.addEventListener('keydown', (e) => {
+    // Tab when interviewer question is staged and focus is not already inside another text input
+    if (e.key === 'Tab' && stagedInterviewerQuestion && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      if (document.activeElement !== input && document.activeElement && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+        e.preventDefault();
+        insertInterviewerQuestion();
+        return;
+      }
+    }
     // Ctrl+Shift+A / Cmd+Shift+A: Force answer current question immediately
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
       e.preventDefault();
       if (input.value.trim()) {
         send();
+      } else if (stagedInterviewerQuestion) {
+        answerInterviewerQuestion();
       } else if (inputFromSTT || composer.classList.contains('stt-filling')) {
         // Even if question seems incomplete, force send
         send();
@@ -1001,6 +1491,7 @@
     if (label) label.textContent = text;
     btn.setAttribute('aria-label', text);
     if (collapsed) {
+      deactivateStealthTyping();
       reopenSidebarOnExpand = sidebarOpen;
       if (sidebarOpen) hideSidebar();
     } else if (reopenSidebarOnExpand) {
@@ -1009,6 +1500,19 @@
   }
   $('#hide-btn').addEventListener('click', toggleHide);
   cue.on('hide:toggle', toggleHide);
+
+  // Deactivate stealth typing when clicking anywhere in the app outside the text box
+  document.addEventListener('pointerdown', (e) => {
+    if (isStealthTypingActive && !isInsideInputArea(e.target)) {
+      deactivateStealthTyping();
+    }
+  }, true);
+
+  document.addEventListener('click', (e) => {
+    if (isStealthTypingActive && !isInsideInputArea(e.target)) {
+      deactivateStealthTyping();
+    }
+  }, true);
 
   const OPACITY_MIN = 0.2;
   function clampOpacity(value) {
@@ -1101,6 +1605,7 @@
       clearTranscriptInterim();
       clearInputInterim();
       clearTranscriptSidebar();
+      dismissInterviewerPill();
       if (messages) { messages.innerHTML = ''; responseCount = 0; }
       questionHistory.length = 0;
       // Only a question auto-filled from the transcript goes; anything the user typed stays.
@@ -1528,67 +2033,324 @@
     input.select();
   });
 
-  cue.on('stealth:state', ({ capturing }) => {
-    isStealthTypingActive = Boolean(capturing);
-    composer.classList.toggle('stealth-active', isStealthTypingActive);
-    if (isStealthTypingActive) {
+  cue.on('transparency:state', (enabled) => {
+    const nextState = Boolean(enabled);
+    if (isTransparencyMode === nextState && lastTransparencyNotified === nextState) return;
+    isTransparencyMode = nextState;
+    lastTransparencyNotified = nextState;
+    if (isTransparencyMode) {
       const wrap = $('#panel-wrap');
       if (wrap && wrap.classList.contains('collapsed')) {
         toggleHide();
       }
-      showToast('Stealth typing ON · Type question (Enter sends · Esc exits)', 2500);
+      setIgnore(true);
+      showToast('Transparency mode ON · Click-through active · Arrow keys scroll (Alt+V exits)', 3000);
     } else {
-      showToast('Stealth typing OFF · Keyboard back to background app', 2000);
+      showToast('Transparency mode OFF · Interactive mode restored', 2000);
+    }
+    document.body.classList.toggle('transparency-mode', isTransparencyMode);
+    if (stealthIndicator) {
+      stealthIndicator.classList.toggle('hidden', !isStealthTypingActive && !isTransparencyMode);
+      const pillText = stealthIndicator.querySelector('.stealth-pill-text');
+      if (pillText) {
+        if (isStealthTypingActive && isTransparencyMode) pillText.textContent = 'Stealth + Click-Through';
+        else if (isStealthTypingActive) pillText.textContent = 'Stealth';
+        else if (isTransparencyMode) pillText.textContent = 'Click-Through';
+      }
+    }
+    updatePlaceholder();
+    syncCaretMirror();
+  });
+
+  cue.on('stealth:state', ({ capturing }) => {
+    const nextState = Boolean(capturing);
+    isStealthTypingActive = nextState;
+    if (!isStealthTypingActive) {
+      isStealthSelectAll = false;
+    }
+    composer.classList.toggle('stealth-active', isStealthTypingActive);
+    if (stealthIndicator) {
+      stealthIndicator.classList.toggle('hidden', !isStealthTypingActive);
+      if (isTransparencyMode) stealthIndicator.classList.remove('hidden');
+      const pillText = stealthIndicator.querySelector('.stealth-pill-text');
+      if (pillText) {
+        if (isStealthTypingActive && isTransparencyMode) pillText.textContent = 'Stealth + Click-Through';
+        else if (isStealthTypingActive) pillText.textContent = 'Stealth';
+        else if (isTransparencyMode) pillText.textContent = 'Click-Through';
+      }
+    }
+    updateDeleteButton();
+    syncCaretMirror();
+    if (lastStealthNotified !== nextState) {
+      lastStealthNotified = nextState;
+      if (isStealthTypingActive) {
+        const wrap = $('#panel-wrap');
+        if (wrap && wrap.classList.contains('collapsed')) {
+          toggleHide();
+        }
+        showToast('Stealth typing ON · Type question (Enter sends · Esc exits)', 2500);
+      } else {
+        showToast('Stealth typing OFF · Keyboard back to background app', 2000);
+      }
     }
     updatePlaceholder();
   });
 
   cue.on('stealth:char', ({ char }) => {
     if (!char) return;
-    input.value += char;
+    if (isStealthSelectAll) {
+      input.value = char;
+      isStealthSelectAll = false;
+      setStealthCaretPos(char.length);
+    } else {
+      const pos = getStealthCaretPos();
+      input.value = input.value.slice(0, pos) + char + input.value.slice(pos);
+      setStealthCaretPos(pos + char.length);
+    }
     syncPlaceholder();
     updateSendButtonState();
+    if (stealthCaretPos >= input.value.length) {
+      input.scrollTop = input.scrollHeight;
+    }
+    if (caretMirror) caretMirror.scrollTop = input.scrollTop;
   });
 
   cue.on('stealth:backspace', () => {
-    if (input.value.length > 0) {
-      input.value = input.value.slice(0, -1);
+    if (isStealthSelectAll) {
+      input.value = '';
+      isStealthSelectAll = false;
+      setStealthCaretPos(0);
       syncPlaceholder();
       updateSendButtonState();
+      return;
+    }
+    const pos = getStealthCaretPos();
+    if (pos > 0) {
+      input.value = input.value.slice(0, pos - 1) + input.value.slice(pos);
+      setStealthCaretPos(pos - 1);
+      syncPlaceholder();
+      updateSendButtonState();
+      if (caretMirror) caretMirror.scrollTop = input.scrollTop;
     }
   });
 
   cue.on('stealth:delete', () => {
-    if (input.value.length > 0) {
-      input.value = input.value.slice(0, -1);
+    if (isStealthSelectAll) {
+      input.value = '';
+      isStealthSelectAll = false;
+      setStealthCaretPos(0);
       syncPlaceholder();
       updateSendButtonState();
+      return;
+    }
+    const pos = getStealthCaretPos();
+    if (pos < input.value.length) {
+      input.value = input.value.slice(0, pos) + input.value.slice(pos + 1);
+      setStealthCaretPos(pos);
+      syncPlaceholder();
+      updateSendButtonState();
+      if (caretMirror) caretMirror.scrollTop = input.scrollTop;
+    }
+  });
+
+  function moveStealthCaretVertical(direction) {
+    const val = input.value || '';
+    const pos = getStealthCaretPos();
+    const lines = val.split('\n');
+    let currentLineIndex = 0;
+    let charCount = 0;
+    let col = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const lineLen = lines[i].length;
+      if (pos <= charCount + lineLen) {
+        currentLineIndex = i;
+        col = pos - charCount;
+        break;
+      }
+      charCount += lineLen + 1;
+    }
+
+    if (direction < 0) {
+      if (currentLineIndex > 0) {
+        const prevLineIndex = currentLineIndex - 1;
+        let prevLineStart = 0;
+        for (let i = 0; i < prevLineIndex; i++) {
+          prevLineStart += lines[i].length + 1;
+        }
+        const targetCol = Math.min(col, lines[prevLineIndex].length);
+        setStealthCaretPos(prevLineStart + targetCol);
+      } else {
+        setStealthCaretPos(0);
+      }
+    } else if (direction > 0) {
+      if (currentLineIndex < lines.length - 1) {
+        const nextLineIndex = currentLineIndex + 1;
+        let nextLineStart = 0;
+        for (let i = 0; i < nextLineIndex; i++) {
+          nextLineStart += lines[i].length + 1;
+        }
+        const targetCol = Math.min(col, lines[nextLineIndex].length);
+        setStealthCaretPos(nextLineStart + targetCol);
+      } else {
+        setStealthCaretPos(val.length);
+      }
+    }
+    syncCaretMirror();
+  }
+
+  cue.on('stealth:arrow-left', () => {
+    if (isStealthTypingActive) {
+      isStealthSelectAll = false;
+      const pos = getStealthCaretPos();
+      if (pos > 0) {
+        setStealthCaretPos(pos - 1);
+        syncCaretMirror();
+      }
+    }
+  });
+
+  cue.on('stealth:arrow-right', () => {
+    if (isStealthTypingActive) {
+      isStealthSelectAll = false;
+      const pos = getStealthCaretPos();
+      if (pos < input.value.length) {
+        setStealthCaretPos(pos + 1);
+        syncCaretMirror();
+      }
+    }
+  });
+
+  cue.on('stealth:arrow-up', () => {
+    if (isStealthTypingActive) {
+      isStealthSelectAll = false;
+      moveStealthCaretVertical(-1);
+    } else if (isTransparencyMode) {
+      if (messages) {
+        messages.scrollBy({ top: -75, behavior: 'smooth' });
+      }
+    }
+  });
+
+  cue.on('stealth:arrow-down', () => {
+    if (isStealthTypingActive) {
+      isStealthSelectAll = false;
+      moveStealthCaretVertical(1);
+    } else if (isTransparencyMode) {
+      if (messages) {
+        messages.scrollBy({ top: 75, behavior: 'smooth' });
+      }
+    }
+  });
+
+  cue.on('stealth:page-up', () => {
+    if (isStealthTypingActive) {
+      isStealthSelectAll = false;
+      setStealthCaretPos(0);
+      syncCaretMirror();
+    } else if (isTransparencyMode) {
+      if (messages) {
+        messages.scrollBy({ top: -Math.max(150, messages.clientHeight * 0.8), behavior: 'smooth' });
+      }
+    }
+  });
+
+  cue.on('stealth:page-down', () => {
+    if (isStealthTypingActive) {
+      isStealthSelectAll = false;
+      setStealthCaretPos(input.value.length);
+      syncCaretMirror();
+    } else if (isTransparencyMode) {
+      if (messages) {
+        messages.scrollBy({ top: Math.max(150, messages.clientHeight * 0.8), behavior: 'smooth' });
+      }
+    }
+  });
+
+  cue.on('stealth:home', () => {
+    if (isStealthTypingActive) {
+      isStealthSelectAll = false;
+      setStealthCaretPos(0);
+      syncCaretMirror();
+    }
+  });
+
+  cue.on('stealth:end', () => {
+    if (isStealthTypingActive) {
+      isStealthSelectAll = false;
+      setStealthCaretPos(input.value.length);
+      syncCaretMirror();
     }
   });
 
   cue.on('stealth:submit', () => {
     isStealthTypingActive = false;
     composer.classList.remove('stealth-active');
+    if (stealthIndicator) {
+      if (isTransparencyMode) {
+        stealthIndicator.classList.remove('hidden');
+        const pillText = stealthIndicator.querySelector('.stealth-pill-text');
+        if (pillText) pillText.textContent = 'Click-Through';
+      } else {
+        stealthIndicator.classList.add('hidden');
+      }
+    }
+    isStealthSelectAll = false;
+    stealthCaretPos = -1;
     updatePlaceholder();
     send();
   });
 
   cue.on('stealth:cancel', () => {
-    isStealthTypingActive = false;
-    composer.classList.remove('stealth-active');
+    if (isStealthTypingActive) {
+      isStealthTypingActive = false;
+      isStealthSelectAll = false;
+      composer.classList.remove('stealth-active');
+      if (stealthIndicator) {
+        if (isTransparencyMode) {
+          stealthIndicator.classList.remove('hidden');
+          const pillText = stealthIndicator.querySelector('.stealth-pill-text');
+          if (pillText) pillText.textContent = 'Click-Through';
+        } else {
+          stealthIndicator.classList.add('hidden');
+        }
+      }
+    } else if (isTransparencyMode) {
+      isTransparencyMode = false;
+      document.body.classList.remove('transparency-mode');
+      if (stealthIndicator) {
+        stealthIndicator.classList.add('hidden');
+      }
+    }
     updatePlaceholder();
+    syncCaretMirror();
   });
 
   cue.on('stealth:paste', ({ text }) => {
-    if (text) {
-      input.value += text;
-      syncPlaceholder();
-      updateSendButtonState();
+    if (!text) return;
+    if (isStealthSelectAll) {
+      input.value = text;
+      isStealthSelectAll = false;
+      setStealthCaretPos(text.length);
+    } else {
+      const pos = getStealthCaretPos();
+      input.value = input.value.slice(0, pos) + text + input.value.slice(pos);
+      setStealthCaretPos(pos + text.length);
     }
+    syncPlaceholder();
+    updateSendButtonState();
+    if (stealthCaretPos >= input.value.length) {
+      input.scrollTop = input.scrollHeight;
+    }
+    if (caretMirror) caretMirror.scrollTop = input.scrollTop;
   });
 
   cue.on('stealth:select-all', () => {
-    // Selected in stealth mode
+    if (input.value.length > 0) {
+      isStealthSelectAll = true;
+      syncCaretMirror();
+      try { input.select(); } catch (_) {}
+    }
   });
 
   // ---- real-time transcript display (interim + final) ----
@@ -1637,9 +2399,9 @@
     el.classList.add('show');
     appendTranscriptHistoryTurn(channel, text, true); // update sidebar interim
     
-    // FIX #12: Show interviewer's interim speech in input area
-    if (channel === 'them' && !input.value.trim()) {
-      showInterimInInput(text);
+    // Stream interviewer's interim speech into interviewer pill
+    if (channel === 'them' && text && text.trim().length > 1) {
+      showInterviewerPillInterim(text);
     }
   });
   cue.on('stt:final', ({ channel, text }) => {
@@ -1679,39 +2441,78 @@
     const title = last && last.caption ? last.caption.split('\n')[0].slice(0, 80) : 'Slide ' + count;
     showToast(`Slide ${count} captured · ${title}`, 3000);
   });
-  cue.on('llm:start', ({ userBubble, small, category }) => {
-    responseCount++;
-    if (responseCount > MAX_RESPONSES) {
-      const oldest = messages.querySelector('.response-group');
-      if (oldest) oldest.remove();
-      responseCount = MAX_RESPONSES;
+  cue.on('llm:start', ({ userBubble, small, category, mode, text }) => {
+    let group;
+    if (retryingGroup && retryingGroup.isConnected) {
+      group = retryingGroup;
+      retryingGroup = null;
+      const sep = group.querySelector('.response-sep');
+      if (sep) {
+        sep.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      if (category) {
+        let pill = group.querySelector('.category-pill');
+        if (!pill) {
+          pill = document.createElement('div');
+          pill.className = 'category-pill';
+          const sepEl = group.querySelector('.response-sep');
+          const userBubbleEl = group.querySelector('.user-bubble');
+          const insertAfter = userBubbleEl || sepEl;
+          if (insertAfter && insertAfter.nextSibling) {
+            group.insertBefore(pill, insertAfter.nextSibling);
+          } else {
+            group.appendChild(pill);
+          }
+        }
+        pill.textContent = category.charAt(0).toUpperCase() + category.slice(1);
+      }
+    } else {
+      retryingGroup = null;
+      responseCount++;
+      if (responseCount > MAX_RESPONSES) {
+        const oldest = messages.querySelector('.response-group');
+        if (oldest) oldest.remove();
+        responseCount = MAX_RESPONSES;
+      }
+      group = document.createElement('div');
+      group.className = 'response-group';
+      const sep = document.createElement('div');
+      sep.className = 'response-sep';
+      sep.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      group.appendChild(sep);
+      if (userBubble) {
+        const b = document.createElement('div');
+        b.className = 'user-bubble';
+        b.textContent = userBubble;
+        group.appendChild(b);
+      }
+      if (category) {
+        const pill = document.createElement('div');
+        pill.className = 'category-pill';
+        pill.textContent = category.charAt(0).toUpperCase() + category.slice(1);
+        group.appendChild(pill);
+      }
+      messages.appendChild(group);
     }
-    const group = document.createElement('div');
-    group.className = 'response-group';
-    const sep = document.createElement('div');
-    sep.className = 'response-sep';
-    sep.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    group.appendChild(sep);
-    if (userBubble) {
-      const b = document.createElement('div');
-      b.className = 'user-bubble';
-      b.textContent = userBubble;
-      group.appendChild(b);
+    if (mode) group.dataset.mode = mode;
+    if (text != null) group.dataset.text = text;
+    group.dataset.small = small ? 'true' : 'false';
+
+    if (!aiEl || aiEl.parentNode !== group) {
+      const oldAi = group.querySelector('.ai-text');
+      if (oldAi) oldAi.remove();
+      aiEl = document.createElement('div');
+      aiEl.className = 'ai-text' + (small ? ' small' : '');
+      aiEl.dataset.raw = '';
+      caretEl = document.createElement('span');
+      caretEl.className = 'ai-caret';
+      aiEl.appendChild(caretEl);
+      group.appendChild(aiEl);
     }
-    if (category) {
-      const pill = document.createElement('div');
-      pill.className = 'category-pill';
-      pill.textContent = category.charAt(0).toUpperCase() + category.slice(1);
-      group.appendChild(pill);
-    }
-    aiEl = document.createElement('div');
-    aiEl.className = 'ai-text' + (small ? ' small' : '');
-    aiEl.dataset.raw = '';
-    caretEl = document.createElement('span');
-    caretEl.className = 'ai-caret';
-    aiEl.appendChild(caretEl);
-    group.appendChild(aiEl);
-    messages.appendChild(group);
+
+    const existingActions = group.querySelector('.response-actions');
+    if (existingActions) existingActions.remove();
+
     // Use requestAnimationFrame so the DOM is fully updated before scrolling.
     // Scroll #messages directly rather than calling sep.scrollIntoView(): that
     // scrolls *every* scrollable ancestor, and once the panel is tall enough it
@@ -1720,6 +2521,7 @@
     // is no scrollbar or wheel gesture to undo it — the Stop/Hide/Quit controls
     // just never come back.
     requestAnimationFrame(() => {
+      const sep = group.querySelector('.response-sep');
       if (sep && sep.isConnected) {
         messages.scrollTo({ top: sep.offsetTop - messages.offsetTop, behavior: 'smooth' });
       }
@@ -1727,10 +2529,10 @@
     setBusy(true);
   });
   cue.on('llm:token', ({ text }) => appendToken(text));
-  cue.on('llm:done', () => { finalizeAi(); setBusy(false); });
+  cue.on('llm:done', () => { finalizeAi(false); setBusy(false); });
   cue.on('llm:error', ({ message, action }) => {
     if (!aiEl) startAi(true);
-    aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
+    aiEl.dataset.raw = message; finalizeAi(true); setBusy(false);
     // publik errors carry one action: the renderer's markdown emits no anchors,
     // so a link needs a real button (same pattern as the mic banner).
     if (action && action.kind === 'card') { showPublikCard(); return; }
@@ -1739,13 +2541,13 @@
   cue.on('transcript', ({ channel, text }) => {
     if (!text || text.trim().length < 2 || /^[?!.,;:\-…]+$/.test(text.trim())) return;
     appendTranscriptHistoryTurn(channel, text, false);
-    // Auto-fill the input box with Them (interviewer) speech
+    // Interviewer speech streams to Interviewer Pill (never dumps into input box!)
     if (channel === 'them') {
-      cancelSoftClear(); // Interviewer is speaking, cancel any pending clear
-      autoFillInputFromSTT(text);
+      cancelPillSoftClear();
+      accumulateInterviewerQuestion(text);
     } else {
-      // User spoke — soft clear (don't immediately wipe, wait to see if they're really answering)
-      softClearSTTFill();
+      // User spoke — soft clear (dims pill, auto-dismisses after sustained speech)
+      softClearInterviewerPill();
     }
   });
   // Transcript of a meeting resumed at launch: sidebar rows only — no
@@ -2334,11 +3136,23 @@
   // ---- example conversation (matches the reference screenshot) ------------
   function showExample() {
     clearMessages();
-    addUserBubble('What should I say?');
+    const group = document.createElement('div');
+    group.className = 'response-group';
+    group.dataset.mode = 'say';
+    group.dataset.text = '';
+    const b = document.createElement('div');
+    b.className = 'user-bubble';
+    b.textContent = 'What should I say?';
+    group.appendChild(b);
     const ai = document.createElement('div');
     ai.className = 'ai-text';
-    ai.textContent = '“A discounted cash flow model values a company by projecting future free cash flows and discounting them to present value using the weighted average cost of capital.”';
-    messages.appendChild(ai);
+    const sampleText = '“A discounted cash flow model values a company by projecting future free cash flows and discounting them to present value using the weighted average cost of capital.”';
+    ai.textContent = sampleText;
+    ai.dataset.raw = sampleText;
+    group.appendChild(ai);
+    const actions = createResponseActions(group, sampleText, false);
+    group.appendChild(actions);
+    messages.appendChild(group);
   }
 
   // ---- global keys -------------------------------------------------------
@@ -2359,6 +3173,7 @@
   let draggingWindow = false;
   function setIgnore(v) { if (v !== ignoring) { ignoring = v; cue.setIgnoreMouse(v); } }
   document.addEventListener('mousemove', (e) => {
+    if (isTransparencyMode) return; // Completely transparent to mouse hits in transparency mode
     // The window trails the cursor while dragging; going click-through then would drop the release.
     if (draggingWindow) return;
     const el = document.elementFromPoint(e.clientX, e.clientY);

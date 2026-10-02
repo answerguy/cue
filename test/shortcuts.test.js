@@ -7,6 +7,7 @@ test('defaults cover the core actions', () => {
   assert.strictEqual(DEFAULTS.assist, 'CommandOrControl+Shift+Return');
   assert.strictEqual(DEFAULTS.nofocus, 'CommandOrControl+Shift+F');
   assert.strictEqual(DEFAULTS.type, 'Alt+C');
+  assert.strictEqual(DEFAULTS.transparency, 'Alt+V');
   assert.ok(DEFAULTS.leetcode);
   assert.ok(DEFAULTS.quit);
 });

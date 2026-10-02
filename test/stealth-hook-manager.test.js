@@ -14,20 +14,44 @@ test('stealth hook manager initializes and provides isAvailable', async () => {
   }
 });
 
-test('stealth hook manager handles onNoFocusToggle, onStateChange, onShortcut, and onDelete callbacks', async () => {
+test('stealth hook manager handles onNoFocusToggle, onTransparencyToggle, onStateChange, onShortcut, onDelete, arrow keys, and onSelectAll callbacks', async () => {
   let toggledNoFocus = false;
+  let toggledTransparency = false;
   let stateChanged = null;
   let receivedShortcut = null;
   let receivedDelete = false;
+  let receivedLeft = false;
+  let receivedRight = false;
+  let receivedUp = false;
+  let receivedDown = false;
+  let receivedPageUp = false;
+  let receivedPageDown = false;
+  let receivedHome = false;
+  let receivedEnd = false;
+  let receivedSelectAll = false;
 
   const manager = createStealthHookManager({
     onNoFocusToggle: () => { toggledNoFocus = true; },
+    onTransparencyToggle: () => { toggledTransparency = true; },
     onStateChange: (state) => { stateChanged = state; },
     onShortcut: (action) => { receivedShortcut = action; },
-    onDelete: () => { receivedDelete = true; }
+    onDelete: () => { receivedDelete = true; },
+    onArrowLeft: () => { receivedLeft = true; },
+    onArrowRight: () => { receivedRight = true; },
+    onArrowUp: () => { receivedUp = true; },
+    onArrowDown: () => { receivedDown = true; },
+    onPageUp: () => { receivedPageUp = true; },
+    onPageDown: () => { receivedPageDown = true; },
+    onHome: () => { receivedHome = true; },
+    onEnd: () => { receivedEnd = true; },
+    onSelectAll: () => { receivedSelectAll = true; }
   });
 
   assert.equal(manager.isAvailable(), process.platform === 'win32');
+  if (process.platform === 'win32') {
+    assert.equal(manager.setTransparency(true), true);
+    assert.equal(manager.setTransparency(false), true);
+  }
   manager.dispose();
 });
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+console.log('[DEBUG] ENTERING SCRIPT');
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -40,18 +41,42 @@ async function sha256(filePath) {
 }
 
 async function downloadArtifact(url, destinationPath, expectedBytes, expectedSha256) {
-  const response = await fetch(url, { redirect: 'follow' });
-  if (!response.ok || !response.body) throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
-
-  const output = fs.createWriteStream(destinationPath, { flags: 'wx' });
-  try {
-    for await (const chunk of response.body) {
-      if (!output.write(Buffer.from(chunk))) {
-        await new Promise((resolve) => output.once('drain', resolve));
-      }
+  let downloaded = false;
+  const localArchive = path.join(PROJECT_ROOT, path.basename(destinationPath));
+  const fallbackArchive = path.join(PROJECT_ROOT, 'temp-whisper.zip');
+  for (const candidate of [localArchive, fallbackArchive]) {
+    if (fs.existsSync(candidate)) {
+      try {
+        const stats = await fs.promises.stat(candidate);
+        if (expectedBytes && stats.size === expectedBytes) {
+          await fs.promises.copyFile(candidate, destinationPath);
+          downloaded = true;
+          break;
+        }
+      } catch (_) {}
     }
-  } finally {
-    await new Promise((resolve, reject) => output.end((error) => error ? reject(error) : resolve()));
+  }
+
+  if (!downloaded && process.platform === 'win32') {
+    try {
+      execFileSync('curl.exe', ['-L', '-s', '-o', destinationPath, url], { stdio: 'inherit', timeout: 120000 });
+      downloaded = true;
+    } catch (_) {}
+  }
+  if (!downloaded) {
+    const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    if (!response.ok || !response.body) throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
+
+    const output = fs.createWriteStream(destinationPath, { flags: 'wx' });
+    try {
+      for await (const chunk of response.body) {
+        if (!output.write(Buffer.from(chunk))) {
+          await new Promise((resolve) => output.once('drain', resolve));
+        }
+      }
+    } finally {
+      await new Promise((resolve, reject) => output.end((error) => error ? reject(error) : resolve()));
+    }
   }
 
   const fileStats = await fs.promises.stat(destinationPath);
@@ -238,15 +263,22 @@ async function prepareWhisperRuntime({
   cacheRoot = DEFAULT_CACHE_ROOT,
   outputDirectory = null
 } = {}) {
+  console.log('[DEBUG] getRuntimeTarget');
   const target = getRuntimeTarget(platform, architecture);
+  console.log('[DEBUG] target:', target.key, target.url);
   const cachedRuntimeDirectory = path.join(cacheRoot, target.key);
 
-  if (!(await hasCurrentRuntime(cachedRuntimeDirectory, target))) {
+  const hasRuntime = await hasCurrentRuntime(cachedRuntimeDirectory, target);
+  console.log('[DEBUG] hasRuntime:', hasRuntime);
+  if (!hasRuntime) {
     const temporaryDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cue-whisper-runtime-'));
+    console.log('[DEBUG] temporaryDirectory:', temporaryDirectory);
     const preparedDirectory = path.join(temporaryDirectory, 'prepared');
     try {
       if (target.kind === 'archive') {
+        console.log('[DEBUG] prepareArchiveTarget...');
         await prepareArchiveTarget(target, temporaryDirectory, preparedDirectory);
+        console.log('[DEBUG] prepareArchiveTarget done');
       } else {
         await prepareMacTarget(target, temporaryDirectory, preparedDirectory);
       }
@@ -272,6 +304,7 @@ async function prepareWhisperRuntime({
 }
 
 async function main() {
+  console.log('[DEBUG] in main');
   const outputDirectory = readArgument('output');
   const runtimeDirectory = await prepareWhisperRuntime({
     platform: readArgument('platform') || process.platform,
@@ -281,6 +314,7 @@ async function main() {
   process.stdout.write(`Prepared whisper.cpp ${WHISPER_CPP_VERSION} runtime at ${runtimeDirectory}\n`);
 }
 
+console.log('[DEBUG] check require.main === module:', require.main === module);
 if (require.main === module) {
   main().catch((error) => {
     console.error(error.stack || error.message);

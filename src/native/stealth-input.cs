@@ -20,6 +20,14 @@ namespace CueStealthInput
         private const int VK_RETURN = 0x0D;
         private const int VK_ESCAPE = 0x1B;
         private const int VK_SPACE = 0x20;
+        private const int VK_PRIOR = 0x21; // Page Up
+        private const int VK_NEXT = 0x22;  // Page Down
+        private const int VK_END = 0x23;
+        private const int VK_HOME = 0x24;
+        private const int VK_LEFT = 0x25;
+        private const int VK_UP = 0x26;
+        private const int VK_RIGHT = 0x27;
+        private const int VK_DOWN = 0x28;
         private const int VK_DELETE = 0x2E;
         private const int VK_SHIFT = 0x10;
         private const int VK_CONTROL = 0x11;
@@ -40,6 +48,8 @@ namespace CueStealthInput
         private static volatile bool _capturing = false;
 
         private static long _lastAltCTicks = 0;
+        private static long _lastAltVTicks = 0;
+        private static volatile bool _transparencyMode = false;
         private static long _lastNoFocusTicks = 0;
         private static long _lastShortcutTicks = 0;
         private static readonly bool[] _swallowedKeys = new bool[256];
@@ -54,13 +64,16 @@ namespace CueStealthInput
 
         private static readonly IntPtr CUE_MAGIC = (IntPtr)0x43554531; // "CUE1"
         private static readonly object _altLock = new object();
+        private static volatile bool _leftAltDown = false;
+        private static volatile bool _rightAltDown = false;
         private static volatile bool _altPending = false;
+        private static volatile bool _altFlushed = false;
         private static volatile bool _altSwallowed = false;
         private static uint _pendingAltVk = 0;
         private static uint _pendingAltScan = 0;
         private static uint _pendingAltFlags = 0;
         private static System.Threading.Timer _altTimer = null;
-        private const int ALT_BUFFER_TIMEOUT_MS = 400;
+        private const int ALT_BUFFER_TIMEOUT_MS = 250;
 
         private static readonly object _ctrlLock = new object();
         private static volatile bool _ctrlPending = false;
@@ -123,6 +136,7 @@ namespace CueStealthInput
                 if (_altPending)
                 {
                     _altPending = false;
+                    _altFlushed = true;
                     try
                     {
                         if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
@@ -144,6 +158,7 @@ namespace CueStealthInput
                 if (_altPending)
                 {
                     _altPending = false;
+                    _altFlushed = false;
                     try
                     {
                         if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
@@ -249,6 +264,41 @@ namespace CueStealthInput
             }
         }
 
+        private static void ReleaseAllModifiers()
+        {
+            try
+            {
+                keybd_event((byte)VK_LMENU, 0x38, 2, CUE_MAGIC);
+                keybd_event((byte)VK_RMENU, 0x38, 2 | 1, CUE_MAGIC);
+                keybd_event((byte)VK_MENU, 0x38, 2, CUE_MAGIC);
+                keybd_event((byte)VK_LCONTROL, 0x1D, 2, CUE_MAGIC);
+                keybd_event((byte)VK_RCONTROL, 0x1D, 2 | 1, CUE_MAGIC);
+                keybd_event((byte)VK_CONTROL, 0x1D, 2, CUE_MAGIC);
+                keybd_event((byte)VK_LSHIFT, 0x2A, 2, CUE_MAGIC);
+                keybd_event((byte)VK_RSHIFT, 0x36, 2, CUE_MAGIC);
+                keybd_event((byte)VK_SHIFT, 0x2A, 2, CUE_MAGIC);
+            }
+            catch { }
+        }
+
+        private static void CleanUp()
+        {
+            try
+            {
+                if (_altTimer != null) { try { _altTimer.Dispose(); } catch { } }
+                if (_ctrlTimer != null) { try { _ctrlTimer.Dispose(); } catch { } }
+                if (_shiftTimer != null) { try { _shiftTimer.Dispose(); } catch { } }
+
+                if (_hookID != IntPtr.Zero)
+                {
+                    UnhookWindowsHookEx(_hookID);
+                    _hookID = IntPtr.Zero;
+                }
+                ReleaseAllModifiers();
+            }
+            catch { }
+        }
+
         [StructLayout(LayoutKind.Sequential)]
         private struct KBDLLHOOKSTRUCT
         {
@@ -351,6 +401,8 @@ namespace CueStealthInput
                 FlushPendingShift();
             }, null, Timeout.Infinite, Timeout.Infinite);
 
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => { CleanUp(); };
+
             // Thread for reading commands from stdin
             Thread stdinThread = new Thread(() =>
             {
@@ -363,27 +415,65 @@ namespace CueStealthInput
                         if (line.Equals("START", StringComparison.OrdinalIgnoreCase))
                         {
                             _capturing = true;
+                            _ctrlSwallowed = false;
+                            _shiftSwallowed = false;
+                            _ctrlPending = false;
+                            _shiftPending = false;
+                            _leftCtrlDown = (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0;
+                            _rightCtrlDown = (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0;
+                            _leftShiftDown = (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0;
+                            _rightShiftDown = (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
                             Console.WriteLine("{\"event\":\"state\",\"capturing\":true}");
                             Console.Out.Flush();
                         }
                         else if (line.Equals("STOP", StringComparison.OrdinalIgnoreCase))
                         {
                             _capturing = false;
+                            _ctrlSwallowed = false;
+                            _shiftSwallowed = false;
+                            _ctrlPending = false;
+                            _shiftPending = false;
+                            _leftCtrlDown = false;
+                            _rightCtrlDown = false;
+                            _leftShiftDown = false;
+                            _rightShiftDown = false;
+                            _altSwallowed = false;
+                            _altPending = false;
+                            _leftAltDown = false;
+                            _rightAltDown = false;
+                            ReleaseAllModifiers();
                             Console.WriteLine("{\"event\":\"state\",\"capturing\":false}");
+                            Console.Out.Flush();
+                        }
+                        else if (line.StartsWith("SET_TRANSPARENCY", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string[] parts = line.Split(' ');
+                            bool enable = parts.Length > 1 && parts[1].Equals("true", StringComparison.OrdinalIgnoreCase);
+                            _transparencyMode = enable;
+                            if (!_transparencyMode)
+                            {
+                                _altSwallowed = false;
+                                _altPending = false;
+                                _leftAltDown = false;
+                                _rightAltDown = false;
+                                ReleaseAllModifiers();
+                            }
+                            Console.WriteLine("{\"event\":\"transparency_state\",\"enabled\":" + (_transparencyMode ? "true" : "false") + "}");
                             Console.Out.Flush();
                         }
                         else if (line.Equals("QUIT", StringComparison.OrdinalIgnoreCase) ||
                                  line.Equals("EXIT", StringComparison.OrdinalIgnoreCase))
                         {
-                            if (_altTimer != null) { try { _altTimer.Dispose(); } catch { } }
-                            if (_ctrlTimer != null) { try { _ctrlTimer.Dispose(); } catch { } }
-                            if (_shiftTimer != null) { try { _shiftTimer.Dispose(); } catch { } }
+                            CleanUp();
                             Environment.Exit(0);
                         }
                     }
+                    CleanUp();
+                    Environment.Exit(0);
                 }
                 catch
                 {
+                    CleanUp();
                     Environment.Exit(0);
                 }
             });
@@ -452,50 +542,108 @@ namespace CueStealthInput
                         else { _leftCtrlDown = false; _rightCtrlDown = false; }
                     }
 
+                    if (vk == VK_LMENU) _leftAltDown = isKeyDown;
+                    else if (vk == VK_RMENU) _rightAltDown = isKeyDown;
+                    else if (vk == VK_MENU)
+                    {
+                        if (isKeyDown) { _leftAltDown = true; }
+                        else { _leftAltDown = false; _rightAltDown = false; }
+                    }
+
                     bool ctrl = IsControlActive();
-                    bool alt = (hookStruct.flags & LLKHF_ALTDOWN) != 0 ||
-                               (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 ||
-                               (GetAsyncKeyState(VK_LMENU) & 0x8000) != 0 ||
-                               (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0 ||
-                               msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP;
+                    bool alt = _leftAltDown || _rightAltDown ||
+                               ((hookStruct.flags & LLKHF_ALTDOWN) != 0 && (GetAsyncKeyState(VK_MENU) & 0x8000) != 0);
                     bool win = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
                     bool shift = IsShiftActive();
 
                     bool isMenu = IsMenuKey(vk);
                     bool isC = (vk == 0x43 || vk == 0x63); // 'C' key
+                    bool isV = (vk == 0x56 || vk == 0x76); // 'V' key
 
                     // A. In focus/stealth mode (_capturing == true), consume Shift and Ctrl keypresses completely!
                     if (_capturing && IsShiftKey(vk))
                     {
-                        if (isKeyDown) _shiftSwallowed = true;
+                        if (isKeyDown)
+                        {
+                            _shiftSwallowed = true;
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (!_leftShiftDown && !_rightShiftDown)
+                            {
+                                _shiftSwallowed = false;
+                                _shiftPending = false;
+                            }
+                        }
                         return (IntPtr)1; // Consume / Swallow Shift down and up!
                     }
                     if (_capturing && IsControlKey(vk))
                     {
-                        if (isKeyDown) _ctrlSwallowed = true;
+                        if (isKeyDown)
+                        {
+                            _ctrlSwallowed = true;
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (!_leftCtrlDown && !_rightCtrlDown)
+                            {
+                                _ctrlSwallowed = false;
+                                _ctrlPending = false;
+                            }
+                        }
                         return (IntPtr)1; // Consume / Swallow Ctrl down and up!
                     }
 
-                    // B. Swallowed modifier keyups: swallow cleanly so no modifier leaks to OS
-                    if (isKeyUp && IsShiftKey(vk) && _shiftSwallowed)
+                    // B. Modifier keyups: handle pending taps and cleanly swallow consumed releases
+                    if (isKeyUp && IsShiftKey(vk))
                     {
-                        if (!_leftShiftDown && !_rightShiftDown) _shiftSwallowed = false;
-                        if (_shiftFlushed)
+                        if (!_leftShiftDown && !_rightShiftDown)
                         {
-                            _shiftFlushed = false;
-                            return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                            lock (_shiftLock)
+                            {
+                                if (_shiftPending)
+                                {
+                                    FlushPendingShiftTap();
+                                    return (IntPtr)1;
+                                }
+                                if (_shiftSwallowed)
+                                {
+                                    _shiftSwallowed = false;
+                                    return (IntPtr)1;
+                                }
+                                if (_shiftFlushed)
+                                {
+                                    _shiftFlushed = false;
+                                    return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                                }
+                            }
                         }
-                        return (IntPtr)1;
+                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
                     }
-                    if (isKeyUp && IsControlKey(vk) && _ctrlSwallowed)
+                    if (isKeyUp && IsControlKey(vk))
                     {
-                        if (!_leftCtrlDown && !_rightCtrlDown) _ctrlSwallowed = false;
-                        if (_ctrlFlushed)
+                        if (!_leftCtrlDown && !_rightCtrlDown)
                         {
-                            _ctrlFlushed = false;
-                            return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                            lock (_ctrlLock)
+                            {
+                                if (_ctrlPending)
+                                {
+                                    FlushPendingCtrlTap();
+                                    return (IntPtr)1;
+                                }
+                                if (_ctrlSwallowed)
+                                {
+                                    _ctrlSwallowed = false;
+                                    return (IntPtr)1;
+                                }
+                                if (_ctrlFlushed)
+                                {
+                                    _ctrlFlushed = false;
+                                    return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                                }
+                            }
                         }
-                        return (IntPtr)1;
+                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
                     }
 
                     // 1. Buffer Alt keydown when pressed alone (without Ctrl or Win)
@@ -503,9 +651,15 @@ namespace CueStealthInput
                     {
                         lock (_altLock)
                         {
-                            if (!_altPending && !_altSwallowed)
+                            if (_altSwallowed)
+                            {
+                                // Alt was consumed as part of Alt+C or Alt+V: keep swallowed on all auto-repeats!
+                                return (IntPtr)1;
+                            }
+                            if (!_altPending)
                             {
                                 _altPending = true;
+                                _altFlushed = false;
                                 _pendingAltVk = vk;
                                 _pendingAltScan = hookStruct.scanCode;
                                 _pendingAltFlags = hookStruct.flags;
@@ -515,7 +669,7 @@ namespace CueStealthInput
                                 }
                                 return (IntPtr)1; // Swallow initial Alt down into buffer!
                             }
-                            else if (_altPending)
+                            else
                             {
                                 // Repeated Alt down while already pending: keep swallowed
                                 return (IntPtr)1;
@@ -526,21 +680,39 @@ namespace CueStealthInput
                     // 2. Alt keyup handling
                     if (isKeyUp && isMenu)
                     {
-                        lock (_altLock)
+                        if (!_leftAltDown && !_rightAltDown)
                         {
-                            if (_altPending)
+                            lock (_altLock)
                             {
-                                // User released Alt alone before timeout: flush down + up tap
-                                FlushPendingAltTap();
-                                return (IntPtr)1;
-                            }
-                            if (_altSwallowed)
-                            {
-                                // Alt was consumed as part of Alt+C: swallow Alt up completely!
-                                _altSwallowed = false;
-                                return (IntPtr)1;
+                                if (_altPending)
+                                {
+                                    // User released Alt alone before timeout: flush down + up tap
+                                    FlushPendingAltTap();
+                                    return (IntPtr)1;
+                                }
+                                if (_altSwallowed)
+                                {
+                                    // Alt was consumed as part of Alt+C or Alt+V: swallow Alt up completely!
+                                    _altSwallowed = false;
+                                    if (_altFlushed)
+                                    {
+                                        _altFlushed = false;
+                                        byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                        byte ascan = (byte)_pendingAltScan;
+                                        uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                        keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                    }
+                                    ReleaseAllModifiers();
+                                    return (IntPtr)1;
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                                }
                             }
                         }
+                        return CallNextHookEx(_hookID, nCode, wParam, lParam);
                     }
 
                     // 3. 'C' key pressed while Alt is pending or Alt is held (Alt+C toggle)
@@ -555,11 +727,26 @@ namespace CueStealthInput
                                     _altPending = false;
                                     if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
                                 }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
                                 _altSwallowed = true; // Mark Alt completely swallowed!
                             }
 
+                            // Auto-repeat check: ignore repeating keydown while key is held down
+                            if (vk < 256 && _swallowedKeys[vk])
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+
                             long nowTicks = DateTime.UtcNow.Ticks;
-                            if (nowTicks - _lastAltCTicks > TimeSpan.FromMilliseconds(250).Ticks)
+                            if (nowTicks - _lastAltCTicks > TimeSpan.FromMilliseconds(150).Ticks)
                             {
                                 _lastAltCTicks = nowTicks;
                                 _capturing = !_capturing;
@@ -567,11 +754,22 @@ namespace CueStealthInput
                                 {
                                     _leftShiftDown = false;
                                     _rightShiftDown = false;
+                                    _leftCtrlDown = false;
+                                    _rightCtrlDown = false;
+                                    _ctrlSwallowed = false;
+                                    _shiftSwallowed = false;
+                                    _ctrlPending = false;
+                                    _shiftPending = false;
+                                    _altSwallowed = false;
+                                    _altPending = false;
+                                    _leftAltDown = false;
+                                    _rightAltDown = false;
+                                    ReleaseAllModifiers();
                                 }
                                 Console.WriteLine("{\"event\":\"toggle\",\"capturing\":" + (_capturing ? "true" : "false") + "}");
+                                Console.WriteLine("{\"event\":\"state\",\"capturing\":" + (_capturing ? "true" : "false") + "}");
                                 Console.Out.Flush();
                             }
-                            if (vk < 256) _swallowedKeys[vk] = true;
                         }
                         else if (isKeyUp)
                         {
@@ -580,10 +778,73 @@ namespace CueStealthInput
                         return (IntPtr)1; // Swallow 'C' down and up completely!
                     }
 
+                    // 3b. 'V' key pressed while Alt is pending or Alt is held (Alt+V transparency toggle)
+                    if (isV && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            // Auto-repeat check: ignore repeating keydown while key is held down
+                            if (vk < 256 && _swallowedKeys[vk])
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltVTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                            {
+                                _lastAltVTicks = nowTicks;
+                                _transparencyMode = !_transparencyMode;
+                                if (!_transparencyMode)
+                                {
+                                    ReleaseAllModifiers();
+                                }
+                                Console.WriteLine("{\"event\":\"transparency_toggle\",\"enabled\":" + (_transparencyMode ? "true" : "false") + "}");
+                                Console.WriteLine("{\"event\":\"transparency_state\",\"enabled\":" + (_transparencyMode ? "true" : "false") + "}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'V' down and up completely!
+                    }
+
                     // 4. Any other key arrived while Alt is pending: flush buffered Alt down immediately!
                     if (_altPending && !isMenu)
                     {
-                        FlushPendingAlt();
+                        if (!_capturing && !_transparencyMode)
+                        {
+                            FlushPendingAlt();
+                        }
+                        else
+                        {
+                            lock (_altLock)
+                            {
+                                _altPending = false;
+                                if (_altTimer != null) { try { _altTimer.Change(Timeout.Infinite, Timeout.Infinite); } catch { } }
+                                _altSwallowed = true;
+                            }
+                        }
                     }
 
                     // 5. Buffer Ctrl keydown when pressed alone (without Alt or Win)
@@ -591,7 +852,11 @@ namespace CueStealthInput
                     {
                         lock (_ctrlLock)
                         {
-                            if (!_ctrlPending && !_ctrlSwallowed)
+                            if (_ctrlSwallowed)
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (!_ctrlPending)
                             {
                                 _ctrlPending = true;
                                 _ctrlFlushed = false;
@@ -601,21 +866,8 @@ namespace CueStealthInput
                                 if (_ctrlTimer != null) _ctrlTimer.Change(CTRL_BUFFER_TIMEOUT_MS, Timeout.Infinite);
                                 return (IntPtr)1; // Swallow initial Ctrl down into buffer!
                             }
-                            else if (_ctrlPending)
+                            else
                             {
-                                return (IntPtr)1;
-                            }
-                        }
-                    }
-
-                    // Ctrl keyup when pending
-                    if (isKeyUp && IsControlKey(vk))
-                    {
-                        lock (_ctrlLock)
-                        {
-                            if (_ctrlPending)
-                            {
-                                FlushPendingCtrlTap();
                                 return (IntPtr)1;
                             }
                         }
@@ -626,7 +878,11 @@ namespace CueStealthInput
                     {
                         lock (_shiftLock)
                         {
-                            if (!_shiftPending && !_shiftSwallowed)
+                            if (_shiftSwallowed)
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (!_shiftPending)
                             {
                                 _shiftPending = true;
                                 _shiftFlushed = false;
@@ -636,21 +892,8 @@ namespace CueStealthInput
                                 if (_shiftTimer != null) _shiftTimer.Change(SHIFT_BUFFER_TIMEOUT_MS, Timeout.Infinite);
                                 return (IntPtr)1; // Swallow Shift down into buffer!
                             }
-                            else if (_shiftPending)
+                            else
                             {
-                                return (IntPtr)1;
-                            }
-                        }
-                    }
-
-                    // Shift keyup when pending
-                    if (isKeyUp && IsShiftKey(vk))
-                    {
-                        lock (_shiftLock)
-                        {
-                            if (_shiftPending)
-                            {
-                                FlushPendingShiftTap();
                                 return (IntPtr)1;
                             }
                         }
@@ -658,8 +901,8 @@ namespace CueStealthInput
 
                     // 7. Global shortcuts: Ctrl+Return (say), Ctrl+Shift+Return (assist), Ctrl+H (leetcode), Ctrl+Shift+F (nofocus)
                     // These keybinds must NEVER leak while cue is running, whether in focus mode or not.
-                    bool isCtrlEffective = ctrl || _ctrlPending || _ctrlSwallowed;
-                    bool isShiftEffective = shift || _shiftPending || _shiftSwallowed;
+                    bool isCtrlEffective = (ctrl || _ctrlPending) && IsControlActive();
+                    bool isShiftEffective = (shift || _shiftPending) && IsShiftActive();
 
                     if (isCtrlEffective && !alt && !win)
                     {
@@ -752,8 +995,32 @@ namespace CueStealthInput
                     // Flush pending modifiers on any other non-modifier key
                     if (!IsControlKey(vk) && !IsShiftKey(vk) && !IsMenuKey(vk))
                     {
-                        if (_ctrlPending) FlushPendingCtrl();
-                        if (_shiftPending) FlushPendingShift();
+                        if (!_capturing)
+                        {
+                            if (_ctrlPending) FlushPendingCtrl();
+                            if (_shiftPending) FlushPendingShift();
+                        }
+                        else
+                        {
+                            if (_ctrlPending)
+                            {
+                                lock (_ctrlLock)
+                                {
+                                    _ctrlPending = false;
+                                    if (_ctrlTimer != null) { try { _ctrlTimer.Change(Timeout.Infinite, Timeout.Infinite); } catch { } }
+                                    _ctrlSwallowed = true;
+                                }
+                            }
+                            if (_shiftPending)
+                            {
+                                lock (_shiftLock)
+                                {
+                                    _shiftPending = false;
+                                    if (_shiftTimer != null) { try { _shiftTimer.Change(Timeout.Infinite, Timeout.Infinite); } catch { } }
+                                    _shiftSwallowed = true;
+                                }
+                            }
+                        }
                     }
 
                     // If this key was swallowed on keydown, swallow its keyup as well
@@ -763,18 +1030,43 @@ namespace CueStealthInput
                         return (IntPtr)1;
                     }
 
+                    // STRICT ARROW KEY & PAGE KEY RESERVATION:
+                    // Up and Down arrow keys (as well as Page Up/Down) are strictly reserved for Cue
+                    // whenever Cue is running in either stealth typing mode or transparency mode.
+                    if (_capturing || _transparencyMode)
+                    {
+                        if (vk == VK_UP || vk == VK_DOWN || vk == VK_PRIOR || vk == VK_NEXT)
+                        {
+                            if (isKeyDown)
+                            {
+                                string evt = null;
+                                if (vk == VK_UP) evt = "arrow_up";
+                                else if (vk == VK_DOWN) evt = "arrow_down";
+                                else if (vk == VK_PRIOR) evt = "page_up";
+                                else if (vk == VK_NEXT) evt = "page_down";
+
+                                if (evt != null)
+                                {
+                                    Console.WriteLine("{\"event\":\"" + evt + "\"}");
+                                    Console.Out.Flush();
+                                }
+                            }
+                            return (IntPtr)1; // Strictly swallow both keydown and keyup! Never escape!
+                        }
+                    }
+
                     // 8. While capturing stealth input, process and swallow keystrokes
                     if (_capturing)
                     {
-                        // Pass through OS shortcuts like Alt+Tab, Alt+F4, Win+...
-                        if (win || (alt && !ctrl))
+                        // Pass through OS shortcuts like Alt+Tab, Alt+F4, Alt+Esc, Win+...
+                        if (win || (alt && !ctrl && (vk == VK_TAB || vk == 0x73 /* F4 */ || vk == VK_ESCAPE)))
                         {
                             return CallNextHookEx(_hookID, nCode, wParam, lParam);
                         }
 
                         // Pass through pure modifier keys alone (Caps, Win) so keyboard state works
-                        // Note: Shift and Ctrl are consumed above!
-                        if (IsMenuKey(vk) || vk == VK_CAPITAL || vk == VK_LWIN || vk == VK_RWIN)
+                        // Note: Shift and Ctrl are consumed above, Alt is controlled by Alt state machine above!
+                        if (vk == VK_CAPITAL || vk == VK_LWIN || vk == VK_RWIN)
                         {
                             return CallNextHookEx(_hookID, nCode, wParam, lParam);
                         }
@@ -793,7 +1085,21 @@ namespace CueStealthInput
                         if (vk == VK_ESCAPE)
                         {
                             _capturing = false;
+                            _ctrlSwallowed = false;
+                            _shiftSwallowed = false;
+                            _ctrlPending = false;
+                            _shiftPending = false;
+                            _leftCtrlDown = false;
+                            _rightCtrlDown = false;
+                            _leftShiftDown = false;
+                            _rightShiftDown = false;
+                            _altSwallowed = false;
+                            _altPending = false;
+                            _leftAltDown = false;
+                            _rightAltDown = false;
+                            ReleaseAllModifiers();
                             Console.WriteLine("{\"event\":\"escape\"}");
+                            Console.WriteLine("{\"event\":\"state\",\"capturing\":false}");
                             Console.Out.Flush();
                             return (IntPtr)1; // swallow Escape
                         }
@@ -808,12 +1114,26 @@ namespace CueStealthInput
                                 return (IntPtr)1;
                             }
                             _capturing = false;
+                            _ctrlSwallowed = false;
+                            _shiftSwallowed = false;
+                            _ctrlPending = false;
+                            _shiftPending = false;
+                            _leftCtrlDown = false;
+                            _rightCtrlDown = false;
+                            _leftShiftDown = false;
+                            _rightShiftDown = false;
+                            _altSwallowed = false;
+                            _altPending = false;
+                            _leftAltDown = false;
+                            _rightAltDown = false;
+                            ReleaseAllModifiers();
                             Console.WriteLine("{\"event\":\"enter\"}");
+                            Console.WriteLine("{\"event\":\"state\",\"capturing\":false}");
                             Console.Out.Flush();
                             return (IntPtr)1; // swallow Enter
                         }
 
-                        // Handle Backspace: remove last character
+                        // Handle Backspace: remove character before caret
                         if (vk == VK_BACK)
                         {
                             Console.WriteLine("{\"event\":\"backspace\"}");
@@ -821,7 +1141,7 @@ namespace CueStealthInput
                             return (IntPtr)1; // swallow Backspace
                         }
 
-                        // Handle Delete: delete character
+                        // Handle Delete: delete character after caret
                         if (vk == VK_DELETE)
                         {
                             Console.WriteLine("{\"event\":\"delete\"}");
@@ -829,9 +1149,46 @@ namespace CueStealthInput
                             return (IntPtr)1; // swallow Delete
                         }
 
-                        // For Ctrl shortcuts (like Ctrl+A, Ctrl+V, etc.)
-                        if (ctrl)
+                        // Handle Left/Right arrow, Home, End for caret navigation
+                        if (vk == VK_LEFT)
                         {
+                            Console.WriteLine("{\"event\":\"arrow_left\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow Left
+                        }
+                        if (vk == VK_RIGHT)
+                        {
+                            Console.WriteLine("{\"event\":\"arrow_right\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow Right
+                        }
+                        if (vk == VK_HOME)
+                        {
+                            Console.WriteLine("{\"event\":\"home\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow Home
+                        }
+                        if (vk == VK_END)
+                        {
+                            Console.WriteLine("{\"event\":\"end\"}");
+                            Console.Out.Flush();
+                            return (IntPtr)1; // swallow End
+                        }
+
+                        // For Ctrl shortcuts (like Ctrl+A, Ctrl+V, etc.)
+                        bool isCtrlActive = IsControlActive();
+                        if (isCtrlActive)
+                        {
+                            lock (_ctrlLock)
+                            {
+                                if (_ctrlPending)
+                                {
+                                    _ctrlPending = false;
+                                    if (_ctrlTimer != null) { try { _ctrlTimer.Change(Timeout.Infinite, Timeout.Infinite); } catch { } }
+                                }
+                                _ctrlSwallowed = true;
+                            }
+
                             if (vk == 0x56) // Ctrl+V paste
                             {
                                 Console.WriteLine("{\"event\":\"paste\"}");
@@ -844,7 +1201,8 @@ namespace CueStealthInput
                                 Console.Out.Flush();
                                 return (IntPtr)1;
                             }
-                            return CallNextHookEx(_hookID, nCode, wParam, lParam);
+                            // Swallow other Ctrl combinations during capture so nothing leaks to background app
+                            return (IntPtr)1;
                         }
 
                         // Translate to Unicode character
@@ -882,6 +1240,25 @@ namespace CueStealthInput
 
                         // Swallow any other key while capturing to prevent leaking to background app
                         return (IntPtr)1;
+                    }
+
+                    // 9. When in transparency mode and typing mode is off:
+                    // Arrow keys and page keys scroll through the returned answer (strictly swallowed above).
+                    // Escape exits transparency mode.
+                    // All other keys pass through cleanly to the foreground application.
+                    if (_transparencyMode)
+                    {
+                        if (vk == VK_ESCAPE)
+                        {
+                            if (isKeyDown)
+                            {
+                                _transparencyMode = false;
+                                ReleaseAllModifiers();
+                                Console.WriteLine("{\"event\":\"transparency_state\",\"enabled\":false}");
+                                Console.Out.Flush();
+                            }
+                            return (IntPtr)1; // swallow Escape
+                        }
                     }
                 }
             }

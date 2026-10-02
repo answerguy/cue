@@ -25,6 +25,30 @@ const canNotarize =
   !!process.env.APPLE_APP_SPECIFIC_PASSWORD &&
   !!process.env.APPLE_TEAM_ID;
 
+const fs = require("fs");
+const path = require("path");
+
+function findLocalElectronDist() {
+  if (process.env.ELECTRON_DIST) return process.env.ELECTRON_DIST;
+  if (process.platform === "win32" && process.env.LOCALAPPDATA) {
+    const cacheDir = path.join(process.env.LOCALAPPDATA, "electron", "Cache");
+    if (fs.existsSync(cacheDir)) {
+      try {
+        const subdirs = fs.readdirSync(cacheDir);
+        for (const sub of subdirs) {
+          const zipPath = path.join(cacheDir, sub, "electron-v33.2.1-win32-x64.zip");
+          if (fs.existsSync(zipPath)) {
+            return zipPath;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+  return undefined;
+}
+
+const localElectronDist = findLocalElectronDist();
+
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: "com.cue.overlay",
@@ -32,6 +56,7 @@ module.exports = {
   asar: false,
   publish: null,
   artifactName: "${productName}-${version}-${os}-${arch}.${ext}",
+  electronDist: localElectronDist,
   // An allowlist, so anything new has to be added here or it simply is not in
   // the shipped app — and the only symptom is a require() that throws at
   // launch, in a build that ran fine from source.

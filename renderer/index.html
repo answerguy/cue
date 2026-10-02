@@ -73,18 +73,37 @@
                 <span class="ic"></span><span>Prev 4</span>
               </button>
             </div>
+            <div id="interviewer-pill" class="interviewer-pill hidden" role="region" aria-label="Interviewer question">
+              <div class="ip-header">
+                <span class="ip-badge"><span class="ip-dot"></span>Interviewer</span>
+                <div class="ip-actions">
+                  <button type="button" class="ip-btn ip-btn-answer" id="ip-answer-btn" aria-label="Answer interviewer question">
+                    <span class="ip-key">↵</span> Answer
+                  </button>
+                  <button type="button" class="ip-btn ip-btn-insert" id="ip-insert-btn" aria-label="Insert question into input box">
+                    <span class="ip-key">⇥</span> Insert
+                  </button>
+                  <button type="button" class="ip-btn ip-btn-dismiss" id="ip-dismiss-btn" aria-label="Dismiss interviewer question">✕</button>
+                </div>
+              </div>
+              <div class="ip-body" id="ip-text"></div>
+            </div>
 
             <div id="composer">
               <div id="input-area">
                 <div id="placeholder">No-focus mode active · <span class="keycap">Alt</span><span class="keycap">C</span> to type · <span class="keycap">Ctrl</span><span class="keycap">⇧</span><span class="keycap">F</span> toggle</div>
                 <textarea id="input" rows="1" spellcheck="false"></textarea>
-                <div id="stealth-caret-mirror" class="stealth-caret-mirror" aria-hidden="true"><span id="stealth-caret-text"></span><span id="stealth-caret" class="stealth-caret"></span></div>
+                <div id="stealth-caret-mirror" class="stealth-caret-mirror" aria-hidden="true"><span id="stealth-caret-text"></span><span id="stealth-caret" class="stealth-caret"></span><span id="stealth-caret-after" class="stealth-caret-after"></span></div>
                 <button id="clear-input-btn" class="input-delete-btn hidden" aria-label="Clear input">✕</button>
               </div>
               <div id="composer-bottom">
                 <button id="smart-toggle" class="smart-pill" aria-label="Smart"><span class="ic"></span><span>Smart</span></button>
                 <button id="history-btn" class="history-btn" aria-label="Transcription history"><span class="ic"></span><span>Transcription history</span></button>
                 <button id="more-btn" class="more-btn" aria-label="Settings"></button>
+                <div id="stealth-indicator" class="stealth-pill hidden" aria-label="Stealth typing active">
+                  <span class="stealth-pill-dot"></span>
+                  <span class="stealth-pill-text">Stealth</span>
+                </div>
                 <div class="spacer"></div>
                 <button id="send-btn" aria-label="Send"></button>
               </div>

@@ -11,7 +11,8 @@ const DEFAULTS = {
   passthrough: 'CommandOrControl+Shift+I',
   screen: 'CommandOrControl+Shift+S',
   nofocus: 'CommandOrControl+Shift+F',
-  type: 'Alt+C'
+  type: 'Alt+C',
+  transparency: 'Alt+V'
 };
 
 // Every action that maps to a shortcut. Values = defaults; can be overridden via settings.

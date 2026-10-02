@@ -26,6 +26,7 @@ test('preload.js exposes nofocus APIs and allowed IPC channels', () => {
   assert.match(preloadSrc, /nofocusSet:\s*\(enabled\)\s*=>\s*ipcRenderer\.invoke\('nofocus:set',\s*enabled\)/);
   assert.match(preloadSrc, /nofocusToggle:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('nofocus:toggle'\)/);
   assert.match(preloadSrc, /stealthGet:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('stealth:get'\)/);
+  assert.match(preloadSrc, /stealthSet:\s*\(enabled\)\s*=>\s*ipcRenderer\.invoke\('stealth:set',\s*enabled\)/);
   assert.match(preloadSrc, /stealthToggle:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('stealth:toggle'\)/);
   assert.match(preloadSrc, /'nofocus:state'/);
   assert.match(preloadSrc, /'composer:focus'/);
@@ -40,6 +41,7 @@ test('main.js registers global shortcuts and IPC handlers for nofocus mode', () 
   assert.match(mainSrc, /ipcMain\.handle\('nofocus:set'/);
   assert.match(mainSrc, /ipcMain\.handle\('nofocus:toggle'/);
   assert.match(mainSrc, /ipcMain\.handle\('stealth:get'/);
+  assert.match(mainSrc, /ipcMain\.handle\('stealth:set'/);
   assert.match(mainSrc, /ipcMain\.handle\('stealth:toggle'/);
   assert.match(mainSrc, /globalShortcut\.register\('CommandOrControl\+Shift\+F'/);
   assert.match(mainSrc, /globalShortcut\.register\('Alt\+C'/);
@@ -89,3 +91,115 @@ test('composer input area includes blinking caret mirror and fixed delete button
   assert.match(mainSrc, /onShortcut:\s*\(action\)\s*=>\s*triggerShortcutAction\(action\)/);
   assert.match(mainSrc, /onDelete:\s*\(\)\s*=>\s*send\('stealth:delete'\)/);
 });
+
+test('stealth typing activates on textbox click and deactivates on click outside or hide button collapse', () => {
+  // Renderer code structure checks
+  assert.match(jsSrc, /function isInsideInputArea\(/);
+  assert.match(jsSrc, /function activateStealthTyping\(/);
+  assert.match(jsSrc, /function deactivateStealthTyping\(/);
+  assert.match(jsSrc, /document\.addEventListener\('pointerdown',\s*\(e\)\s*=>\s*\{\s*if\s*\(isStealthTypingActive\s*&&\s*!isInsideInputArea\(e\.target\)\)\s*\{\s*deactivateStealthTyping\(\);/);
+  assert.match(jsSrc, /document\.addEventListener\('click',\s*\(e\)\s*=>\s*\{\s*if\s*\(isStealthTypingActive\s*&&\s*!isInsideInputArea\(e\.target\)\)\s*\{\s*deactivateStealthTyping\(\);/);
+  assert.match(jsSrc, /if\s*\(collapsed\)\s*\{\s*deactivateStealthTyping\(\);/);
+
+  // Behavioral test of isInsideInputArea logic
+  class MockNode {
+    constructor(id = '', parent = null) {
+      this.id = id;
+      this.parent = parent;
+      this.nodeType = 1;
+    }
+    get parentElement() {
+      return this.parent;
+    }
+    closest(selector) {
+      let cur = this;
+      while (cur) {
+        if (selector === '#input-area' && cur.id === 'input-area') return cur;
+        cur = cur.parent;
+      }
+      return null;
+    }
+  }
+
+  function isInsideInputArea(target) {
+    if (!target) return false;
+    const el = target.nodeType === 1 ? target : target.parentElement;
+    return Boolean(el && typeof el.closest === 'function' && el.closest('#input-area'));
+  }
+
+  const app = new MockNode('app');
+  const panelWrap = new MockNode('panel-wrap', app);
+  const panel = new MockNode('panel', panelWrap);
+  const panelColumns = new MockNode('panel-columns', panel);
+  const panelMain = new MockNode('panel-main', panelColumns);
+  const messages = new MockNode('messages', panelMain);
+  const answerBubble = new MockNode('answer-bubble', messages);
+  const transcriptSidebar = new MockNode('transcript-sidebar', panelWrap);
+  const transcriptItem = new MockNode('ts-item', transcriptSidebar);
+  const toolbar = new MockNode('toolbar', app);
+  const hideBtn = new MockNode('hide-btn', toolbar);
+
+  const composer = new MockNode('composer', panelMain);
+  const inputArea = new MockNode('input-area', composer);
+  const input = new MockNode('input', inputArea);
+  const placeholder = new MockNode('placeholder', inputArea);
+  const caretMirror = new MockNode('stealth-caret-mirror', inputArea);
+  const clearBtn = new MockNode('clear-input-btn', inputArea);
+
+  // Inside input area elements
+  assert.equal(isInsideInputArea(inputArea), true);
+  assert.equal(isInsideInputArea(input), true);
+  assert.equal(isInsideInputArea(placeholder), true);
+  assert.equal(isInsideInputArea(caretMirror), true);
+  assert.equal(isInsideInputArea(clearBtn), true);
+
+  // Outside input area elements
+  assert.equal(isInsideInputArea(messages), false, 'Messages/answer area must be outside input area');
+  assert.equal(isInsideInputArea(answerBubble), false, 'Answer bubble must be outside input area');
+  assert.equal(isInsideInputArea(transcriptSidebar), false, 'Transcription history sidebar must be outside input area');
+  assert.equal(isInsideInputArea(transcriptItem), false, 'Transcription history item must be outside input area');
+  assert.equal(isInsideInputArea(hideBtn), false, 'Hide button must be outside input area');
+  assert.equal(isInsideInputArea(toolbar), false, 'Toolbar must be outside input area');
+  assert.equal(isInsideInputArea(app), false, 'App root must be outside input area');
+  assert.equal(isInsideInputArea(null), false, 'Null target must be outside input area');
+});
+
+test('stealth typing supports persistent indicator, Ctrl+A selection, caret arrow navigation, and scroll sync', () => {
+  const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'styles.css'), 'utf8');
+
+  // HTML persistent indicator and caret after elements
+  assert.match(htmlSrc, /<div\s+id="stealth-indicator"\s+class="stealth-pill hidden"\s+aria-label="Stealth typing active">/);
+  assert.ok(!htmlSrc.includes('id="stealth-indicator" title='), 'stealth-indicator must not use native title attribute');
+  assert.match(htmlSrc, /<span\s+id="stealth-caret-after"\s+class="stealth-caret-after"><\/span>/);
+
+  // CSS styling
+  assert.match(cssSrc, /\.stealth-pill\s*\{/);
+  assert.match(cssSrc, /\.stealth-pill-dot\s*\{/);
+  assert.match(cssSrc, /@keyframes stealth-dot-pulse/);
+  assert.match(cssSrc, /#composer\.stealth-active \.stealth-caret-mirror \.selected\s*\{/);
+  assert.match(cssSrc, /\.stealth-caret-mirror\s*\{[^}]*overflow:\s*hidden;/);
+
+  // Preload allowed IPC channels
+  assert.match(preloadSrc, /'stealth:arrow-left'/);
+  assert.match(preloadSrc, /'stealth:arrow-right'/);
+  assert.match(preloadSrc, /'stealth:home'/);
+  assert.match(preloadSrc, /'stealth:end'/);
+
+  // Main process forwarding
+  assert.match(mainSrc, /onArrowLeft:\s*\(\)\s*=>\s*send\('stealth:arrow-left'\)/);
+  assert.match(mainSrc, /onArrowRight:\s*\(\)\s*=>\s*send\('stealth:arrow-right'\)/);
+  assert.match(mainSrc, /onHome:\s*\(\)\s*=>\s*send\('stealth:home'\)/);
+  assert.match(mainSrc, /onEnd:\s*\(\)\s*=>\s*send\('stealth:end'\)/);
+
+  // Renderer event handlers & logic
+  assert.match(jsSrc, /cue\.on\('stealth:arrow-left'/);
+  assert.match(jsSrc, /cue\.on\('stealth:arrow-right'/);
+  assert.match(jsSrc, /cue\.on\('stealth:home'/);
+  assert.match(jsSrc, /cue\.on\('stealth:end'/);
+  assert.match(jsSrc, /cue\.on\('stealth:select-all'/);
+  assert.match(jsSrc, /isStealthSelectAll/);
+  assert.match(jsSrc, /stealthIndicator\.classList\.toggle\('hidden',\s*!isStealthTypingActive\)/);
+  assert.match(jsSrc, /input\.addEventListener\('scroll',\s*\(\)\s*=>\s*\{/);
+  assert.match(jsSrc, /caretMirror\.scrollTop\s*=\s*input\.scrollTop/);
+});
+

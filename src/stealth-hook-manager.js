@@ -7,12 +7,22 @@ function createStealthHookManager(options = {}) {
     onChar = () => {},
     onBackspace = () => {},
     onDelete = () => {},
+    onArrowLeft = () => {},
+    onArrowRight = () => {},
+    onArrowUp = () => {},
+    onArrowDown = () => {},
+    onPageUp = () => {},
+    onPageDown = () => {},
+    onHome = () => {},
+    onEnd = () => {},
     onEnter = () => {},
     onEscape = () => {},
     onPaste = () => {},
     onSelectAll = () => {},
     onStateChange = () => {},
     onNoFocusToggle = () => {},
+    onTransparencyToggle = () => {},
+    onTransparencyState = () => {},
     onShortcut = () => {},
     log = console.log
   } = options;
@@ -37,6 +47,10 @@ function createStealthHookManager(options = {}) {
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'ignore']
       });
+
+      if (child.stdin) {
+        child.stdin.on('error', () => {});
+      }
 
       child.stdout.on('data', (data) => {
         lineBuffer += data.toString('utf8');
@@ -94,6 +108,12 @@ function createStealthHookManager(options = {}) {
       case 'nofocus_toggle':
         onNoFocusToggle();
         break;
+      case 'transparency_toggle':
+        onTransparencyToggle(msg.enabled);
+        break;
+      case 'transparency_state':
+        onTransparencyState(msg.enabled);
+        break;
       case 'toggle_off':
         lastToggleTime = Date.now();
         capturing = false;
@@ -128,6 +148,30 @@ function createStealthHookManager(options = {}) {
       case 'delete':
         onDelete();
         break;
+      case 'arrow_left':
+        onArrowLeft();
+        break;
+      case 'arrow_right':
+        onArrowRight();
+        break;
+      case 'arrow_up':
+        onArrowUp();
+        break;
+      case 'arrow_down':
+        onArrowDown();
+        break;
+      case 'page_up':
+        onPageUp();
+        break;
+      case 'page_down':
+        onPageDown();
+        break;
+      case 'home':
+        onHome();
+        break;
+      case 'end':
+        onEnd();
+        break;
       case 'shortcut':
         if (typeof msg.action === 'string') {
           onShortcut(msg.action);
@@ -151,6 +195,7 @@ function createStealthHookManager(options = {}) {
 
   function start() {
     if (!isAvailable()) return false;
+    if (capturing) return true;
     lastToggleTime = Date.now();
     sendCommand('START');
     capturing = true;
@@ -160,6 +205,7 @@ function createStealthHookManager(options = {}) {
 
   function stop() {
     if (!isAvailable()) return false;
+    if (!capturing) return true;
     lastToggleTime = Date.now();
     sendCommand('STOP');
     capturing = false;
@@ -189,19 +235,32 @@ function createStealthHookManager(options = {}) {
     if (child) {
       try {
         child.stdin.write('QUIT\n');
+        child.stdin.end();
       } catch (_) {}
-      setTimeout(() => {
-        if (child && !child.killed) {
-          try { child.kill(); } catch (_) {}
+      try {
+        if (!child.killed) {
+          child.kill();
         }
-        child = null;
-      }, 200);
+      } catch (_) {}
+      child = null;
+      ready = false;
+      capturing = false;
     }
   }
+
+  process.once('exit', dispose);
+  process.once('SIGINT', dispose);
+  process.once('SIGTERM', dispose);
 
   // Pre-spawn helper if available
   if (isAvailable()) {
     spawnHelper();
+  }
+
+  function setTransparency(enabled) {
+    if (!isAvailable()) return false;
+    sendCommand(`SET_TRANSPARENCY ${enabled ? 'true' : 'false'}`);
+    return true;
   }
 
   return {
@@ -209,6 +268,7 @@ function createStealthHookManager(options = {}) {
     start,
     stop,
     toggle,
+    setTransparency,
     isCapturing,
     dispose
   };
