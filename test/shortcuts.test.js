@@ -10,6 +10,8 @@ test('defaults cover the core actions', () => {
   assert.strictEqual(DEFAULTS.transparency, 'Alt+V');
   assert.strictEqual(DEFAULTS.previous4, 'Alt+B');
   assert.strictEqual(DEFAULTS.history, 'Alt+N');
+  assert.strictEqual(DEFAULTS.hide, 'Alt+H');
+  assert.strictEqual(DEFAULTS.transcription, 'Alt+T');
   assert.ok(DEFAULTS.leetcode);
   assert.ok(DEFAULTS.quit);
 });

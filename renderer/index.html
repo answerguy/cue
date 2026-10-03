@@ -164,14 +164,14 @@
         </div>
 
         <label class="s-label">API keys &amp; URLs <span class="s-hint">stored locally · never sent to any server</span></label>
-        <div class="s-field" data-key-for="cerebras"><span>Cerebras</span><input id="key-cerebras" type="password" placeholder="csk-..." autocomplete="off" /></div>
-        <div class="s-field" data-key-for="openai"><span>OpenAI</span><input id="key-openai" type="password" placeholder="sk-..." autocomplete="off" /></div>
-        <div class="s-field" data-key-for="anthropic"><span>Anthropic</span><input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off" /></div>
-        <div class="s-field" data-key-for="gemini"><span>Gemini</span><input id="key-gemini" type="password" placeholder="AIza..." autocomplete="off" /></div>
-        <div class="s-field" data-key-for="deepgram"><span>Deepgram</span><input id="key-deepgram" type="password" placeholder="dg-..." autocomplete="off" /></div>
-        <div class="s-field" data-key-for="groq"><span>Groq</span><input id="key-groq" type="password" placeholder="gsk_..." autocomplete="off" /></div>
-        <div class="s-field" data-key-for="custom"><span>Custom</span><input id="key-custom" type="password" placeholder="optional" autocomplete="off" /></div>
-        <div class="s-field" data-key-for="minimax"><span>MiniMax</span><input id="key-minimax" type="password" placeholder="MiniMax API key" autocomplete="off" /></div>
+        <div class="s-field" data-key-for="cerebras"><span>Cerebras</span><input id="key-cerebras" type="text" placeholder="csk-..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="openai"><span>OpenAI</span><input id="key-openai" type="text" placeholder="sk-..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="anthropic"><span>Anthropic</span><input id="key-anthropic" type="text" placeholder="sk-ant-..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="gemini"><span>Gemini</span><input id="key-gemini" type="text" placeholder="AIza..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="deepgram"><span>Deepgram</span><input id="key-deepgram" type="text" placeholder="dg-..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="groq"><span>Groq</span><input id="key-groq" type="text" placeholder="gsk_..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="custom"><span>Custom</span><input id="key-custom" type="text" placeholder="optional" autocomplete="off" /></div>
+        <div class="s-field" data-key-for="minimax"><span>MiniMax</span><input id="key-minimax" type="text" placeholder="MiniMax API key" autocomplete="off" /></div>
 
         <div id="minimax-region-settings" class="hidden">
           <label class="s-label">MiniMax region <span class="s-hint">keys are region-bound — a Global key will 401 against China, and vice versa</span></label>
@@ -209,8 +209,8 @@
           </div>
         </div>
         <div class="s-field" data-key-for="ollama"><span>Ollama URL</span><input id="key-ollama" type="text" placeholder="http://localhost:11434" autocomplete="off" /></div>
-        <div class="s-field" data-key-for="deepseek"><span>DeepSeek</span><input id="key-deepseek" type="password" placeholder="sk-..." autocomplete="off" /></div>
-        <div class="s-field" data-key-for="azure"><span>Azure AI Foundry</span><input id="key-azure" type="password" placeholder="azure key or Entra token" autocomplete="off" /></div>
+        <div class="s-field" data-key-for="deepseek"><span>DeepSeek</span><input id="key-deepseek" type="text" placeholder="sk-..." autocomplete="off" /></div>
+        <div class="s-field" data-key-for="azure"><span>Azure AI Foundry</span><input id="key-azure" type="text" placeholder="azure key or Entra token" autocomplete="off" /></div>
 
         <div id="azure-endpoint-settings" class="hidden">
           <label class="s-label" for="azure-endpoint">Azure endpoint <span class="s-hint">Azure OpenAI: https://&lt;resource&gt;.openai.azure.com/openai · AI Foundry: https://&lt;host&gt;.cognitiveservices.azure.com (cue adds /openai/v1)</span></label>

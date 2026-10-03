@@ -6,8 +6,8 @@ const DEFAULTS = {
   assist: 'CommandOrControl+Shift+Return',
   leetcode: 'CommandOrControl+H',
   quit: 'CommandOrControl+Shift+X',
-  hide: 'Shift+Q', // Windows-only convenience (no Cmd key)
-  listening: 'CommandOrControl+Shift+L',
+  hide: 'Alt+H',
+  transcription: 'Alt+T',
   passthrough: 'CommandOrControl+Shift+I',
   screen: 'CommandOrControl+Shift+S',
   nofocus: 'CommandOrControl+Shift+F',

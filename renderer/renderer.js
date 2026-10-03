@@ -1449,6 +1449,18 @@
       toggleSidebar();
       return;
     }
+    // Alt+H: Toggle hide/collapse
+    if (e.altKey && (e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      toggleHide();
+      return;
+    }
+    // Alt+T: Toggle transcription
+    if (e.altKey && (e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      toggleTranscription();
+      return;
+    }
     // Tab: insert staged interviewer question into input box at caret
     if (e.key === 'Tab' && stagedInterviewerQuestion && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
@@ -1512,6 +1524,18 @@
     if (e.altKey && (e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       toggleSidebar();
+      return;
+    }
+    // Alt+H: Toggle hide/collapse
+    if (e.altKey && (e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      toggleHide();
+      return;
+    }
+    // Alt+T: Toggle transcription
+    if (e.altKey && (e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      toggleTranscription();
       return;
     }
     // Tab when interviewer question is staged and focus is not already inside another text input
@@ -1641,9 +1665,13 @@
     el.addEventListener('change', () => applyOpacity(Number(el.value) / 100, true));
   });
 
-  // Stop = start/stop listening. Kick off system-audio capture straight from the click so
+  // Toggle transcription (start/stop listening). Kick off system-audio capture straight from the click so
   // the user-gesture is fresh for getDisplayMedia (loopback capture needs it).
-  $('#stop-btn').addEventListener('click', async () => {
+  let lastTranscriptionToggleTime = 0;
+  async function toggleTranscription() {
+    const now = Date.now();
+    if (now - lastTranscriptionToggleTime < 300) return;
+    lastTranscriptionToggleTime = now;
     const turningOn = !$('#stop-btn').classList.contains('active');
     if (turningOn) {
       // startSystemAudio may fail (user cancels, no permission) — that's OK,
@@ -1652,7 +1680,9 @@
     }
     const active = await cue.captureToggle();
     if (turningOn && !active) stopSystemAudio();
-  });
+  }
+  $('#stop-btn').addEventListener('click', toggleTranscription);
+  cue.on('transcription:toggle', toggleTranscription);
 
   const focusBtn = $('#focus-btn');
   if (focusBtn) {

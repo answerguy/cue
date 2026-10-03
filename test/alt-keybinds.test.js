@@ -66,3 +66,57 @@ test('window width is calibrated and action row is dynamic to accommodate all bu
   assert.match(cssSrc, /#action-row\s*\{[^}]*display:\s*flex/, '#action-row must cleanly flex all 4 buttons');
   assert.match(jsSrc, /function syncWindowWidth\(\)/, 'renderer must dynamically synchronize --main-w with window width');
 });
+
+test('shortcuts.js assigns hide to Alt+H and transcription to Alt+T', () => {
+  assert.equal(DEFAULTS.hide, 'Alt+H');
+  assert.equal(DEFAULTS.transcription, 'Alt+T');
+});
+
+test('main.js tracks hide and transcription in shortcutState and registers global shortcuts', () => {
+  assert.match(mainSrc, /shortcutState\s*=\s*\{[^}]*hide:\s*false[^}]*transcription:\s*false/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+H',\s*\(\)\s*=>\s*\{?\s*send\('hide:toggle'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+T',\s*\(\)\s*=>\s*\{?\s*send\('transcription:toggle'/);
+  assert.match(mainSrc, /onHideToggle:\s*\(\)\s*=>\s*send\('hide:toggle'\)/);
+  assert.match(mainSrc, /onTranscriptionToggle:\s*\(\)\s*=>\s*send\('transcription:toggle'\)/);
+});
+
+test('preload.js allows transcription:toggle IPC event channel', () => {
+  assert.match(preloadSrc, /'transcription:toggle'/);
+});
+
+test('renderer.js wires transcription:toggle IPC and listens for Alt+H and Alt+T keydown', () => {
+  assert.match(jsSrc, /cue\.on\('transcription:toggle',\s*toggleTranscription\)/);
+  assert.match(jsSrc, /e\.altKey\s*&&\s*\(e\.key\s*===\s*'h'\s*\|\|\s*e\.key\s*===\s*'H'\)[\s\S]*?toggleHide\(\)/);
+  assert.match(jsSrc, /e\.altKey\s*&&\s*\(e\.key\s*===\s*'t'\s*\|\|\s*e\.key\s*===\s*'T'\)[\s\S]*?toggleTranscription\(\)/);
+});
+
+test('native stealth-input.cs handles Alt+H (hide_toggle) and Alt+T (transcription_toggle)', () => {
+  assert.match(csSrc, /_lastAltHTicks/);
+  assert.match(csSrc, /_lastAltTTicks/);
+  assert.match(csSrc, /bool isH\s*=\s*\(vk == 0x48 \|\| vk == 0x68\);/);
+  assert.match(csSrc, /bool isT\s*=\s*\(vk == 0x54 \|\| vk == 0x74\);/);
+  assert.match(csSrc, /isH\s*&&\s*\(alt\s*\|\|\s*_altPending\)\s*&&\s*!ctrl\s*&&\s*!win/);
+  assert.match(csSrc, /isT\s*&&\s*\(alt\s*\|\|\s*_altPending\)\s*&&\s*!ctrl\s*&&\s*!win/);
+  assert.ok(csSrc.includes('\\"event\\":\\"hide_toggle\\"'));
+  assert.ok(csSrc.includes('\\"event\\":\\"transcription_toggle\\"'));
+});
+
+test('index.html does not hide API keys with dots in settings (uses type="text")', () => {
+  const keyIds = [
+    'key-cerebras',
+    'key-openai',
+    'key-anthropic',
+    'key-gemini',
+    'key-deepgram',
+    'key-groq',
+    'key-custom',
+    'key-minimax',
+    'key-deepseek',
+    'key-azure'
+  ];
+  for (const id of keyIds) {
+    const re = new RegExp(`id="${id}"[^>]*type="text"`);
+    assert.match(htmlSrc, re, `Input #${id} must have type="text" so keys are not hidden with dots`);
+  }
+});
+

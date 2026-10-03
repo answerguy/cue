@@ -53,6 +53,8 @@ namespace CueStealthInput
         private static long _lastAltITicks = 0;
         private static long _lastAltBTicks = 0;
         private static long _lastAltNTicks = 0;
+        private static long _lastAltHTicks = 0;
+        private static long _lastAltTTicks = 0;
         private static volatile bool _transparencyMode = false;
         private static long _lastNoFocusTicks = 0;
         private static long _lastShortcutTicks = 0;
@@ -546,6 +548,8 @@ namespace CueStealthInput
                     bool isI = (vk == 0x49 || vk == 0x69); // 'I' key
                     bool isB = (vk == 0x42 || vk == 0x62); // 'B' key
                     bool isN = (vk == 0x4E || vk == 0x6E); // 'N' key
+                    bool isH = (vk == 0x48 || vk == 0x68); // 'H' key
+                    bool isT = (vk == 0x54 || vk == 0x74); // 'T' key
 
                     // A. In focus/stealth mode (_capturing == true), consume Shift and Ctrl keypresses completely!
                     if (_capturing && IsShiftKey(vk))
@@ -967,6 +971,94 @@ namespace CueStealthInput
                         return (IntPtr)1; // Swallow 'N' down and up completely!
                     }
 
+                    // 3g. 'H' key pressed while Alt is pending or Alt is held (Alt+H hide toggle)
+                    if (isH && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            if (vk < 256 && _swallowedKeys[vk])
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltHTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                            {
+                                _lastAltHTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"hide_toggle\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'H' down and up completely!
+                    }
+
+                    // 3h. 'T' key pressed while Alt is pending or Alt is held (Alt+T transcription toggle)
+                    if (isT && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            if (vk < 256 && _swallowedKeys[vk])
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltTTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                            {
+                                _lastAltTTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"transcription_toggle\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'T' down and up completely!
+                    }
+
                     // 4. Any other key arrived while Alt is pending: flush buffered Alt down immediately!
                     if (_altPending && !isMenu)
                     {
@@ -1207,8 +1299,8 @@ namespace CueStealthInput
                             return CallNextHookEx(_hookID, nCode, wParam, lParam);
                         }
 
-                        // In capture mode, if Alt+A, Alt+I, Alt+B, or Alt+N arrives here, trigger their respective events and swallow
-                        if (alt && !ctrl && !win && (isA || isI || isB || isN))
+                        // In capture mode, if Alt+A, Alt+I, Alt+B, Alt+N, Alt+H, or Alt+T arrives here, trigger their respective events and swallow
+                        if (alt && !ctrl && !win && (isA || isI || isB || isN || isH || isT))
                         {
                             if (isKeyDown)
                             {
@@ -1249,6 +1341,26 @@ namespace CueStealthInput
                                     {
                                         _lastAltNTicks = nowTicks;
                                         Console.WriteLine("{\"event\":\"history_toggle\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isH)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltHTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                                    {
+                                        _lastAltHTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"hide_toggle\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isT)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltTTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                                    {
+                                        _lastAltTTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"transcription_toggle\"}");
                                         Console.Out.Flush();
                                     }
                                 }

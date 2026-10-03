@@ -27,6 +27,8 @@ function createStealthHookManager(options = {}) {
     onSttAnswer = () => {},
     onSttInsert = () => {},
     onHistoryToggle = () => {},
+    onHideToggle = () => {},
+    onTranscriptionToggle = () => {},
     log = console.log
   } = options;
 
@@ -188,6 +190,12 @@ function createStealthHookManager(options = {}) {
         break;
       case 'history_toggle':
         onHistoryToggle();
+        break;
+      case 'hide_toggle':
+        onHideToggle();
+        break;
+      case 'transcription_toggle':
+        onTranscriptionToggle();
         break;
     }
   }

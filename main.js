@@ -104,6 +104,8 @@ function initStealthHook() {
     onSttAnswer: () => send('stt:answer-question'),
     onSttInsert: () => send('stt:insert-question'),
     onHistoryToggle: () => send('history:toggle'),
+    onHideToggle: () => send('hide:toggle'),
+    onTranscriptionToggle: () => send('transcription:toggle'),
     onShortcut: (action) => triggerShortcutAction(action),
     log: (msg) => console.log(msg)
   });
@@ -112,7 +114,7 @@ function initStealthHook() {
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false };
+const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
@@ -1372,7 +1374,8 @@ function registerShortcuts() {
   shortcutState.say = globalShortcut.register('CommandOrControl+Return', () => triggerShortcutAction('say'));
   shortcutState.assist = globalShortcut.register('CommandOrControl+Shift+Return', () => triggerShortcutAction('assist'));
   shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => triggerShortcutAction('leetcode'));
-  shortcutState.hide = globalShortcut.register('CommandOrControl+Shift+/', () => send('hide:toggle', {}));
+  shortcutState.hide = globalShortcut.register('Alt+H', () => send('hide:toggle', {}));
+  shortcutState.transcription = globalShortcut.register('Alt+T', () => send('transcription:toggle', {}));
   shortcutState.quit = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
   shortcutState.nofocus = globalShortcut.register('CommandOrControl+Shift+F', () => {
     toggleNoFocusMode();
