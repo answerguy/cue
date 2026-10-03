@@ -2,7 +2,7 @@
 // no audio API — we transcribe with whatever audio-capable key is available, and
 // fall back across providers. Returns { text, provider } or { text:'', error }.
 const { pcmToWav } = require('./wav');
-const { formatProviderErrorMessage, isQuotaError, isRateLimitError, isNotFoundError, resolveGeminiModel, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL } = require('./llm');
+const { formatProviderErrorMessage, isQuotaError, isRateLimitError, isNotFoundError, isUnavailableError, resolveGeminiModel, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL } = require('./llm');
 
 const BASE_VOCAB = 'CI/CD, Docker, Kubernetes, Terraform, Jenkins, AWS, Azure, GCP, ' +
   'CodeCommit, CodePipeline, CodeBuild, CodeDeploy, DevOps, SRE, microservices, deployment, ' +
@@ -75,7 +75,7 @@ const TRANSCRIBE_MODEL_COOLDOWN_MS = 60000;
 let transcribeModelDownUntil = 0;
 
 // Split from transcribeGemini so tests can pass a fake client.
-async function transcribeGeminiWith(ai, wav, now = Date.now()) {
+async function transcribeGeminiWith(ai, wav, now = Date.now(), _retryDelayMs) {
   const audio = { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } };
   if (now >= transcribeModelDownUntil) {
     try {
@@ -89,18 +89,34 @@ async function transcribeGeminiWith(ai, wav, now = Date.now()) {
       // Same key, same provider — only the model id changes, so a retired or
       // rate-limited transcribe model degrades to the chat model rather than
       // to a 404/429 loop. Anything else (bad key, network) still propagates.
-      if (!isNotFoundError(e) && !isQuotaError(e)) throw e;
+      if (!isNotFoundError(e) && !isQuotaError(e) && !isUnavailableError(e)) throw e;
       transcribeModelDownUntil = now + TRANSCRIBE_MODEL_COOLDOWN_MS;
     }
   }
-  const res = await ai.models.generateContent({
-    model: CURRENT_GEMINI_DEFAULT,
-    contents: [{ role: 'user', parts: [
-      { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
-      audio
-    ] }]
-  });
-  return extractGeminiTranscript(res);
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let lastErr;
+  for (let attempt = 0; attempt <= 5; attempt++) {
+    try {
+      const res = await ai.models.generateContent({
+        model: CURRENT_GEMINI_DEFAULT,
+        contents: [{ role: 'user', parts: [
+          { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
+          audio
+        ] }]
+      });
+      return extractGeminiTranscript(res);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 5 && isUnavailableError(err)) {
+        const delayMs = _retryDelayMs !== undefined ? _retryDelayMs : Math.min(300 * (attempt + 1), 1500);
+        if (delayMs > 0) await sleep(delayMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 async function transcribeGemini(apiKey, wav) {

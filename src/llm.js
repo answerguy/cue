@@ -121,7 +121,7 @@ function isQuotaError(error) {
   const signals = errorSignals(error);
   const { code, upstreamType, text } = signals;
   if (code === 'insufficient_quota' || code === 'RESOURCE_EXHAUSTED' ||
-      upstreamType === 'insufficient_quota' || upstreamType === 'RESOURCE_EXHAUSTED') return true;
+    upstreamType === 'insufficient_quota' || upstreamType === 'RESOURCE_EXHAUSTED') return true;
   if (hasRateLimitSignal(signals)) return false;
   return /insufficient_quota|resource_exhausted|exceeded your current quota|\bquota\b|\bbilling\b/i.test(text);
 }
@@ -142,6 +142,14 @@ function isNotFoundError(error) {
   const rawMessage = (error && (error.message || String(error))) || '';
   const text = `${rawMessage} ${status || ''} ${code || ''}`.toLowerCase();
   return status === 404 || code === 404 || /\b404\b|is not found for api version|model not found/i.test(text);
+}
+
+function isUnavailableError(error) {
+  if (isQuotaError(error)) return false;
+  const signals = errorSignals(error);
+  const { status, code, text } = signals;
+  return status === 503 || code === 503 || code === 'UNAVAILABLE' ||
+    /\b503\b|service unavailable|model is overloaded|overloaded|try again later|\bunavailable\b/i.test(text);
 }
 
 function isMultimodalUnsupportedError(error) {
@@ -274,6 +282,11 @@ function formatProviderErrorMessage(error, provider, model) {
     return `${label} model${modelHint} is unavailable (404) — it may have been renamed, retired by the provider, or misspelled. Open Settings and pick a current model for ${label} (or clear the field to use cue's default), then try again.`;
   }
 
+  if (isUnavailableError(error)) {
+    const modelHint = model ? ` "${model}"` : '';
+    return `${label} model${modelHint} is temporarily overloaded (503 Service Unavailable). Please try again in a moment, or switch models/providers in Settings.`;
+  }
+
   if (isMultimodalUnsupportedError(error)) {
     const modelHint = model ? ` "${model}"` : '';
     return `${label} model${modelHint} does not support image or screenshot input (messages.content must be a string). Choose a vision-capable model in Settings or use a text-only mode.`;
@@ -297,6 +310,22 @@ const MINIMAX_BASE_URLS = {
 function stripDataUrl(dataUrl) {
   const m = /^data:(.+?);base64,(.*)$/s.exec(dataUrl || '');
   return m ? { mime: m[1], b64: m[2] } : null;
+}
+
+const SAFETY_PREFIX_CANDIDATES = ['user safety:', 'response safety:', 'safety:'];
+const OPENROUTER_FREE_FALLBACKS = [
+  'qwen/qwen3.8-27b:free',
+  'google/gemma-4-31b-it:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'nvidia/nemotron-3.5-lightning:free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free'
+];
+
+function isSafetyClassificationResponse(text) {
+  if (!text || typeof text !== 'string') return false;
+  const cleaned = text.trim().replace(/^[`*#_>\s]+/, '').replace(/[`*#_>\s]+$/, '');
+  if (cleaned.length > 250) return false;
+  return /^(?:user\s+safety|response\s+safety|safety)\s*[:*]+\s*(?:safe|unsafe)/i.test(cleaned);
 }
 
 async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUrl, maxTokens, onToken, onResponse, provider }) {
@@ -323,8 +352,12 @@ async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUr
     return messages;
   };
 
-  const executeCompletion = async (msgs) => {
-    const pending = client.chat.completions.create({ model, messages: msgs, stream: true, max_tokens: maxTokens });
+  const executeCompletion = async (msgs, targetModel, targetExtraBody) => {
+    const requestOptions = { model: targetModel, messages: msgs, stream: true, max_tokens: maxTokens };
+    if (targetExtraBody) {
+      requestOptions.extra_body = targetExtraBody;
+    }
+    const pending = client.chat.completions.create(requestOptions);
     if (typeof onResponse === 'function' && pending && typeof pending.withResponse === 'function') {
       // The gateway stamps x-publik-* headers at admission; hand the raw
       // Response to the caller so the balance line can move before settlement.
@@ -335,28 +368,90 @@ async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUr
     return await pending;
   };
 
-  let messages = buildMessages(visionAllowed);
-  let stream;
-  try {
-    stream = await executeCompletion(messages);
-  } catch (err) {
-    // If multimodal array format was rejected by the provider (e.g. Groq, xAI Grok,
-    // or text-only models where "messages[N].content must be a string"), transparently
-    // retry with plain string content so the user gets an answer.
-    if (visionAllowed && isMultimodalUnsupportedError(err)) {
-      messages = buildMessages(false);
-      stream = await executeCompletion(messages);
-    } else {
+  const requestStream = async (targetModel, targetExtraBody) => {
+    let messages = buildMessages(visionAllowed);
+    try {
+      return await executeCompletion(messages, targetModel, targetExtraBody);
+    } catch (err) {
+      // If multimodal array format was rejected by the provider (e.g. Groq, xAI Grok,
+      // or text-only models where "messages[N].content must be a string"), transparently
+      // retry with plain string content so the user gets an answer.
+      if (visionAllowed && isMultimodalUnsupportedError(err)) {
+        messages = buildMessages(false);
+        return await executeCompletion(messages, targetModel, targetExtraBody);
+      }
       throw err;
     }
-  }
+  };
 
-  let full = '';
-  for await (const part of stream) {
-    const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
-    if (d) { full += d; onToken(d); }
+  const isOpenRouter = Boolean(baseURL && baseURL.toLowerCase().includes('openrouter.ai'));
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let currentModel = model;
+    let extraBody;
+
+    if (isOpenRouter && (attempt > 1 || currentModel === 'nvidia/nemotron-3.5-content-safety:free')) {
+      const fallbackIdx = (attempt - 2 >= 0 ? attempt - 2 : 0) % OPENROUTER_FREE_FALLBACKS.length;
+      currentModel = OPENROUTER_FREE_FALLBACKS[fallbackIdx];
+      extraBody = { models: OPENROUTER_FREE_FALLBACKS };
+    }
+
+    const stream = await requestStream(currentModel, extraBody);
+
+    let full = '';
+    let pendingBuffer = '';
+    let passedSafetyCheck = false;
+
+    for await (const part of stream) {
+      const d = part.choices && part.choices[0] && part.choices[0].delta && part.choices[0].delta.content;
+      if (!d) continue;
+      full += d;
+
+      if (passedSafetyCheck) {
+        onToken(d);
+        continue;
+      }
+
+      pendingBuffer += d;
+      const normalized = pendingBuffer.trimStart().replace(/^[`*#_>\s]+/, '').toLowerCase();
+      if (normalized === '') continue;
+
+      const couldBeSafety = SAFETY_PREFIX_CANDIDATES.some(prefix => prefix.startsWith(normalized) || normalized.startsWith(prefix));
+
+      if (couldBeSafety) {
+        if (normalized.includes(':')) {
+          const afterColon = normalized.slice(normalized.indexOf(':') + 1).trim();
+          if (afterColon.length >= 4 && !afterColon.startsWith('safe') && !afterColon.startsWith('unsafe')) {
+            passedSafetyCheck = true;
+            onToken(pendingBuffer);
+            pendingBuffer = '';
+          }
+        }
+      } else {
+        passedSafetyCheck = true;
+        onToken(pendingBuffer);
+        pendingBuffer = '';
+      }
+    }
+
+    // If the entire output was a content-safety classification (e.g. "User Safety: safe" from
+    // nvidia/nemotron-3.5-content-safety:free on OpenRouter), suppress it and retry with fallback.
+    if (isSafetyClassificationResponse(full)) {
+      pendingBuffer = '';
+      if (attempt < maxAttempts) {
+        continue;
+      }
+      throw new Error('Model returned a content-safety classification instead of an answer. Please select a different model in Settings.');
+    }
+
+    if (pendingBuffer.length > 0) {
+      onToken(pendingBuffer);
+      pendingBuffer = '';
+    }
+
+    return full;
   }
-  return full;
 }
 
 // Azure AI Foundry Models API (cognitiveservices.azure.com hosts) lives under
@@ -381,10 +476,12 @@ async function streamAzure({ apiKey, model, system, turns, imageDataUrl, maxToke
     turns.forEach((t, i) => {
       const last = i === turns.length - 1;
       if (last && includeImage && imageDataUrl && t.role === 'user') {
-        messages.push({ role: 'user', content: [
-          { type: 'text', text: t.text },
-          { type: 'image_url', image_url: { url: imageDataUrl } }
-        ] });
+        messages.push({
+          role: 'user', content: [
+            { type: 'text', text: t.text },
+            { type: 'image_url', image_url: { url: imageDataUrl } }
+          ]
+        });
       } else {
         messages.push({ role: t.role, content: t.text });
       }
@@ -474,7 +571,9 @@ function geminiGenerationConfig({ system, maxTokens, thinking }) {
   return config;
 }
 
-async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTokens, thinking, onToken }) {
+const GEMINI_503_MAX_RETRIES = 5;
+
+async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTokens, thinking, onToken, _retryDelayMs }) {
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
   const contents = turns.map((t, i) => {
@@ -487,22 +586,51 @@ async function streamGemini({ apiKey, model, system, turns, imageDataUrl, maxTok
     return { role: t.role === 'assistant' ? 'model' : 'user', parts };
   });
   const config = geminiGenerationConfig({ system, maxTokens, thinking });
-  let stream;
-  try {
-    stream = await ai.models.generateContentStream({ model, contents, config });
-  } catch (e) {
-    // A model that predates thinkingLevel (or a custom id that rejects it)
-    // should still answer: retry once without the thinking setting.
-    if (!config.thinkingConfig || !/thinking/i.test((e && e.message) || '')) throw e;
-    delete config.thinkingConfig;
-    stream = await ai.models.generateContentStream({ model, contents, config });
+
+  const executeStream = async () => {
+    try {
+      return await ai.models.generateContentStream({ model, contents, config });
+    } catch (e) {
+      // A model that predates thinkingLevel (or a custom id that rejects it)
+      // should still answer: retry once without the thinking setting.
+      if (!config.thinkingConfig || !/thinking/i.test((e && e.message) || '')) throw e;
+      delete config.thinkingConfig;
+      return await ai.models.generateContentStream({ model, contents, config });
+    }
+  };
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  let lastError;
+  for (let attempt = 0; attempt <= GEMINI_503_MAX_RETRIES; attempt++) {
+    let tokensReceived = false;
+    try {
+      const stream = await executeStream();
+      let full = '';
+      for await (const chunk of stream) {
+        const t = chunk && chunk.text;
+        if (t) {
+          full += t;
+          tokensReceived = true;
+          onToken(t);
+        }
+      }
+      return full;
+    } catch (err) {
+      lastError = err;
+      if (!tokensReceived && attempt < GEMINI_503_MAX_RETRIES && isUnavailableError(err)) {
+        const retrySeconds = extractRetryDelaySeconds(err && err.message);
+        const delayMs = _retryDelayMs !== undefined
+          ? _retryDelayMs
+          : (retrySeconds ? Math.min(retrySeconds * 1000, 3000) : Math.min(400 * (attempt + 1), 2000));
+        if (delayMs > 0) await sleep(delayMs);
+        continue;
+      }
+      throw err;
+    }
   }
-  let full = '';
-  for await (const chunk of stream) {
-    const t = chunk && chunk.text;
-    if (t) { full += t; onToken(t); }
-  }
-  return full;
+
+  throw lastError;
 }
 
 async function streamOllama({ apiKey, model, system, turns, imageDataUrl, maxTokens, onToken }) {
@@ -674,5 +802,10 @@ module.exports = {
   GEMINI_TRANSCRIBE_LIVE_MODEL,
   CURRENT_ANTHROPIC_DEFAULT_FAST,
   CURRENT_ANTHROPIC_DEFAULT_SMART,
-  PUBLIK_PROVIDER
+  PUBLIK_PROVIDER,
+  isSafetyClassificationResponse,
+  OPENROUTER_FREE_FALLBACKS,
+  isUnavailableError,
+  GEMINI_503_MAX_RETRIES,
+  streamGemini
 };

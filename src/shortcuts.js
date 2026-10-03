@@ -14,7 +14,12 @@ const DEFAULTS = {
   type: 'Alt+C',
   transparency: 'Alt+V',
   previous4: 'Alt+B',
-  history: 'Alt+N'
+  history: 'Alt+N',
+  model: 'Alt+M',
+  smart: 'Alt+S',
+  recap: 'Alt+R',
+  opacityDown: 'Alt+O',
+  opacityUp: 'Alt+P'
 };
 
 // Every action that maps to a shortcut. Values = defaults; can be overridden via settings.

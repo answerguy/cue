@@ -1422,43 +1422,83 @@
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
     // Alt+A: Answer staged interviewer question
-    if (e.altKey && (e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 'a' || e.key === 'A') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       if (stagedInterviewerQuestion) {
         e.preventDefault();
         answerInterviewerQuestion();
         return;
       }
     }
-    // Alt+I: Insert staged interviewer question into input box at caret
-    if (e.altKey && (e.key === 'i' || e.key === 'I') && !e.ctrlKey && !e.metaKey) {
+    // Alt+U: Insert staged interviewer question into input box at caret
+    if (e.altKey && (e.key === 'u' || e.key === 'U') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       if (stagedInterviewerQuestion) {
         e.preventDefault();
         insertInterviewerQuestion();
         return;
       }
     }
+    // Alt+R: Run recap
+    if (e.altKey && (e.key === 'r' || e.key === 'R') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      runMode('recap', '');
+      return;
+    }
+    // Alt+O: Reduce opacity
+    if (e.altKey && (e.key === 'o' || e.key === 'O') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      changeOpacityBy(-10);
+      return;
+    }
+    // Alt+P: Increase opacity
+    if (e.altKey && (e.key === 'p' || e.key === 'P') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      changeOpacityBy(10);
+      return;
+    }
+    // Alt+I / J / K / L: Move window Up / Left / Down / Right
+    if (e.altKey && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'i' || k === 'j' || k === 'k' || k === 'l') {
+        e.preventDefault();
+        const dir = k === 'i' ? 'up' : k === 'j' ? 'left' : k === 'k' ? 'down' : 'right';
+        if (typeof cue.windowMove === 'function') cue.windowMove(dir);
+        return;
+      }
+    }
     // Alt+B: Explain terms from last 4 messages (previous4)
-    if (e.altKey && (e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 'b' || e.key === 'B') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       runMode('previous4', '');
       return;
     }
     // Alt+N: Toggle transcription history sidebar
-    if (e.altKey && (e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 'n' || e.key === 'N') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       toggleSidebar();
       return;
     }
     // Alt+H: Toggle hide/collapse
-    if (e.altKey && (e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 'h' || e.key === 'H') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       toggleHide();
       return;
     }
     // Alt+T: Toggle transcription
-    if (e.altKey && (e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 't' || e.key === 'T') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       toggleTranscription();
+      return;
+    }
+    // Alt+M: Toggle model between configured models
+    if (e.altKey && (e.key === 'm' || e.key === 'M') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      toggleModel();
+      return;
+    }
+    // Alt+S: Toggle smart mode (smart/fast)
+    if (e.altKey && (e.key === 's' || e.key === 'S') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      toggleSmartMode();
       return;
     }
     // Tab: insert staged interviewer question into input box at caret
@@ -1499,43 +1539,83 @@
   // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A), STT Answer (Alt+A), STT Insert (Alt+I), and Tab to insert
   document.addEventListener('keydown', (e) => {
     // Alt+A: Answer staged interviewer question
-    if (e.altKey && (e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 'a' || e.key === 'A') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       if (stagedInterviewerQuestion) {
         e.preventDefault();
         answerInterviewerQuestion();
         return;
       }
     }
-    // Alt+I: Insert staged interviewer question into input box
-    if (e.altKey && (e.key === 'i' || e.key === 'I') && !e.ctrlKey && !e.metaKey) {
+    // Alt+U: Insert staged interviewer question into input box
+    if (e.altKey && (e.key === 'u' || e.key === 'U') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       if (stagedInterviewerQuestion) {
         e.preventDefault();
         insertInterviewerQuestion();
         return;
       }
     }
+    // Alt+R: Run recap
+    if (e.altKey && (e.key === 'r' || e.key === 'R') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      runMode('recap', '');
+      return;
+    }
+    // Alt+O: Reduce opacity
+    if (e.altKey && (e.key === 'o' || e.key === 'O') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      changeOpacityBy(-10);
+      return;
+    }
+    // Alt+P: Increase opacity
+    if (e.altKey && (e.key === 'p' || e.key === 'P') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      changeOpacityBy(10);
+      return;
+    }
+    // Alt+I / J / K / L: Move window Up / Left / Down / Right
+    if (e.altKey && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'i' || k === 'j' || k === 'k' || k === 'l') {
+        e.preventDefault();
+        const dir = k === 'i' ? 'up' : k === 'j' ? 'left' : k === 'k' ? 'down' : 'right';
+        if (typeof cue.windowMove === 'function') cue.windowMove(dir);
+        return;
+      }
+    }
     // Alt+B: Explain terms from last 4 messages (previous4)
-    if (e.altKey && (e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 'b' || e.key === 'B') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       runMode('previous4', '');
       return;
     }
     // Alt+N: Toggle transcription history sidebar
-    if (e.altKey && (e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 'n' || e.key === 'N') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       toggleSidebar();
       return;
     }
     // Alt+H: Toggle hide/collapse
-    if (e.altKey && (e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 'h' || e.key === 'H') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       toggleHide();
       return;
     }
     // Alt+T: Toggle transcription
-    if (e.altKey && (e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) {
+    if (e.altKey && (e.key === 't' || e.key === 'T') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       toggleTranscription();
+      return;
+    }
+    // Alt+M: Toggle model between configured models
+    if (e.altKey && (e.key === 'm' || e.key === 'M') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      toggleModel();
+      return;
+    }
+    // Alt+S: Toggle smart mode (smart/fast)
+    if (e.altKey && (e.key === 's' || e.key === 'S') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      toggleSmartMode();
       return;
     }
     // Tab when interviewer question is staged and focus is not already inside another text input
@@ -1569,13 +1649,113 @@
     sendBtn.setAttribute('aria-label', `Send · ${forceKey} to force answer`);
   }
 
-  // Smart toggle
+  // Smart toggle (Alt+S)
   const smartBtn = $('#smart-toggle');
-  smartBtn.addEventListener('click', async () => {
+  let lastSmartToggleTime = 0;
+  async function toggleSmartMode() {
+    const now = Date.now();
+    if (now - lastSmartToggleTime < 200) return;
+    lastSmartToggleTime = now;
+    if (!settings) return;
     settings.smart = !settings.smart;
-    smartBtn.classList.toggle('on', settings.smart);
-    await cue.settingsSet({ smart: settings.smart });
-  });
+    if (smartBtn) smartBtn.classList.toggle('on', settings.smart);
+    try {
+      await cue.settingsSet({ smart: settings.smart });
+    } catch (_) {}
+    showToast(settings.smart ? 'Smart mode ON' : 'Fast mode ON', 1500);
+  }
+  if (smartBtn) smartBtn.addEventListener('click', toggleSmartMode);
+  cue.on('smart:toggle', toggleSmartMode);
+
+  // Model toggle (Alt+M)
+  const PROVIDER_NAMES = {
+    gemini: 'Gemini',
+    groq: 'Groq',
+    cerebras: 'Cerebras',
+    openai: 'OpenAI',
+    anthropic: 'Anthropic',
+    custom: 'Custom',
+    ollama: 'Ollama',
+    minimax: 'MiniMax',
+    deepseek: 'DeepSeek',
+    azure: 'Azure AI Foundry',
+    publik: 'publik API'
+  };
+
+  let lastModelToggleTime = 0;
+  async function toggleModel() {
+    const now = Date.now();
+    if (now - lastModelToggleTime < 200) return;
+    lastModelToggleTime = now;
+    if (!settings) return;
+
+    const list = Array.isArray(settings.modelToggle) && settings.modelToggle.length >= 4
+      ? settings.modelToggle
+      : ['gemini', 'groq', 'custom', 'ollama'];
+
+    const currentIndex = list.indexOf(settings.provider);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % list.length : 0;
+    const nextProvider = list[nextIndex] || list[0] || 'gemini';
+    settings.provider = nextProvider;
+
+    try {
+      await cue.settingsSet({ provider: nextProvider });
+    } catch (_) {}
+
+    // Update settings UI if present
+    document.querySelectorAll('#provider-seg button').forEach((x) => {
+      x.classList.toggle('on', x.dataset.provider === nextProvider);
+    });
+    updateCustomProviderFields();
+    const m = settings.models[settings.provider] || { fast: '', smart: '' };
+    const fastInput = $('#model-fast');
+    const smartInput = $('#model-smart');
+    if (fastInput) fastInput.value = m.fast;
+    if (smartInput) smartInput.value = m.smart;
+    const statusEl = $('#s-status');
+    if (statusEl) statusEl.textContent = statusText();
+    updateSmartTooltip();
+
+    const displayName = PROVIDER_NAMES[nextProvider] || nextProvider;
+    showToast(`Model: ${displayName}`, 1500);
+    updateModelIndicator();
+  }
+  cue.on('model:toggle', toggleModel);
+
+  function getModelIndicatorLabel(provider) {
+    const shortNames = {
+      gemini: 'Gemini',
+      custom: 'Custom',
+      groq: 'Groq',
+      ollama: 'Ollama',
+      cerebras: 'Cerebras',
+      openai: 'OpenAI',
+      anthropic: 'Anthropic',
+      minimax: 'MiniMax',
+      deepseek: 'DeepSeek',
+      azure: 'Azure',
+      publik: 'publik'
+    };
+    return shortNames[provider] || (PROVIDER_NAMES[provider] || provider);
+  }
+
+  function updateModelIndicator() {
+    const el = document.getElementById('model-indicator');
+    if (!el || !settings) return;
+    const provider = settings.provider || 'gemini';
+    const label = getModelIndicatorLabel(provider);
+    el.textContent = label;
+    el.setAttribute('title', `Current model: ${label} (Click or Alt+M to switch)`);
+    el.setAttribute('aria-label', `Current model: ${label}`);
+  }
+
+  const modelIndicatorEl = document.getElementById('model-indicator');
+  if (modelIndicatorEl) {
+    modelIndicatorEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleModel();
+    });
+  }
 
   // Hide / collapse
   let reopenSidebarOnExpand = false;
@@ -1611,7 +1791,7 @@
     }
   }, true);
 
-  const OPACITY_MIN = 0.2;
+  const OPACITY_MIN = 0.0;
   function clampOpacity(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 1;
@@ -1624,6 +1804,11 @@
       if (!settings) return;
       cue.settingsSet({ opacity: settings.opacity }).then((next) => { if (next) settings = next; }).catch(() => {});
     }, 400);
+  }
+  function changeOpacityBy(deltaPercent) {
+    const currentPercent = opacityToPercent(settings && settings.opacity != null ? settings.opacity : 1);
+    const nextPercent = Math.min(100, Math.max(0, currentPercent + deltaPercent));
+    applyOpacity(nextPercent / 100, true);
   }
   function applyOpacity(value, persist) {
     const opacity = clampOpacity(value);
@@ -1663,6 +1848,11 @@
     if (!el) return;
     el.addEventListener('input', () => applyOpacity(Number(el.value) / 100, true));
     el.addEventListener('change', () => applyOpacity(Number(el.value) / 100, true));
+  });
+  cue.on('opacity:step', ({ delta }) => {
+    if (typeof delta === 'number') {
+      changeOpacityBy(delta);
+    }
   });
 
   // Toggle transcription (start/stop listening). Kick off system-audio capture straight from the click so
@@ -2920,6 +3110,13 @@
     $('#azure-endpoint').value = settings.azureEndpoint || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
+    const modelToggle = Array.isArray(settings.modelToggle) && settings.modelToggle.length >= 4
+      ? settings.modelToggle
+      : ['gemini', 'groq', 'custom', 'ollama'];
+    for (let i = 1; i <= 4; i++) {
+      const el = $(`#model-toggle-${i}`);
+      if (el) el.value = modelToggle[i - 1] || '';
+    }
     fillAppLinkCallers();
     $('#s-status').textContent = statusText();
     // Transcription tab
@@ -3010,6 +3207,7 @@
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
     $('#s-status').textContent = statusText();
     updateSmartTooltip();
+    updateModelIndicator();
   }));
   document.querySelectorAll('#minimax-region-seg button').forEach((b) => b.addEventListener('click', () => {
     settings.minimaxRegion = b.dataset.region;
@@ -3029,6 +3227,19 @@
     });
     $('#s-status').textContent = statusText();
   }));
+
+  for (let i = 1; i <= 4; i++) {
+    const el = $(`#model-toggle-${i}`);
+    if (el) {
+      el.addEventListener('change', () => {
+        if (!Array.isArray(settings.modelToggle) || settings.modelToggle.length < 4) {
+          settings.modelToggle = ['gemini', 'groq', 'custom', 'ollama'];
+        }
+        settings.modelToggle[i - 1] = el.value;
+        cue.settingsSet({ modelToggle: settings.modelToggle }).catch(() => {});
+      });
+    }
+  }
 
   function formatBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
@@ -3198,6 +3409,13 @@
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
+    if (!Array.isArray(settings.modelToggle) || settings.modelToggle.length < 4) {
+      settings.modelToggle = ['gemini', 'groq', 'custom', 'ollama'];
+    }
+    for (let i = 1; i <= 4; i++) {
+      const el = $(`#model-toggle-${i}`);
+      if (el) settings.modelToggle[i - 1] = el.value || settings.modelToggle[i - 1];
+    }
     // If the active provider still has no key, but the user just filled in a
     // key for a different provider (without touching the Provider selector —
     // the flow both bug reports describe), switch to that provider. Without
@@ -3232,6 +3450,7 @@
       settings = await cue.settingsSet(settings);
       $('#s-status').textContent = statusText();
       updateSmartTooltip();
+      updateModelIndicator();
       return true;
     } catch (error) {
       const message = error && error.message ? error.message : String(error);
@@ -3528,8 +3747,13 @@
     if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
     if (prev4HintEl) prev4HintEl.textContent = isWindows ? 'Alt+B' : '⌥B';
     if (historyHintEl) historyHintEl.textContent = isWindows ? 'Alt+N' : '⌥N';
+    const smartHintEl = document.getElementById('smart-shortcut-hint');
+    if (smartHintEl) smartHintEl.textContent = isWindows ? 'Alt+S' : '⌥S';
+    const recapHintEl = document.getElementById('recap-shortcut-hint');
+    if (recapHintEl) recapHintEl.textContent = isWindows ? 'Alt+R' : '⌥R';
     const sayBtn = document.querySelector('.act[data-mode="say"]');
     const assistBtn = document.querySelector('.act[data-mode="assist"]');
+    const recapBtn = document.querySelector('.act[data-mode="recap"]');
     const prev4Btn = document.querySelector('.act[data-mode="previous4"]');
     const historyBtnEl = document.getElementById('history-btn');
     if (sayBtn) sayBtn.setAttribute('aria-label', isWindows
@@ -3538,6 +3762,9 @@
     if (assistBtn) assistBtn.setAttribute('aria-label', isWindows
       ? 'Scans your screen and conversation to decide what you need (Ctrl+Shift+Enter)'
       : 'Scans your screen and conversation to decide what you need (⌘⇧↵)');
+    if (recapBtn) recapBtn.setAttribute('aria-label', isWindows
+      ? 'Recap (Alt+R)'
+      : 'Recap (⌥R)');
     if (prev4Btn) prev4Btn.setAttribute('aria-label', isWindows
       ? 'Explain terms from the last 4 messages with priority on newest (Alt+B)'
       : 'Explain terms from the last 4 messages with priority on newest (⌥B)');
@@ -3547,6 +3774,7 @@
 
     // R6: smart tooltip
     updateSmartTooltip();
+    updateModelIndicator();
     // Fix 3: Adjust permission buttons based on actual Windows version.
     // ms-settings:privacy-screenrecorder only exists on Windows 11.
     // On Windows 10, screen capture needs no permission — so replace the button

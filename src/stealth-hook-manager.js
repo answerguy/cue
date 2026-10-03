@@ -29,6 +29,10 @@ function createStealthHookManager(options = {}) {
     onHistoryToggle = () => {},
     onHideToggle = () => {},
     onTranscriptionToggle = () => {},
+    onModelToggle = () => {},
+    onSmartToggle = () => {},
+    onOpacityStep = () => {},
+    onWindowMove = () => {},
     log = console.log
   } = options;
 
@@ -196,6 +200,22 @@ function createStealthHookManager(options = {}) {
         break;
       case 'transcription_toggle':
         onTranscriptionToggle();
+        break;
+      case 'model_toggle':
+        onModelToggle();
+        break;
+      case 'smart_toggle':
+        onSmartToggle();
+        break;
+      case 'opacity_step':
+        if (typeof msg.delta === 'number') {
+          onOpacityStep(msg.delta);
+        }
+        break;
+      case 'window_move':
+        if (typeof msg.direction === 'string') {
+          onWindowMove(msg.direction);
+        }
         break;
     }
   }

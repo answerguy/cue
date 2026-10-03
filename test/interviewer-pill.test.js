@@ -95,12 +95,12 @@ test('insertInterviewerQuestion preserves existing typed text without overwritin
   assert.equal(inputValue, 'My existing notes Can you explain Dijkstra algorithm?');
 });
 
-test('interviewer-pill displays Alt+A for answer and Alt+I for insert buttons', () => {
+test('interviewer-pill displays Alt+A for answer and Alt+U for insert buttons', () => {
   assert.match(htmlSrc, /id="ip-answer-btn"[^>]*>[\s\S]*?<span class="ip-key">Alt\+A<\/span>\s*Answer/, 'Answer button must show Alt+A');
-  assert.match(htmlSrc, /id="ip-insert-btn"[^>]*>[\s\S]*?<span class="ip-key">Alt\+I<\/span>\s*Insert/, 'Insert button must show Alt+I');
+  assert.match(htmlSrc, /id="ip-insert-btn"[^>]*>[\s\S]*?<span class="ip-key">Alt\+U<\/span>\s*Insert/, 'Insert button must show Alt+U');
 });
 
-test('renderer.js and stealth hook support Alt+A and Alt+I for STT answer and insert', () => {
+test('renderer.js and stealth hook support Alt+A and Alt+U for STT answer and insert', () => {
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   const hookManagerSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'stealth-hook-manager.js'), 'utf8');
 
@@ -121,8 +121,8 @@ test('renderer.js and stealth hook support Alt+A and Alt+I for STT answer and in
   assert.match(jsSrc, /cue\.on\('stt:answer-question',\s*\(\)\s*=>\s*\{[\s\S]*?answerInterviewerQuestion\(\)/);
   assert.match(jsSrc, /cue\.on\('stt:insert-question',\s*\(\)\s*=>\s*\{[\s\S]*?insertInterviewerQuestion\(\)/);
 
-  // Verify renderer.js keydown handlers support Alt+A and Alt+I
+  // Verify renderer.js keydown handlers support Alt+A and Alt+U
   assert.match(jsSrc, /e\.altKey && \(e\.key === 'a' \|\| e\.key === 'A'\)[\s\S]*?answerInterviewerQuestion\(\)/);
-  assert.match(jsSrc, /e\.altKey && \(e\.key === 'i' \|\| e\.key === 'I'\)[\s\S]*?insertInterviewerQuestion\(\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'u' \|\| e\.key === 'U'\)[\s\S]*?insertInterviewerQuestion\(\)/);
 });
 

@@ -50,11 +50,20 @@ namespace CueStealthInput
         private static long _lastAltCTicks = 0;
         private static long _lastAltVTicks = 0;
         private static long _lastAltATicks = 0;
+        private static long _lastAltUTicks = 0;
+        private static long _lastAltRTicks = 0;
+        private static long _lastAltOTicks = 0;
+        private static long _lastAltPTicks = 0;
         private static long _lastAltITicks = 0;
+        private static long _lastAltJTicks = 0;
+        private static long _lastAltKTicks = 0;
+        private static long _lastAltLTicks = 0;
         private static long _lastAltBTicks = 0;
         private static long _lastAltNTicks = 0;
         private static long _lastAltHTicks = 0;
         private static long _lastAltTTicks = 0;
+        private static long _lastAltMTicks = 0;
+        private static long _lastAltSTicks = 0;
         private static volatile bool _transparencyMode = false;
         private static long _lastNoFocusTicks = 0;
         private static long _lastShortcutTicks = 0;
@@ -80,6 +89,10 @@ namespace CueStealthInput
         private static uint _pendingAltFlags = 0;
         private static System.Threading.Timer _altTimer = null;
         private const int ALT_BUFFER_TIMEOUT_MS = 250;
+
+        private static volatile bool _isAltGr = false;
+        private static uint _lastLControlTime = 0;
+        private static uint _lastAltGrReleaseTime = 0;
 
         private static readonly object _ctrlLock = new object();
         private static volatile bool _ctrlPending = false;
@@ -129,6 +142,12 @@ namespace CueStealthInput
 
         private static bool IsControlActive()
         {
+            if (_isAltGr)
+            {
+                // When AltGr (Right Alt) is held, Windows driver synthesizes VK_LCONTROL in GetAsyncKeyState.
+                // We only report Control active if Right Control was physically pressed.
+                return _leftCtrlDown || _rightCtrlDown || (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0;
+            }
             return _leftCtrlDown || _rightCtrlDown ||
                    (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
                    (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0 ||
@@ -295,6 +314,8 @@ namespace CueStealthInput
                 if (_ctrlTimer != null) { try { _ctrlTimer.Dispose(); } catch { } }
                 if (_shiftTimer != null) { try { _shiftTimer.Dispose(); } catch { } }
 
+                _isAltGr = false;
+
                 if (_hookID != IntPtr.Zero)
                 {
                     UnhookWindowsHookEx(_hookID);
@@ -425,6 +446,7 @@ namespace CueStealthInput
                             _shiftSwallowed = false;
                             _ctrlPending = false;
                             _shiftPending = false;
+                            _isAltGr = false;
                             _leftCtrlDown = (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0;
                             _rightCtrlDown = (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0;
                             _leftShiftDown = (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0;
@@ -509,6 +531,9 @@ namespace CueStealthInput
                 if (isKeyDown || isKeyUp)
                 {
                     uint vk = hookStruct.vkCode;
+                    bool isExtended = (hookStruct.flags & 1) != 0;
+                    bool isRightMenuKey = (vk == VK_RMENU) || (vk == VK_MENU && isExtended);
+                    bool isLeftMenuKey = (vk == VK_LMENU) || (vk == VK_MENU && !isExtended);
 
                     // Update modifier state tracking
                     if (vk == VK_LSHIFT) _leftShiftDown = isKeyDown;
@@ -519,7 +544,18 @@ namespace CueStealthInput
                         else { _leftShiftDown = false; _rightShiftDown = false; }
                     }
 
-                    if (vk == VK_LCONTROL) _leftCtrlDown = isKeyDown;
+                    if (vk == VK_LCONTROL)
+                    {
+                        if (isKeyDown)
+                        {
+                            _lastLControlTime = hookStruct.time;
+                            _leftCtrlDown = true;
+                        }
+                        else
+                        {
+                            _leftCtrlDown = false;
+                        }
+                    }
                     else if (vk == VK_RCONTROL) _rightCtrlDown = isKeyDown;
                     else if (vk == VK_CONTROL)
                     {
@@ -527,8 +563,35 @@ namespace CueStealthInput
                         else { _leftCtrlDown = false; _rightCtrlDown = false; }
                     }
 
-                    if (vk == VK_LMENU) _leftAltDown = isKeyDown;
-                    else if (vk == VK_RMENU) _rightAltDown = isKeyDown;
+                    if (isLeftMenuKey) _leftAltDown = isKeyDown;
+                    else if (isRightMenuKey)
+                    {
+                        _rightAltDown = isKeyDown;
+                        if (isKeyDown)
+                        {
+                            // Detect Windows AltGr sequence: Windows synthesizes VK_LCONTROL immediately before VK_RMENU
+                            uint timeDiff = hookStruct.time >= _lastLControlTime ? (hookStruct.time - _lastLControlTime) : (_lastLControlTime - hookStruct.time);
+                            if (_leftCtrlDown && (_ctrlPending || _ctrlSwallowed || _isAltGr) && (timeDiff <= 100 || _lastLControlTime == 0))
+                            {
+                                _isAltGr = true;
+                                _leftCtrlDown = false; // Disown the fake Left Ctrl
+                                lock (_ctrlLock)
+                                {
+                                    _ctrlPending = false;
+                                    _ctrlSwallowed = false;
+                                    _ctrlFlushed = false;
+                                    if (_ctrlTimer != null) { try { _ctrlTimer.Change(Timeout.Infinite, Timeout.Infinite); } catch { } }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (_isAltGr)
+                            {
+                                _lastAltGrReleaseTime = hookStruct.time;
+                            }
+                        }
+                    }
                     else if (vk == VK_MENU)
                     {
                         if (isKeyDown) { _leftAltDown = true; }
@@ -545,11 +608,20 @@ namespace CueStealthInput
                     bool isC = (vk == 0x43 || vk == 0x63); // 'C' key
                     bool isV = (vk == 0x56 || vk == 0x76); // 'V' key
                     bool isA = (vk == 0x41 || vk == 0x61); // 'A' key
+                    bool isU = (vk == 0x55 || vk == 0x75); // 'U' key
+                    bool isR = (vk == 0x52 || vk == 0x72); // 'R' key
+                    bool isO = (vk == 0x4F || vk == 0x6F); // 'O' key
+                    bool isP = (vk == 0x50 || vk == 0x70); // 'P' key
                     bool isI = (vk == 0x49 || vk == 0x69); // 'I' key
+                    bool isJ = (vk == 0x4A || vk == 0x6A); // 'J' key
+                    bool isK = (vk == 0x4B || vk == 0x6B); // 'K' key
+                    bool isL = (vk == 0x4C || vk == 0x6C); // 'L' key
                     bool isB = (vk == 0x42 || vk == 0x62); // 'B' key
                     bool isN = (vk == 0x4E || vk == 0x6E); // 'N' key
                     bool isH = (vk == 0x48 || vk == 0x68); // 'H' key
                     bool isT = (vk == 0x54 || vk == 0x74); // 'T' key
+                    bool isM = (vk == 0x4D); // 'M' key
+                    bool isS = (vk == 0x53); // 'S' key
 
                     // A. In focus/stealth mode (_capturing == true), consume Shift and Ctrl keypresses completely!
                     if (_capturing && IsShiftKey(vk))
@@ -576,6 +648,16 @@ namespace CueStealthInput
                         }
                         else if (isKeyUp)
                         {
+                            uint timeDiff = hookStruct.time >= _lastAltGrReleaseTime ? (hookStruct.time - _lastAltGrReleaseTime) : (_lastAltGrReleaseTime - hookStruct.time);
+                            if (vk == VK_LCONTROL && (_isAltGr || (_lastAltGrReleaseTime != 0 && timeDiff <= 150)))
+                            {
+                                _isAltGr = false;
+                                _lastAltGrReleaseTime = 0;
+                                _leftCtrlDown = false;
+                                _ctrlSwallowed = false;
+                                _ctrlPending = false;
+                                return (IntPtr)1;
+                            }
                             if (!_leftCtrlDown && !_rightCtrlDown)
                             {
                                 _ctrlSwallowed = false;
@@ -613,6 +695,22 @@ namespace CueStealthInput
                     }
                     if (isKeyUp && IsControlKey(vk))
                     {
+                        uint timeDiff = hookStruct.time >= _lastAltGrReleaseTime ? (hookStruct.time - _lastAltGrReleaseTime) : (_lastAltGrReleaseTime - hookStruct.time);
+                        if (vk == VK_LCONTROL && (_isAltGr || (_lastAltGrReleaseTime != 0 && timeDiff <= 150)))
+                        {
+                            _isAltGr = false;
+                            _lastAltGrReleaseTime = 0;
+                            _leftCtrlDown = false;
+                            lock (_ctrlLock)
+                            {
+                                _ctrlPending = false;
+                                _ctrlSwallowed = false;
+                                _ctrlFlushed = false;
+                                if (_ctrlTimer != null) { try { _ctrlTimer.Change(Timeout.Infinite, Timeout.Infinite); } catch { } }
+                            }
+                            return (IntPtr)1; // Cleanly swallow the fake AltGr Control release!
+                        }
+
                         if (!_leftCtrlDown && !_rightCtrlDown)
                         {
                             lock (_ctrlLock)
@@ -839,8 +937,8 @@ namespace CueStealthInput
                         return (IntPtr)1; // Swallow 'A' down and up completely!
                     }
 
-                    // 3d. 'I' key pressed while Alt is pending or Alt is held (Alt+I STT insert)
-                    if (isI && (alt || _altPending) && !ctrl && !win)
+                    // 3d. 'U' key pressed while Alt is pending or Alt is held (Alt+U STT insert)
+                    if (isU && (alt || _altPending) && !ctrl && !win)
                     {
                         if (isKeyDown)
                         {
@@ -869,9 +967,9 @@ namespace CueStealthInput
                             if (vk < 256) _swallowedKeys[vk] = true;
 
                             long nowTicks = DateTime.UtcNow.Ticks;
-                            if (nowTicks - _lastAltITicks > TimeSpan.FromMilliseconds(150).Ticks)
+                            if (nowTicks - _lastAltUTicks > TimeSpan.FromMilliseconds(150).Ticks)
                             {
-                                _lastAltITicks = nowTicks;
+                                _lastAltUTicks = nowTicks;
                                 Console.WriteLine("{\"event\":\"stt_insert\"}");
                                 Console.Out.Flush();
                             }
@@ -880,7 +978,7 @@ namespace CueStealthInput
                         {
                             if (vk < 256) _swallowedKeys[vk] = false;
                         }
-                        return (IntPtr)1; // Swallow 'I' down and up completely!
+                        return (IntPtr)1; // Swallow 'U' down and up completely!
                     }
 
                     // 3e. 'B' key pressed while Alt is pending or Alt is held (Alt+B previous 4)
@@ -1057,6 +1155,366 @@ namespace CueStealthInput
                             if (vk < 256) _swallowedKeys[vk] = false;
                         }
                         return (IntPtr)1; // Swallow 'T' down and up completely!
+                    }
+
+                    // 3i. 'M' key pressed while Alt is pending or Alt is held (Alt+M model toggle)
+                    if (isM && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            if (vk < 256 && _swallowedKeys[vk])
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltMTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                            {
+                                _lastAltMTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"model_toggle\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'M' down and up completely!
+                    }
+
+                    // 3j. 'S' key pressed while Alt is pending or Alt is held (Alt+S smart/fast toggle)
+                    if (isS && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            if (vk < 256 && _swallowedKeys[vk])
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltSTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                            {
+                                _lastAltSTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"smart_toggle\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'S' down and up completely!
+                    }
+
+                    // 3k. 'R' key pressed while Alt is pending or Alt is held (Alt+R recap)
+                    if (isR && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            if (vk < 256 && _swallowedKeys[vk])
+                            {
+                                return (IntPtr)1;
+                            }
+                            if (vk < 256) _swallowedKeys[vk] = true;
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltRTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                            {
+                                _lastAltRTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"recap\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'R' down and up completely!
+                    }
+
+                    // 3l. 'O' key pressed while Alt is pending or Alt is held (Alt+O opacity down)
+                    if (isO && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltOTicks > TimeSpan.FromMilliseconds(75).Ticks)
+                            {
+                                _lastAltOTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"opacity_step\",\"delta\":-10}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'O' down and up completely!
+                    }
+
+                    // 3m. 'P' key pressed while Alt is pending or Alt is held (Alt+P opacity up)
+                    if (isP && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltPTicks > TimeSpan.FromMilliseconds(75).Ticks)
+                            {
+                                _lastAltPTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"opacity_step\",\"delta\":10}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'P' down and up completely!
+                    }
+
+                    // 3n. 'I' key pressed while Alt is pending or Alt is held (Alt+I move window up)
+                    if (isI && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltITicks > TimeSpan.FromMilliseconds(40).Ticks)
+                            {
+                                _lastAltITicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"window_move\",\"direction\":\"up\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'I' down and up completely!
+                    }
+
+                    // 3o. 'J' key pressed while Alt is pending or Alt is held (Alt+J move window left)
+                    if (isJ && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltJTicks > TimeSpan.FromMilliseconds(40).Ticks)
+                            {
+                                _lastAltJTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"window_move\",\"direction\":\"left\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'J' down and up completely!
+                    }
+
+                    // 3p. 'K' key pressed while Alt is pending or Alt is held (Alt+K move window down)
+                    if (isK && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltKTicks > TimeSpan.FromMilliseconds(40).Ticks)
+                            {
+                                _lastAltKTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"window_move\",\"direction\":\"down\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'K' down and up completely!
+                    }
+
+                    // 3q. 'L' key pressed while Alt is pending or Alt is held (Alt+L move window right)
+                    if (isL && (alt || _altPending) && !ctrl && !win)
+                    {
+                        if (isKeyDown)
+                        {
+                            lock (_altLock)
+                            {
+                                if (_altPending)
+                                {
+                                    _altPending = false;
+                                    if (_altTimer != null) _altTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                                }
+                                if (_altFlushed)
+                                {
+                                    _altFlushed = false;
+                                    byte avk = (byte)(_pendingAltVk != 0 ? _pendingAltVk : VK_LMENU);
+                                    byte ascan = (byte)_pendingAltScan;
+                                    uint aflags = ((_pendingAltFlags & 1) != 0) ? 1u : 0u;
+                                    keybd_event(avk, ascan, aflags | 2, CUE_MAGIC);
+                                }
+                                _altSwallowed = true; // Mark Alt completely swallowed!
+                            }
+
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            if (nowTicks - _lastAltLTicks > TimeSpan.FromMilliseconds(40).Ticks)
+                            {
+                                _lastAltLTicks = nowTicks;
+                                Console.WriteLine("{\"event\":\"window_move\",\"direction\":\"right\"}");
+                                Console.Out.Flush();
+                            }
+                        }
+                        else if (isKeyUp)
+                        {
+                            if (vk < 256) _swallowedKeys[vk] = false;
+                        }
+                        return (IntPtr)1; // Swallow 'L' down and up completely!
                     }
 
                     // 4. Any other key arrived while Alt is pending: flush buffered Alt down immediately!
@@ -1299,8 +1757,8 @@ namespace CueStealthInput
                             return CallNextHookEx(_hookID, nCode, wParam, lParam);
                         }
 
-                        // In capture mode, if Alt+A, Alt+I, Alt+B, Alt+N, Alt+H, or Alt+T arrives here, trigger their respective events and swallow
-                        if (alt && !ctrl && !win && (isA || isI || isB || isN || isH || isT))
+                        // In capture mode, if Alt+A, Alt+U, Alt+B, Alt+N, Alt+H, Alt+T, Alt+M, Alt+S, Alt+R, Alt+O, Alt+P, Alt+I, Alt+J, Alt+K, or Alt+L arrives here, trigger their respective events and swallow
+                        if (alt && !ctrl && !win && (isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL))
                         {
                             if (isKeyDown)
                             {
@@ -1314,12 +1772,12 @@ namespace CueStealthInput
                                         Console.Out.Flush();
                                     }
                                 }
-                                else if (isI)
+                                else if (isU)
                                 {
                                     long nowTicks = DateTime.UtcNow.Ticks;
-                                    if (nowTicks - _lastAltITicks > TimeSpan.FromMilliseconds(150).Ticks)
+                                    if (nowTicks - _lastAltUTicks > TimeSpan.FromMilliseconds(150).Ticks)
                                     {
-                                        _lastAltITicks = nowTicks;
+                                        _lastAltUTicks = nowTicks;
                                         Console.WriteLine("{\"event\":\"stt_insert\"}");
                                         Console.Out.Flush();
                                     }
@@ -1361,6 +1819,96 @@ namespace CueStealthInput
                                     {
                                         _lastAltTTicks = nowTicks;
                                         Console.WriteLine("{\"event\":\"transcription_toggle\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isM)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltMTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                                    {
+                                        _lastAltMTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"model_toggle\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isS)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltSTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                                    {
+                                        _lastAltSTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"smart_toggle\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isR)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltRTicks > TimeSpan.FromMilliseconds(150).Ticks)
+                                    {
+                                        _lastAltRTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"recap\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isO)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltOTicks > TimeSpan.FromMilliseconds(75).Ticks)
+                                    {
+                                        _lastAltOTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"opacity_step\",\"delta\":-10}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isP)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltPTicks > TimeSpan.FromMilliseconds(75).Ticks)
+                                    {
+                                        _lastAltPTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"opacity_step\",\"delta\":10}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isI)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltITicks > TimeSpan.FromMilliseconds(40).Ticks)
+                                    {
+                                        _lastAltITicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"window_move\",\"direction\":\"up\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isJ)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltJTicks > TimeSpan.FromMilliseconds(40).Ticks)
+                                    {
+                                        _lastAltJTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"window_move\",\"direction\":\"left\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isK)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltKTicks > TimeSpan.FromMilliseconds(40).Ticks)
+                                    {
+                                        _lastAltKTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"window_move\",\"direction\":\"down\"}");
+                                        Console.Out.Flush();
+                                    }
+                                }
+                                else if (isL)
+                                {
+                                    long nowTicks = DateTime.UtcNow.Ticks;
+                                    if (nowTicks - _lastAltLTicks > TimeSpan.FromMilliseconds(40).Ticks)
+                                    {
+                                        _lastAltLTicks = nowTicks;
+                                        Console.WriteLine("{\"event\":\"window_move\",\"direction\":\"right\"}");
                                         Console.Out.Flush();
                                     }
                                 }

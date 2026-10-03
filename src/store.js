@@ -23,6 +23,12 @@ const DEFAULTS = {
     threads: 0
   },
   smart: false,
+  modelToggle: [
+    'gemini',
+    'groq',
+    'custom',
+    'ollama'
+  ],
   // Meeting (system) audio. macOS has no way to capture system audio except through
   // a ScreenCaptureKit display-capture session, and the OS then shows its
   // screen-recording indicator in the menu bar and lists cue under Control Center's
@@ -152,6 +158,11 @@ function load() {
   if (data) return data;
   const loaded = fileStore.load();
   data = deepMerge(DEFAULTS, loaded ? loaded.data : {});
+  if (!Array.isArray(data.modelToggle) || data.modelToggle.length < 4) {
+    data.modelToggle = ['gemini', 'groq', 'custom', 'ollama'];
+  } else if (data.modelToggle[0] === 'gemini' && data.modelToggle[1] === 'custom' && data.modelToggle[2] === 'groq' && data.modelToggle[3] === 'ollama') {
+    data.modelToggle = ['gemini', 'groq', 'custom', 'ollama'];
+  }
   if (loaded && loaded.recoveredFromBackup) save(); // best-effort heal so the corruption doesn't linger
   return data;
 }
@@ -230,6 +241,9 @@ module.exports = {
   setSettings(patch) {
     load();
     const nextSettings = deepMerge(data, patch || {});
+    if (patch && Array.isArray(patch.modelToggle)) {
+      nextSettings.modelToggle = patch.modelToggle.slice(0, 4);
+    }
     nextSettings.baseUrl = normalizeBaseUrl(nextSettings.baseUrl);
     nextSettings.opacity = clampOpacity(nextSettings.opacity);
     data = nextSettings;

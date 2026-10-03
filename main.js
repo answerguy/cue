@@ -106,6 +106,10 @@ function initStealthHook() {
     onHistoryToggle: () => send('history:toggle'),
     onHideToggle: () => send('hide:toggle'),
     onTranscriptionToggle: () => send('transcription:toggle'),
+    onModelToggle: () => send('model:toggle'),
+    onSmartToggle: () => send('smart:toggle'),
+    onOpacityStep: (delta) => send('opacity:step', { delta }),
+    onWindowMove: (direction) => moveWindow(direction),
     onShortcut: (action) => triggerShortcutAction(action),
     log: (msg) => console.log(msg)
   });
@@ -114,7 +118,7 @@ function initStealthHook() {
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false };
+const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false, model: false, smart: false, recap: false, opacityDown: false, opacityUp: false, moveUp: false, moveLeft: false, moveDown: false, moveRight: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
@@ -1322,6 +1326,19 @@ function stopWindowDrag() {
   clearInterval(windowDrag);
   windowDrag = null;
 }
+function moveWindow(direction) {
+  if (!win || win.isDestroyed()) return;
+  const STEP = 40;
+  const bounds = win.getBounds();
+  let { x, y, width, height } = bounds;
+  if (direction === 'up') y -= STEP;
+  else if (direction === 'down') y += STEP;
+  else if (direction === 'left') x -= STEP;
+  else if (direction === 'right') x += STEP;
+  win.setBounds({ x, y, width, height });
+  saveWindowPosition();
+}
+ipcMain.on('window:move', (_e, direction) => moveWindow(direction));
 ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
 ipcMain.on('app:quit', () => app.quit());
 ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
@@ -1407,6 +1424,36 @@ function registerShortcuts() {
   });
   shortcutState.history = globalShortcut.register('Alt+N', () => {
     send('history:toggle');
+  });
+  shortcutState.model = globalShortcut.register('Alt+M', () => {
+    send('model:toggle');
+  });
+  shortcutState.smart = globalShortcut.register('Alt+S', () => {
+    send('smart:toggle');
+  });
+  shortcutState.recap = globalShortcut.register('Alt+R', () => {
+    triggerShortcutAction('recap');
+  });
+  shortcutState.opacityDown = globalShortcut.register('Alt+O', () => {
+    send('opacity:step', { delta: -10 });
+  });
+  shortcutState.opacityUp = globalShortcut.register('Alt+P', () => {
+    send('opacity:step', { delta: 10 });
+  });
+  shortcutState.moveUp = globalShortcut.register('Alt+I', () => {
+    moveWindow('up');
+  });
+  shortcutState.moveLeft = globalShortcut.register('Alt+J', () => {
+    moveWindow('left');
+  });
+  shortcutState.moveDown = globalShortcut.register('Alt+K', () => {
+    moveWindow('down');
+  });
+  shortcutState.moveRight = globalShortcut.register('Alt+L', () => {
+    moveWindow('right');
+  });
+  globalShortcut.register('Alt+U', () => {
+    send('stt:insert-question');
   });
   for (const [name, wasRegistered] of Object.entries(shortcutState)) {
     if (!wasRegistered) {

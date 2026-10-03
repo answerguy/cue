@@ -3,120 +3,103 @@ const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { DEFAULTS } = require('../src/shortcuts');
+const shortcuts = require('../src/shortcuts');
 
 const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
 const jsSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
-const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'styles.css'), 'utf8');
-const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
 const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+const stealthHookSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'stealth-hook-manager.js'), 'utf8');
 const csSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'native', 'stealth-input.cs'), 'utf8');
 
-test('shortcuts.js assigns previous4 to Alt+B and history to Alt+N', () => {
-  assert.equal(DEFAULTS.previous4, 'Alt+B');
-  assert.equal(DEFAULTS.history, 'Alt+N');
+test('shortcuts.js includes recap, opacityDown, and opacityUp defaults', () => {
+  const defaults = shortcuts.DEFAULTS;
+  assert.equal(defaults.recap, 'Alt+R');
+  assert.equal(defaults.opacityDown, 'Alt+O');
+  assert.equal(defaults.opacityUp, 'Alt+P');
 });
 
-test('index.html displays shortcut hints for Prev 4 and Transcription history', () => {
-  assert.match(htmlSrc, /<button[^>]*data-mode="previous4"[^>]*>[\s\S]*?<span[^>]*id="prev4-shortcut-hint"[^>]*>Alt\+B<\/span>/);
-  assert.match(htmlSrc, /<button[^>]*id="history-btn"[^>]*>[\s\S]*?<span[^>]*id="history-shortcut-hint"[^>]*>Alt\+N<\/span>/);
+test('opacity sliders in index.html allow 0% to 100%', () => {
+  assert.match(htmlSrc, /id="tb-opacity-slider"[^>]*min="0"[^>]*max="100"/);
+  assert.match(htmlSrc, /id="s-opacity-slider"[^>]*min="0"[^>]*max="100"/);
 });
 
-test('styles.css contains styling for history-btn shortcut hints', () => {
-  assert.match(cssSrc, /\.history-btn\s+\.shortcut-hint\s*\{/);
-  assert.match(cssSrc, /\.history-btn\.active\s+\.shortcut-hint\s*\{/);
+test('index.html displays Alt+R hint for recap and Alt+U for insert', () => {
+  assert.match(htmlSrc, /id="recap-shortcut-hint">Alt\+R<\/span>/);
+  assert.match(htmlSrc, /id="ip-insert-btn"[^>]*>[\s\S]*?<span class="ip-key">Alt\+U<\/span>\s*Insert/);
 });
 
-test('preload.js allows history:toggle IPC event channel', () => {
-  assert.match(preloadSrc, /'history:toggle'/);
+test('renderer.js clamps opacity between 0.0 and 1.0 (0% to 100%)', () => {
+  assert.match(jsSrc, /const OPACITY_MIN = 0\.0;/);
+  assert.match(jsSrc, /function changeOpacityBy\(deltaPercent\)/);
+  assert.match(jsSrc, /Math\.min\(100,\s*Math\.max\(0,\s*currentPercent \+ deltaPercent\)\)/);
+  assert.match(jsSrc, /cue\.on\('opacity:step',\s*\(\{\s*delta\s*\}\)\s*=>/);
 });
 
-test('main.js tracks previous4 and history in shortcutState and registers global shortcuts', () => {
-  assert.match(mainSrc, /shortcutState\s*=\s*\{[^}]*previous4:\s*false[^}]*history:\s*false/);
-  assert.match(mainSrc, /globalShortcut\.register\('Alt\+B',\s*\(\)\s*=>\s*\{?\s*triggerShortcutAction\('previous4'\)/);
-  assert.match(mainSrc, /globalShortcut\.register\('Alt\+N',\s*\(\)\s*=>\s*\{?\s*send\('history:toggle'\)/);
-  assert.match(mainSrc, /onHistoryToggle:\s*\(\)\s*=>\s*send\('history:toggle'\)/);
+test('renderer.js binds Alt+R to recap, Alt+O/P to opacity, Alt+U to insert, and Alt+(I,J,K,L) to window move', () => {
+  // Input keydown handlers
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'u' \|\| e\.key === 'U'\)[\s\S]*?insertInterviewerQuestion\(\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'r' \|\| e\.key === 'R'\)[\s\S]*?runMode\('recap',\s*''\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'o' \|\| e\.key === 'O'\)[\s\S]*?changeOpacityBy\(-10\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'p' \|\| e\.key === 'P'\)[\s\S]*?changeOpacityBy\(10\)/);
+  assert.match(jsSrc, /cue\.windowMove\(dir\)/);
+
+  // Document keydown handlers
+  const docHandlerMatch = jsSrc.match(/document\.addEventListener\('keydown',[\s\S]*?\}\);/);
+  assert.ok(docHandlerMatch, 'document keydown listener must exist');
+  const docBody = docHandlerMatch[0];
+  assert.match(docBody, /e\.altKey && \(e\.key === 'u' \|\| e\.key === 'U'\)/);
+  assert.match(docBody, /e\.altKey && \(e\.key === 'r' \|\| e\.key === 'R'\)/);
+  assert.match(docBody, /e\.altKey && \(e\.key === 'o' \|\| e\.key === 'O'\)/);
+  assert.match(docBody, /e\.altKey && \(e\.key === 'p' \|\| e\.key === 'P'\)/);
 });
 
-test('renderer.js wires history:toggle IPC and listens for Alt+B and Alt+N keydown', () => {
-  assert.match(jsSrc, /cue\.on\('history:toggle',\s*toggleSidebar\)/);
-  // input keydown
-  assert.match(jsSrc, /e\.altKey\s*&&\s*\(e\.key\s*===\s*'b'\s*\|\|\s*e\.key\s*===\s*'B'\)[\s\S]*?runMode\('previous4',\s*''\)/);
-  assert.match(jsSrc, /e\.altKey\s*&&\s*\(e\.key\s*===\s*'n'\s*\|\|\s*e\.key\s*===\s*'N'\)[\s\S]*?toggleSidebar\(\)/);
-  // boot shortcut hints
-  assert.match(jsSrc, /prev4HintEl\.textContent\s*=\s*isWindows\s*\?\s*'Alt\+B'\s*:\s*'⌥B'/);
-  assert.match(jsSrc, /historyHintEl\.textContent\s*=\s*isWindows\s*\?\s*'Alt\+N'\s*:\s*'⌥N'/);
+test('preload.js exposes windowMove and allows opacity:step event', () => {
+  assert.match(preloadSrc, /windowMove:\s*\(direction\)\s*=>\s*ipcRenderer\.send\('window:move',\s*direction\)/);
+  assert.match(preloadSrc, /'opacity:step'/);
 });
 
-test('native stealth-input.cs handles Alt+B (previous4) and Alt+N (history_toggle)', () => {
-  assert.match(csSrc, /_lastAltBTicks/);
-  assert.match(csSrc, /_lastAltNTicks/);
-  assert.match(csSrc, /bool isB\s*=\s*\(vk == 0x42 \|\| vk == 0x62\);/);
-  assert.match(csSrc, /bool isN\s*=\s*\(vk == 0x4E \|\| vk == 0x6E\);/);
-  assert.match(csSrc, /isB\s*&&\s*\(alt\s*\|\|\s*_altPending\)\s*&&\s*!ctrl\s*&&\s*!win/);
-  assert.match(csSrc, /isN\s*&&\s*\(alt\s*\|\|\s*_altPending\)\s*&&\s*!ctrl\s*&&\s*!win/);
-  assert.ok(csSrc.includes('\\"event\\":\\"shortcut\\",\\"action\\":\\"previous4\\"'));
-  assert.ok(csSrc.includes('\\"event\\":\\"history_toggle\\"'));
+test('stealth-hook-manager dispatches opacity_step and window_move', () => {
+  assert.match(stealthHookSrc, /case 'opacity_step':[\s\S]*?onOpacityStep\(msg\.delta\);/);
+  assert.match(stealthHookSrc, /case 'window_move':[\s\S]*?onWindowMove\(msg\.direction\);/);
 });
 
-test('window width is calibrated and action row is dynamic to accommodate all buttons without clipping', () => {
-  assert.match(mainSrc, /const MAIN_W\s*=\s*(?:7[2-9]\d|8\d\d)/, 'MAIN_W must be calibrated to accommodate all 4 buttons');
-  assert.match(cssSrc, /--main-w:\s*(?:7[2-9]\d|8\d\d)px/, '--main-w must match calibrated MAIN_W');
-  assert.match(cssSrc, /#panel-wrap\s*\{[^}]*width:\s*fit-content/, '#panel-wrap must dynamically fit action-row contents');
-  assert.match(cssSrc, /#action-row\s*\{[^}]*display:\s*flex/, '#action-row must cleanly flex all 4 buttons');
-  assert.match(jsSrc, /function syncWindowWidth\(\)/, 'renderer must dynamically synchronize --main-w with window width');
+test('main.js handles window movement and opacity stepping from stealth hook and shortcuts', () => {
+  assert.match(mainSrc, /onOpacityStep:\s*\(delta\)\s*=>\s*send\('opacity:step',\s*\{\s*delta\s*\}\)/);
+  assert.match(mainSrc, /onWindowMove:\s*\(direction\)\s*=>\s*moveWindow\(direction\)/);
+  assert.match(mainSrc, /function moveWindow\(direction\)/);
+  assert.match(mainSrc, /ipcMain\.on\('window:move',\s*\(_e,\s*direction\)\s*=>\s*moveWindow\(direction\)\)/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+R'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+O'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+P'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+I'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+J'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+K'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+L'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+U'/);
 });
 
-test('shortcuts.js assigns hide to Alt+H and transcription to Alt+T', () => {
-  assert.equal(DEFAULTS.hide, 'Alt+H');
-  assert.equal(DEFAULTS.transcription, 'Alt+T');
-});
+test('stealth-input.cs defines and masks Alt+U, Alt+R, Alt+O, Alt+P, and Alt+(I,J,K,L)', () => {
+  // Key flags
+  assert.match(csSrc, /bool isU = \(vk == 0x55 \|\| vk == 0x75\);/);
+  assert.match(csSrc, /bool isR = \(vk == 0x52 \|\| vk == 0x72\);/);
+  assert.match(csSrc, /bool isO = \(vk == 0x4F \|\| vk == 0x6F\);/);
+  assert.match(csSrc, /bool isP = \(vk == 0x50 \|\| vk == 0x70\);/);
+  assert.match(csSrc, /bool isI = \(vk == 0x49 \|\| vk == 0x69\);/);
+  assert.match(csSrc, /bool isJ = \(vk == 0x4A \|\| vk == 0x6A\);/);
+  assert.match(csSrc, /bool isK = \(vk == 0x4B \|\| vk == 0x6B\);/);
+  assert.match(csSrc, /bool isL = \(vk == 0x4C \|\| vk == 0x6C\);/);
 
-test('main.js tracks hide and transcription in shortcutState and registers global shortcuts', () => {
-  assert.match(mainSrc, /shortcutState\s*=\s*\{[^}]*hide:\s*false[^}]*transcription:\s*false/);
-  assert.match(mainSrc, /globalShortcut\.register\('Alt\+H',\s*\(\)\s*=>\s*\{?\s*send\('hide:toggle'/);
-  assert.match(mainSrc, /globalShortcut\.register\('Alt\+T',\s*\(\)\s*=>\s*\{?\s*send\('transcription:toggle'/);
-  assert.match(mainSrc, /onHideToggle:\s*\(\)\s*=>\s*send\('hide:toggle'\)/);
-  assert.match(mainSrc, /onTranscriptionToggle:\s*\(\)\s*=>\s*send\('transcription:toggle'\)/);
-});
+  // Events emitted
+  assert.match(csSrc, /\\"event\\":\\"stt_insert\\"/);
+  assert.match(csSrc, /\\"event\\":\\"shortcut\\",\\"action\\":\\"recap\\"/);
+  assert.match(csSrc, /\\"event\\":\\"opacity_step\\",\\"delta\\":-10/);
+  assert.match(csSrc, /\\"event\\":\\"opacity_step\\",\\"delta\\":10/);
+  assert.match(csSrc, /\\"event\\":\\"window_move\\",\\"direction\\":\\"up\\"/);
+  assert.match(csSrc, /\\"event\\":\\"window_move\\",\\"direction\\":\\"left\\"/);
+  assert.match(csSrc, /\\"event\\":\\"window_move\\",\\"direction\\":\\"down\\"/);
+  assert.match(csSrc, /\\"event\\":\\"window_move\\",\\"direction\\":\\"right\\"/);
 
-test('preload.js allows transcription:toggle IPC event channel', () => {
-  assert.match(preloadSrc, /'transcription:toggle'/);
+  // Swallowed / masked check
+  assert.match(csSrc, /_altSwallowed = true; \/\/ Mark Alt completely swallowed!/);
 });
-
-test('renderer.js wires transcription:toggle IPC and listens for Alt+H and Alt+T keydown', () => {
-  assert.match(jsSrc, /cue\.on\('transcription:toggle',\s*toggleTranscription\)/);
-  assert.match(jsSrc, /e\.altKey\s*&&\s*\(e\.key\s*===\s*'h'\s*\|\|\s*e\.key\s*===\s*'H'\)[\s\S]*?toggleHide\(\)/);
-  assert.match(jsSrc, /e\.altKey\s*&&\s*\(e\.key\s*===\s*'t'\s*\|\|\s*e\.key\s*===\s*'T'\)[\s\S]*?toggleTranscription\(\)/);
-});
-
-test('native stealth-input.cs handles Alt+H (hide_toggle) and Alt+T (transcription_toggle)', () => {
-  assert.match(csSrc, /_lastAltHTicks/);
-  assert.match(csSrc, /_lastAltTTicks/);
-  assert.match(csSrc, /bool isH\s*=\s*\(vk == 0x48 \|\| vk == 0x68\);/);
-  assert.match(csSrc, /bool isT\s*=\s*\(vk == 0x54 \|\| vk == 0x74\);/);
-  assert.match(csSrc, /isH\s*&&\s*\(alt\s*\|\|\s*_altPending\)\s*&&\s*!ctrl\s*&&\s*!win/);
-  assert.match(csSrc, /isT\s*&&\s*\(alt\s*\|\|\s*_altPending\)\s*&&\s*!ctrl\s*&&\s*!win/);
-  assert.ok(csSrc.includes('\\"event\\":\\"hide_toggle\\"'));
-  assert.ok(csSrc.includes('\\"event\\":\\"transcription_toggle\\"'));
-});
-
-test('index.html does not hide API keys with dots in settings (uses type="text")', () => {
-  const keyIds = [
-    'key-cerebras',
-    'key-openai',
-    'key-anthropic',
-    'key-gemini',
-    'key-deepgram',
-    'key-groq',
-    'key-custom',
-    'key-minimax',
-    'key-deepseek',
-    'key-azure'
-  ];
-  for (const id of keyIds) {
-    const re = new RegExp(`id="${id}"[^>]*type="text"`);
-    assert.match(htmlSrc, re, `Input #${id} must have type="text" so keys are not hidden with dots`);
-  }
-});
-

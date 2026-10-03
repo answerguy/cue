@@ -8,9 +8,10 @@ let capturedCompletionRequest = null;
 let fakeResponseHeaders = null; // when set, create() returns an APIPromise-like with withResponse()
 let fakeCreateError = null;     // when set, create() rejects with it (the SDK's APIError shape)
 let fakeCreateHandler = null;   // when set, create() delegates to this function
+let fakeGeminiHandler = null;   // when set, generateContentStream() delegates to this function
 const originalModuleLoad = Module._load;
 
-Module._load = function loadWithOpenAIStub(request, parent, isMain) {
+Module._load = function loadWithStubs(request, parent, isMain) {
   if (request === 'openai') {
     return class FakeOpenAI {
       constructor(clientOptions) {
@@ -33,10 +34,24 @@ Module._load = function loadWithOpenAIStub(request, parent, isMain) {
       }
     };
   }
+  if (request === '@google/genai') {
+    return {
+      GoogleGenAI: class FakeGoogleGenAI {
+        constructor(opts) {
+          this.models = {
+            generateContentStream: (req) => {
+              if (fakeGeminiHandler) return fakeGeminiHandler(req);
+              return Promise.resolve([{ text: 'gemini ok' }]);
+            }
+          };
+        }
+      }
+    };
+  }
   return originalModuleLoad.call(this, request, parent, isMain);
 };
 
-const { createLLM, formatProviderErrorMessage, isQuotaError, geminiGenerationConfig, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER, isRateLimitError, isVisionSupported, isMultimodalUnsupportedError } = require('../src/llm');
+const { createLLM, formatProviderErrorMessage, isQuotaError, isUnavailableError, GEMINI_503_MAX_RETRIES, streamGemini, geminiGenerationConfig, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER, isRateLimitError, isVisionSupported, isMultimodalUnsupportedError, isSafetyClassificationResponse, OPENROUTER_FREE_FALLBACKS } = require('../src/llm');
 
 test.after(() => {
   Module._load = originalModuleLoad;
@@ -59,6 +74,7 @@ test.beforeEach(() => {
   fakeResponseHeaders = null;
   fakeCreateError = null;
   fakeCreateHandler = null;
+  fakeGeminiHandler = null;
 });
 
 test('routes the Custom provider through the configured OpenAI-compatible endpoint', async () => {
@@ -742,4 +758,215 @@ test('Transparent fallback: retries with string content if endpoint returns 400 
   assert.ok(Array.isArray(requests[0].messages.find(m => m.role === 'user').content), 'first attempt had image array');
   assert.equal(typeof requests[1].messages.find(m => m.role === 'user').content, 'string', 'second attempt was string');
 });
+
+test('isSafetyClassificationResponse: accurately classifies safety verdicts and preserves normal text', () => {
+  assert.equal(isSafetyClassificationResponse('User Safety: safe'), true);
+  assert.equal(isSafetyClassificationResponse('User Safety: unsafe'), true);
+  assert.equal(isSafetyClassificationResponse('Response Safety: safe'), true);
+  assert.equal(isSafetyClassificationResponse('Response Safety: unsafe'), true);
+  assert.equal(isSafetyClassificationResponse('User Safety: safe\nResponse Safety: safe'), true);
+  assert.equal(isSafetyClassificationResponse('**User Safety:** safe'), true);
+  assert.equal(isSafetyClassificationResponse('`User Safety: safe`'), true);
+  assert.equal(isSafetyClassificationResponse('  User Safety: safe  '), true);
+
+  // Normal conversation and answers must never be flagged
+  assert.equal(isSafetyClassificationResponse(''), false);
+  assert.equal(isSafetyClassificationResponse(null), false);
+  assert.equal(isSafetyClassificationResponse('4'), false);
+  assert.equal(isSafetyClassificationResponse('Hello there! How can I assist you?'), false);
+  assert.equal(isSafetyClassificationResponse('User safety is a critical topic in systems design.'), false);
+  assert.equal(isSafetyClassificationResponse('The following safety guidelines apply to password security.'), false);
+  assert.equal(isSafetyClassificationResponse('User Safety: We recommend implementing HTTPS and CSP headers to protect your users.'), false);
+});
+
+test('OpenRouter free: intercepts "User Safety: safe" and retries with fallback chat model', async () => {
+  const requests = [];
+  let attemptCount = 0;
+
+  fakeCreateHandler = (req) => {
+    requests.push(req);
+    attemptCount++;
+    if (attemptCount === 1) {
+      // First attempt: simulate OpenRouter routing openrouter/free to nvidia/nemotron-3.5-content-safety:free
+      return Promise.resolve([
+        { choices: [{ delta: { content: 'User' } }] },
+        { choices: [{ delta: { content: ' Safety' } }] },
+        { choices: [{ delta: { content: ':' } }] },
+        { choices: [{ delta: { content: ' safe' } }] }
+      ]);
+    }
+    // Subsequent attempt: fallback chat model responds
+    return Promise.resolve([
+      { choices: [{ delta: { content: 'Here ' } }] },
+      { choices: [{ delta: { content: 'is ' } }] },
+      { choices: [{ delta: { content: 'the answer.' } }] }
+    ]);
+  };
+
+  const llm = createLLM({
+    provider: 'custom',
+    smart: false,
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeys: { custom: 'demo-key' },
+    models: { custom: { fast: 'openrouter/free', smart: 'openrouter/free' } }
+  });
+
+  const tokens = [];
+  const res = await llm.stream({
+    system: 'Be helpful',
+    turns: [{ role: 'user', text: 'Explain JavaScript closures' }],
+    onToken: (t) => tokens.push(t)
+  });
+
+  // Verify that the safety text was NEVER emitted to onToken
+  const joinedTokens = tokens.join('');
+  assert.equal(joinedTokens.includes('User Safety: safe'), false, 'Safety text must not be emitted to UI');
+  assert.equal(res, 'Here is the answer.');
+  assert.equal(joinedTokens, 'Here is the answer.');
+
+  // Verify that 2 attempts were made and attempt 2 used a fallback model from OPENROUTER_FREE_FALLBACKS
+  assert.equal(requests.length, 2, 'Should have retried once');
+  assert.equal(requests[0].model, 'openrouter/free');
+  assert.equal(requests[1].model, OPENROUTER_FREE_FALLBACKS[0]);
+  assert.deepEqual(requests[1].extra_body, { models: OPENROUTER_FREE_FALLBACKS });
+});
+
+test('Safety classification: raises descriptive error if all retry attempts return safety classification', async () => {
+  fakeCreateHandler = (req) => {
+    return Promise.resolve([
+      { choices: [{ delta: { content: 'User Safety: safe' } }] }
+    ]);
+  };
+
+  const llm = createLLM({
+    provider: 'custom',
+    smart: false,
+    baseUrl: 'https://other-provider.example/v1',
+    apiKeys: { custom: 'key' },
+    models: { custom: { fast: 'some-safety-model', smart: 'some-safety-model' } }
+  });
+
+  const tokens = [];
+  await assert.rejects(
+    () => llm.stream({
+      system: 'sys',
+      turns: [{ role: 'user', text: 'test' }],
+      onToken: (t) => tokens.push(t)
+    }),
+    /content-safety classification/i
+  );
+
+  assert.equal(tokens.length, 0, 'No tokens should be emitted when only safety classifications are returned');
+});
+
+test('isUnavailableError: accurately identifies 503 and model overloaded signals', () => {
+  assert.equal(isUnavailableError({ status: 503 }), true);
+  assert.equal(isUnavailableError({ statusCode: 503 }), true);
+  assert.equal(isUnavailableError({ code: 503 }), true);
+  assert.equal(isUnavailableError({ code: 'UNAVAILABLE' }), true);
+  assert.equal(isUnavailableError(new Error('[503 Service Unavailable] The model is overloaded. Please try again later.')), true);
+  assert.equal(isUnavailableError(new Error('503 UNAVAILABLE')), true);
+  assert.equal(isUnavailableError(new Error('The model is overloaded. Please try again later.')), true);
+
+  // Non-503 errors must not match
+  assert.equal(isUnavailableError(null), false);
+  assert.equal(isUnavailableError(new Error('404 Not Found')), false);
+  assert.equal(isUnavailableError(new Error('API key not valid')), false);
+  assert.equal(isUnavailableError({ status: 400, message: 'Invalid argument' }), false);
+  assert.equal(isUnavailableError({ status: 429, code: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded' }), false);
+});
+
+test('formatProviderErrorMessage: maps 503 to an actionable "model is temporarily overloaded" message', () => {
+  const err = new Error('[503 Service Unavailable] The model is overloaded. Please try again later.');
+  const msg = formatProviderErrorMessage(err, 'gemini', 'gemini-3.8-flash');
+  assert.match(msg, /Gemini model "gemini-3\.8-flash" is temporarily overloaded \(503 Service Unavailable\)/);
+  assert.match(msg, /Please try again in a moment/);
+});
+
+test('streamGemini: retries up to 5 times on 503 and recovers if a retry succeeds', async () => {
+  let attempts = 0;
+  fakeGeminiHandler = (req) => {
+    attempts++;
+    if (attempts <= 4) {
+      const err = new Error('[503 Service Unavailable] The model is overloaded. Please try again later.');
+      err.status = 503;
+      return Promise.reject(err);
+    }
+    return Promise.resolve([{ text: 'recovered answer' }]);
+  };
+
+  const tokens = [];
+  const res = await streamGemini({
+    apiKey: 'test-key',
+    model: 'gemini-3.8-flash',
+    system: 'sys',
+    turns: [{ role: 'user', text: 'hello' }],
+    maxTokens: 500,
+    thinking: false,
+    onToken: (t) => tokens.push(t),
+    _retryDelayMs: 0
+  });
+
+  assert.equal(res, 'recovered answer');
+  assert.deepEqual(tokens, ['recovered answer']);
+  assert.equal(attempts, 5, 'Should have attempted initial try + 4 retries before succeeding on attempt 5');
+});
+
+test('streamGemini: exhausts all 5 retries (6 attempts total) before throwing 503 error', async () => {
+  let attempts = 0;
+  fakeGeminiHandler = (req) => {
+    attempts++;
+    const err = new Error('[503 Service Unavailable] The model is overloaded. Please try again later.');
+    err.status = 503;
+    return Promise.reject(err);
+  };
+
+  const tokens = [];
+  await assert.rejects(
+    () => streamGemini({
+      apiKey: 'test-key',
+      model: 'gemini-3.8-flash',
+      system: 'sys',
+      turns: [{ role: 'user', text: 'hello' }],
+      maxTokens: 500,
+      thinking: false,
+      onToken: (t) => tokens.push(t),
+      _retryDelayMs: 0
+    }),
+    /503 Service Unavailable/
+  );
+
+  assert.equal(attempts, 6, 'Must retry 5 times (1 initial + 5 retries = 6 attempts total) before failing');
+  assert.equal(tokens.length, 0, 'No tokens should be emitted when all attempts fail');
+});
+
+test('streamGemini: does not retry on non-503 client errors like 400 or invalid key', async () => {
+  let attempts = 0;
+  fakeGeminiHandler = (req) => {
+    attempts++;
+    const err = new Error('API key not valid. Please pass a valid API key.');
+    err.status = 400;
+    return Promise.reject(err);
+  };
+
+  const tokens = [];
+  await assert.rejects(
+    () => streamGemini({
+      apiKey: 'bad-key',
+      model: 'gemini-3.8-flash',
+      system: 'sys',
+      turns: [{ role: 'user', text: 'hello' }],
+      maxTokens: 500,
+      thinking: false,
+      onToken: (t) => tokens.push(t),
+      _retryDelayMs: 0
+    }),
+    /API key not valid/
+  );
+
+  assert.equal(attempts, 1, 'Non-503 errors must fail immediately on attempt 1 without retries');
+  assert.equal(tokens.length, 0);
+});
+
+
 

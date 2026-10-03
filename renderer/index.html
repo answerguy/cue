@@ -34,7 +34,7 @@
         <div id="opacity-popover" class="opacity-popover hidden">
           <div class="opacity-label">Opacity</div>
           <div class="opacity-row">
-            <input type="range" id="tb-opacity-slider" min="20" max="100" step="1" value="100" />
+            <input type="range" id="tb-opacity-slider" min="0" max="100" step="1" value="100" />
             <span id="tb-opacity-value">100%</span>
           </div>
         </div>
@@ -67,7 +67,10 @@
                 <span class="shortcut-hint" id="assist-shortcut-hint"></span>
               </button>
               <span class="sep">•</span>
-              <button class="act" data-mode="recap" aria-label="Recap"><span class="ic"></span><span>Recap</span></button>
+              <button class="act" data-mode="recap" aria-label="Recap">
+                <span class="ic"></span><span>Recap</span>
+                <span class="shortcut-hint" id="recap-shortcut-hint">Alt+R</span>
+              </button>
               <span class="sep">•</span>
               <button class="act" data-mode="previous4" aria-label="Explain terms from the last 4 messages with priority on newest">
                 <span class="ic"></span><span>Prev 4</span>
@@ -82,7 +85,7 @@
                     <span class="ip-key">Alt+A</span> Answer
                   </button>
                   <button type="button" class="ip-btn ip-btn-insert" id="ip-insert-btn" aria-label="Insert question into input box">
-                    <span class="ip-key">Alt+I</span> Insert
+                    <span class="ip-key">Alt+U</span> Insert
                   </button>
                   <button type="button" class="ip-btn ip-btn-dismiss" id="ip-dismiss-btn" aria-label="Dismiss interviewer question">✕</button>
                 </div>
@@ -98,7 +101,7 @@
                 <button id="clear-input-btn" class="input-delete-btn hidden" aria-label="Clear input">✕</button>
               </div>
               <div id="composer-bottom">
-                <button id="smart-toggle" class="smart-pill" aria-label="Smart"><span class="ic"></span><span>Smart</span></button>
+                <button id="smart-toggle" class="smart-pill" aria-label="Smart"><span class="ic"></span><span>Smart</span><span class="shortcut-hint" id="smart-shortcut-hint">Alt+S</span></button>
                 <button id="history-btn" class="history-btn" aria-label="Transcription history"><span class="ic"></span><span>Transcription history</span><span class="shortcut-hint" id="history-shortcut-hint">Alt+N</span></button>
                 <button id="more-btn" class="more-btn" aria-label="Settings"></button>
                 <div id="stealth-indicator" class="stealth-pill hidden" aria-label="Stealth typing active">
@@ -106,7 +109,10 @@
                   <span class="stealth-pill-text">Stealth</span>
                 </div>
                 <div class="spacer"></div>
-                <button id="send-btn" aria-label="Send"></button>
+                <div class="send-wrap">
+                  <div id="model-indicator" class="model-indicator" aria-label="Current model · Click or Alt+M to switch">Gemini</div>
+                  <button id="send-btn" aria-label="Send"></button>
+                </div>
               </div>
             </div>
           </div>
@@ -221,6 +227,68 @@
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
 
+        <label class="s-label">Model toggle (Alt+M) <span class="s-hint">cycle through four models</span></label>
+        <div class="s-field">
+          <span>Model 1</span>
+          <select id="model-toggle-1" class="s-select compact">
+            <option value="gemini">Gemini</option>
+            <option value="custom">Custom</option>
+            <option value="groq">Groq</option>
+            <option value="ollama">Ollama</option>
+            <option value="cerebras">Cerebras</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="minimax">MiniMax</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="azure">Azure AI</option>
+          </select>
+        </div>
+        <div class="s-field">
+          <span>Model 2</span>
+          <select id="model-toggle-2" class="s-select compact">
+            <option value="groq">Groq</option>
+            <option value="gemini">Gemini</option>
+            <option value="custom">Custom</option>
+            <option value="ollama">Ollama</option>
+            <option value="cerebras">Cerebras</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="minimax">MiniMax</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="azure">Azure AI</option>
+          </select>
+        </div>
+        <div class="s-field">
+          <span>Model 3</span>
+          <select id="model-toggle-3" class="s-select compact">
+            <option value="custom">Custom</option>
+            <option value="gemini">Gemini</option>
+            <option value="groq">Groq</option>
+            <option value="ollama">Ollama</option>
+            <option value="cerebras">Cerebras</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="minimax">MiniMax</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="azure">Azure AI</option>
+          </select>
+        </div>
+        <div class="s-field">
+          <span>Model 4</span>
+          <select id="model-toggle-4" class="s-select compact">
+            <option value="ollama">Ollama</option>
+            <option value="gemini">Gemini</option>
+            <option value="custom">Custom</option>
+            <option value="groq">Groq</option>
+            <option value="cerebras">Cerebras</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="minimax">MiniMax</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="azure">Azure AI</option>
+          </select>
+        </div>
+
         <label class="s-label">Assistant access <span class="s-hint">programs allowed to see what cue is doing</span></label>
         <div class="s-callers" id="applink-callers"></div>
 
@@ -309,7 +377,7 @@
       <div class="s-body s-tab-pane hidden" data-pane="appearance">
         <label class="s-label" for="s-opacity-slider">Opacity <span class="s-hint">how see-through the overlay is</span></label>
         <div class="s-opacity-row">
-          <input type="range" id="s-opacity-slider" min="20" max="100" step="1" value="100" />
+          <input type="range" id="s-opacity-slider" min="0" max="100" step="1" value="100" />
           <span id="s-opacity-value">100%</span>
         </div>
       </div>
