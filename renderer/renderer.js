@@ -1462,19 +1462,20 @@
       text = text.replace(hrEndRegex, '').trim();
     }
 
-    if (!text && !isHrMode) {
+    if (!text) {
       if (stagedInterviewerQuestion) {
-        answerInterviewerQuestion();
+        if (isHrMode) {
+          text = stagedInterviewerQuestion.text || '';
+        } else {
+          answerInterviewerQuestion();
+          return;
+        }
+      } else if (!isHrMode) {
+        runMode('assist', '');
         return;
       }
-      runMode('assist', '');
-      return;
     }
     const wasFromSTT = inputFromSTT;
-
-    if (!text && isHrMode && stagedInterviewerQuestion) {
-      text = stagedInterviewerQuestion.text || '';
-    }
     
     // Save to history before clearing (in case user wants to redo)
     if (text) {

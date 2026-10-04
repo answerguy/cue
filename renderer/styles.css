@@ -147,8 +147,8 @@ html, body {
 .tb-hide:hover { background: rgba(255,255,255,0.08); }
 .tb-hide .chev { width: 14px; height: 14px; display: inline-flex; color: rgba(255,255,255,0.9); }
 .tb-hide.collapsed .chev { transform: rotate(180deg); }
-.tb-hide .shortcut-hint, .tb-stop .shortcut-hint { font-size: 10px; font-weight: 500; color: var(--tx-mut); margin-left: 2px; white-space: nowrap; }
-.tb-hide:hover .shortcut-hint, .tb-stop:hover .shortcut-hint { color: rgba(255,255,255,0.7); }
+.tb-hide .shortcut-hint, .tb-stop .shortcut-hint { font-size: 10px; font-weight: 500; color: var(--tx-2); margin-left: 2px; white-space: nowrap; opacity: 1; }
+.tb-hide:hover .shortcut-hint, .tb-stop:hover .shortcut-hint { color: #fff; }
 .tb-focus {
   gap: 5px;
   padding: 4px 8px;
@@ -337,42 +337,60 @@ button:focus { outline: none; }
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 3px;
+  gap: 5px;
   margin-top: 6px;
   white-space: nowrap;
 }
 .act {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  border: none;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   background: transparent;
   cursor: default;
   color: var(--tx-2);
-  font-size: 13.5px;
-  font-weight: 500;
   font-family: var(--font);
-  padding: 5px 7px;
+  padding: 4px 8px;
   border-radius: 8px;
-  transition: background 140ms ease, color 140ms ease;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
   white-space: nowrap;
   flex-shrink: 0;
+  text-align: center;
+}
+.act-top {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.2;
 }
 .act .ic { display: inline-flex; color: var(--ic); flex-shrink: 0; }
-.act:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.act .shortcut-hint {
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--tx-2);
+  margin-left: 0;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 1;
+  letter-spacing: 0.02em;
+  transition: color 140ms ease;
+}
+.act:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.act:hover .shortcut-hint { color: #fff; opacity: 1; }
 .act:active { transform: translateY(0.5px); }
 .act:disabled { opacity: 0.5; cursor: default; }
-.sep { color: rgba(255,255,255,0.35); font-size: 14px; margin: 0 1px; flex-shrink: 0; }
-.act-primary {
-  font-size: 14.5px; font-weight: 600; padding: 5px 10px;
-  background: rgba(60,131,245,0.14); border: 1px solid rgba(60,131,245,0.30);
-  color: #a8c8ff; border-radius: 10px;
-}
-.act-primary:hover { background: rgba(60,131,245,0.22); color: #fff; }
-.act-secondary { font-size: 13px; font-weight: 500; padding: 5px 8px;
-  border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; }
-.act-secondary:hover { background: rgba(255,255,255,0.07); }
-.shortcut-hint { font-size: 10px; font-weight: 500; color: var(--tx-mut); margin-left: 3px; white-space: nowrap; flex-shrink: 0; }
+.sep { display: none; }
+.shortcut-hint { font-size: 10px; font-weight: 500; color: var(--tx-2); margin-left: 3px; white-space: nowrap; flex-shrink: 0; opacity: 1; }
 
 /* FIX #4: Visual indication that listening is active in input box */
 #composer.listening {
@@ -520,7 +538,8 @@ button:focus { outline: none; }
 }
 .ip-key {
   font-size: 10px;
-  opacity: 0.8;
+  opacity: 1;
+  color: var(--tx-2);
   font-family: var(--font);
 }
 .ip-body {
@@ -762,14 +781,15 @@ body.transparency-mode .stealth-pill-dot {
 .smart-pill .shortcut-hint {
   font-size: 10.5px;
   font-weight: 500;
-  color: var(--tx-mut);
+  color: var(--tx-2);
   margin-left: 2px;
+  opacity: 1;
 }
 .smart-pill:hover .shortcut-hint {
-  color: rgba(255,255,255,0.7);
+  color: #fff;
 }
 .smart-pill.on .shortcut-hint {
-  color: rgba(127,176,249,0.75);
+  color: #9ec5fe;
 }
 /* History button */
 .history-btn {
@@ -785,14 +805,15 @@ body.transparency-mode .stealth-pill-dot {
 .history-btn .shortcut-hint {
   font-size: 10.5px;
   font-weight: 500;
-  color: var(--tx-mut);
+  color: var(--tx-2);
   margin-left: 2px;
+  opacity: 1;
 }
 .history-btn:hover .shortcut-hint {
-  color: rgba(255,255,255,0.7);
+  color: #fff;
 }
 .history-btn.active .shortcut-hint {
-  color: rgba(34,197,94,0.75);
+  color: var(--live);
 }
 
 .more-btn {
@@ -1400,7 +1421,7 @@ body.transparency-mode .stealth-pill-dot {
   padding: 2px 5px;
   border: none;
   background: transparent;
-  color: var(--tx-mut);
+  color: var(--tx-2);
   border-radius: 6px;
   cursor: default;
   transition: color 120ms ease, background 120ms ease, transform 120ms ease;
@@ -1409,10 +1430,11 @@ body.transparency-mode .stealth-pill-dot {
 .resp-act-hint {
   font-size: 9px;
   font-weight: 600;
-  color: var(--tx-mut);
+  color: var(--tx-2);
   line-height: 1;
   white-space: nowrap;
   letter-spacing: 0.01em;
+  opacity: 1;
 }
 .resp-act-btn svg {
   display: block;
@@ -1424,11 +1446,11 @@ body.transparency-mode .stealth-pill-dot {
   cursor: default;
 }
 .resp-act-btn:hover {
-  color: var(--tx-1);
+  color: #fff;
   background: rgba(255, 255, 255, 0.08);
 }
 .resp-act-btn:hover .resp-act-hint {
-  color: var(--tx-1);
+  color: #fff;
 }
 .resp-act-btn:active {
   transform: scale(0.92);
