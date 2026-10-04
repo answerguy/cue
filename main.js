@@ -63,7 +63,19 @@ function triggerShortcutAction(action) {
   }
   lastShortcutAction = action;
   lastShortcutActionTime = now;
-  runFeature(action, '');
+  if (action === 'recap' || action === 'previous4') {
+    runFeature(action, '');
+  } else if (action === 'retry') {
+    send('response:retry');
+  } else if (action === 'previous_prompt') {
+    send('prompt:previous');
+  } else if (action === 'previous_answer') {
+    send('response:previous');
+  } else if (action === 'next_answer') {
+    send('response:next');
+  } else {
+    runFeature(action, '');
+  }
 }
 
 function initStealthHook() {
@@ -118,7 +130,7 @@ function initStealthHook() {
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false, model: false, smart: false, recap: false, opacityDown: false, opacityUp: false, moveUp: false, moveLeft: false, moveDown: false, moveRight: false };
+const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false, model: false, smart: false, recap: false, retry: false, previousPrompt: false, prevAnswer: false, nextAnswer: false, opacityDown: false, opacityUp: false, moveUp: false, moveLeft: false, moveDown: false, moveRight: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
@@ -1392,7 +1404,7 @@ function registerShortcuts() {
   shortcutState.assist = globalShortcut.register('CommandOrControl+Shift+Return', () => triggerShortcutAction('assist'));
   shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => triggerShortcutAction('leetcode'));
   shortcutState.hide = globalShortcut.register('Alt+H', () => send('hide:toggle', {}));
-  shortcutState.transcription = globalShortcut.register('Alt+T', () => send('transcription:toggle', {}));
+  shortcutState.transcription = globalShortcut.register('Alt+Y', () => send('transcription:toggle', {}));
   shortcutState.quit = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
   shortcutState.nofocus = globalShortcut.register('CommandOrControl+Shift+F', () => {
     toggleNoFocusMode();
@@ -1431,8 +1443,20 @@ function registerShortcuts() {
   shortcutState.smart = globalShortcut.register('Alt+S', () => {
     send('smart:toggle');
   });
-  shortcutState.recap = globalShortcut.register('Alt+R', () => {
+  shortcutState.recap = globalShortcut.register('Alt+Q', () => {
     triggerShortcutAction('recap');
+  });
+  shortcutState.retry = globalShortcut.register('Alt+R', () => {
+    triggerShortcutAction('retry');
+  });
+  shortcutState.previousPrompt = globalShortcut.register('Alt+W', () => {
+    triggerShortcutAction('previous_prompt');
+  });
+  shortcutState.prevAnswer = globalShortcut.register('Alt+E', () => {
+    triggerShortcutAction('previous_answer');
+  });
+  shortcutState.nextAnswer = globalShortcut.register('Alt+T', () => {
+    triggerShortcutAction('next_answer');
   });
   shortcutState.opacityDown = globalShortcut.register('Alt+O', () => {
     send('opacity:step', { delta: -10 });

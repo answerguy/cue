@@ -593,7 +593,7 @@ namespace CueStealthInput
                     Console.Out.Flush();
                     return true;
 
-                case 0x54: // 'T' key (Transcription toggle)
+                case 0x59: // 'Y' key (Transcription toggle)
                     Console.WriteLine("{\"event\":\"transcription_toggle\"}");
                     Console.Out.Flush();
                     return true;
@@ -608,8 +608,28 @@ namespace CueStealthInput
                     Console.Out.Flush();
                     return true;
 
-                case 0x52: // 'R' key (Recap)
+                case 0x51: // 'Q' key (Recap)
                     Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"recap\"}");
+                    Console.Out.Flush();
+                    return true;
+
+                case 0x57: // 'W' key (Previous prompt)
+                    Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"previous_prompt\"}");
+                    Console.Out.Flush();
+                    return true;
+
+                case 0x45: // 'E' key (Previous answer)
+                    Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"previous_answer\"}");
+                    Console.Out.Flush();
+                    return true;
+
+                case 0x52: // 'R' key (Retry prompt)
+                    Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"retry\"}");
+                    Console.Out.Flush();
+                    return true;
+
+                case 0x54: // 'T' key (Next answer)
+                    Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"next_answer\"}");
                     Console.Out.Flush();
                     return true;
 
@@ -745,7 +765,12 @@ namespace CueStealthInput
                     bool isV = (vk == 0x56 || vk == 0x76); // 'V' key
                     bool isA = (vk == 0x41 || vk == 0x61); // 'A' key
                     bool isU = (vk == 0x55 || vk == 0x75); // 'U' key
+                    bool isQ = (vk == 0x51 || vk == 0x71); // 'Q' key
+                    bool isW = (vk == 0x57 || vk == 0x77); // 'W' key
+                    bool isE = (vk == 0x45 || vk == 0x65); // 'E' key
                     bool isR = (vk == 0x52 || vk == 0x72); // 'R' key
+                    bool isT = (vk == 0x54 || vk == 0x74); // 'T' key
+                    bool isY = (vk == 0x59 || vk == 0x79); // 'Y' key
                     bool isO = (vk == 0x4F || vk == 0x6F); // 'O' key
                     bool isP = (vk == 0x50 || vk == 0x70); // 'P' key
                     bool isI = (vk == 0x49 || vk == 0x69); // 'I' key
@@ -755,10 +780,9 @@ namespace CueStealthInput
                     bool isB = (vk == 0x42 || vk == 0x62); // 'B' key
                     bool isN = (vk == 0x4E || vk == 0x6E); // 'N' key
                     bool isH = (vk == 0x48 || vk == 0x68); // 'H' key
-                    bool isT = (vk == 0x54 || vk == 0x74); // 'T' key
                     bool isM = (vk == 0x4D); // 'M' key
                     bool isS = (vk == 0x53); // 'S' key
-                    bool isAltShortcutKey = isC || isV || isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL;
+                    bool isAltShortcutKey = isC || isV || isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL || isQ || isW || isE || isY;
 
                     // A. In focus/stealth mode (_capturing == true), consume Shift and Ctrl keypresses completely!
                     if (_capturing && IsShiftKey(vk))

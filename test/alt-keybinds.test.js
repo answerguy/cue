@@ -14,7 +14,7 @@ const csSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'native', 'steal
 
 test('shortcuts.js includes recap, opacityDown, and opacityUp defaults', () => {
   const defaults = shortcuts.DEFAULTS;
-  assert.equal(defaults.recap, 'Alt+R');
+  assert.equal(defaults.recap, 'Alt+Q');
   assert.equal(defaults.opacityDown, 'Alt+O');
   assert.equal(defaults.opacityUp, 'Alt+P');
 });
@@ -24,9 +24,11 @@ test('opacity sliders in index.html allow 0% to 100%', () => {
   assert.match(htmlSrc, /id="s-opacity-slider"[^>]*min="0"[^>]*max="100"/);
 });
 
-test('index.html displays Alt+R hint for recap and Alt+U for insert', () => {
-  assert.match(htmlSrc, /id="recap-shortcut-hint">Alt\+R<\/span>/);
+test('index.html displays Alt+Q hint for recap, Alt+U for insert, Alt+H for hide, and Alt+Y for start session', () => {
+  assert.match(htmlSrc, /id="recap-shortcut-hint">Alt\+Q<\/span>/);
   assert.match(htmlSrc, /id="ip-insert-btn"[^>]*>[\s\S]*?<span class="ip-key">Alt\+U<\/span>\s*Insert/);
+  assert.match(htmlSrc, /id="hide-shortcut-hint">Alt\+H<\/span>/);
+  assert.match(htmlSrc, /id="stop-shortcut-hint">Alt\+Y<\/span>/);
 });
 
 test('renderer.js clamps opacity between 0.0 and 1.0 (0% to 100%)', () => {
@@ -36,10 +38,15 @@ test('renderer.js clamps opacity between 0.0 and 1.0 (0% to 100%)', () => {
   assert.match(jsSrc, /cue\.on\('opacity:step',\s*\(\{\s*delta\s*\}\)\s*=>/);
 });
 
-test('renderer.js binds Alt+R to recap, Alt+O/P to opacity, Alt+U to insert, and Alt+(I,J,K,L) to window move', () => {
+test('renderer.js binds Alt+Q to recap, Alt+W to previous prompt, Alt+E to prev answer, Alt+R to retry, Alt+T to next answer, Alt+Y to transcription', () => {
   // Input keydown handlers
   assert.match(jsSrc, /e\.altKey && \(e\.key === 'u' \|\| e\.key === 'U'\)[\s\S]*?insertInterviewerQuestion\(\)/);
-  assert.match(jsSrc, /e\.altKey && \(e\.key === 'r' \|\| e\.key === 'R'\)[\s\S]*?runMode\('recap',\s*''\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'q' \|\| e\.key === 'Q'\)[\s\S]*?runMode\('recap',\s*''\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'w' \|\| e\.key === 'W'\)[\s\S]*?restorePreviousPrompt\(\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'e' \|\| e\.key === 'E'\)[\s\S]*?goToPreviousAnswer\(\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'r' \|\| e\.key === 'R'\)[\s\S]*?retryResponse/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 't' \|\| e\.key === 'T'\)[\s\S]*?goToNextAnswer\(\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'y' \|\| e\.key === 'Y'\)[\s\S]*?toggleTranscription\(\)/);
   assert.match(jsSrc, /e\.altKey && \(e\.key === 'o' \|\| e\.key === 'O'\)[\s\S]*?changeOpacityBy\(-10\)/);
   assert.match(jsSrc, /e\.altKey && \(e\.key === 'p' \|\| e\.key === 'P'\)[\s\S]*?changeOpacityBy\(10\)/);
   assert.match(jsSrc, /cue\.windowMove\(dir\)/);
@@ -49,7 +56,12 @@ test('renderer.js binds Alt+R to recap, Alt+O/P to opacity, Alt+U to insert, and
   assert.ok(docHandlerMatch, 'document keydown listener must exist');
   const docBody = docHandlerMatch[0];
   assert.match(docBody, /e\.altKey && \(e\.key === 'u' \|\| e\.key === 'U'\)/);
+  assert.match(docBody, /e\.altKey && \(e\.key === 'q' \|\| e\.key === 'Q'\)/);
+  assert.match(docBody, /e\.altKey && \(e\.key === 'w' \|\| e\.key === 'W'\)/);
+  assert.match(docBody, /e\.altKey && \(e\.key === 'e' \|\| e\.key === 'E'\)/);
   assert.match(docBody, /e\.altKey && \(e\.key === 'r' \|\| e\.key === 'R'\)/);
+  assert.match(docBody, /e\.altKey && \(e\.key === 't' \|\| e\.key === 'T'\)/);
+  assert.match(docBody, /e\.altKey && \(e\.key === 'y' \|\| e\.key === 'Y'\)/);
   assert.match(docBody, /e\.altKey && \(e\.key === 'o' \|\| e\.key === 'O'\)/);
   assert.match(docBody, /e\.altKey && \(e\.key === 'p' \|\| e\.key === 'P'\)/);
 });
@@ -69,7 +81,12 @@ test('main.js handles window movement and opacity stepping from stealth hook and
   assert.match(mainSrc, /onWindowMove:\s*\(direction\)\s*=>\s*moveWindow\(direction\)/);
   assert.match(mainSrc, /function moveWindow\(direction\)/);
   assert.match(mainSrc, /ipcMain\.on\('window:move',\s*\(_e,\s*direction\)\s*=>\s*moveWindow\(direction\)\)/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+Q'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+W'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+E'/);
   assert.match(mainSrc, /globalShortcut\.register\('Alt\+R'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+T'/);
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+Y'/);
   assert.match(mainSrc, /globalShortcut\.register\('Alt\+O'/);
   assert.match(mainSrc, /globalShortcut\.register\('Alt\+P'/);
   assert.match(mainSrc, /globalShortcut\.register\('Alt\+I'/);

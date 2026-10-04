@@ -350,13 +350,15 @@
     const btn = $('#stop-btn');
     const ic = btn.querySelector('.ic');
     const label = btn.querySelector('.tb-stop-label');
+    const hint = btn.querySelector('#stop-shortcut-hint');
     btn.classList.toggle('active', active);
     if (ic) ic.innerHTML = active
       ? icon('square', { size: 14 })
       : icon('play', { size: 14, filled: false });
     if (label) label.textContent = active ? 'End session' : 'Start session';
     const title = active ? 'End session' : 'Start session';
-    btn.setAttribute('aria-label', title);
+    const keyHint = hint ? ` (${hint.textContent})` : ' (Alt+Y)';
+    btn.setAttribute('aria-label', title + keyHint);
   }
   setSessionButton(false);
 
@@ -454,7 +456,6 @@
     // Update pagination controls
     const pagination = group.querySelector('.resp-pagination');
     if (pagination) {
-      pagination.classList.toggle('hidden', group._iterations.length <= 1);
       const pageNum = pagination.querySelector('.resp-page-num');
       if (pageNum) pageNum.textContent = `${index + 1}/${group._iterations.length}`;
       const prevBtn = pagination.querySelector('.resp-act-prev');
@@ -471,7 +472,50 @@
     // Update retry button label
     const retryBtn = group.querySelector('.resp-act-retry');
     if (retryBtn) {
-      retryBtn.setAttribute('aria-label', iter.isError ? 'Retry failed prompt' : 'Retry prompt');
+      retryBtn.setAttribute('aria-label', iter.isError ? 'Retry failed prompt (Alt+R)' : 'Retry prompt (Alt+R)');
+    }
+  }
+
+  function getActiveResponseGroup() {
+    if (retryingGroup && retryingGroup.isConnected) return retryingGroup;
+    const groups = messages.querySelectorAll('.response-group');
+    if (!groups.length) return null;
+    return groups[groups.length - 1];
+  }
+
+  function goToPreviousAnswer(targetGroup) {
+    const group = targetGroup || getActiveResponseGroup();
+    if (!group) return;
+    if (group._iterations && group._iterations.length > 1 && group._currentIterationIndex > 0) {
+      showIteration(group, group._currentIterationIndex - 1);
+      return;
+    }
+    const allGroups = Array.from(messages.querySelectorAll('.response-group'));
+    const idx = allGroups.indexOf(group);
+    if (idx > 0) {
+      const prevGroup = allGroups[idx - 1];
+      prevGroup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      showToast('Previous answer', 1000);
+    } else {
+      showToast('First answer reached', 1200);
+    }
+  }
+
+  function goToNextAnswer(targetGroup) {
+    const group = targetGroup || getActiveResponseGroup();
+    if (!group) return;
+    if (group._iterations && group._iterations.length > 1 && group._currentIterationIndex < group._iterations.length - 1) {
+      showIteration(group, group._currentIterationIndex + 1);
+      return;
+    }
+    const allGroups = Array.from(messages.querySelectorAll('.response-group'));
+    const idx = allGroups.indexOf(group);
+    if (idx >= 0 && idx < allGroups.length - 1) {
+      const nextGroup = allGroups[idx + 1];
+      nextGroup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      showToast('Next answer', 1000);
+    } else {
+      showToast('Latest answer reached', 1200);
     }
   }
 
@@ -495,15 +539,15 @@
       group._currentIterationIndex = Math.max(0, group._iterations.length - 1);
     }
 
-    // 0. Version Pagination (< 1/2 >)
+    // 0. Version Pagination with previous (Alt+E) and next (Alt+T) answer
     const pagination = document.createElement('div');
-    pagination.className = 'resp-pagination' + (group._iterations.length > 1 ? '' : ' hidden');
+    pagination.className = 'resp-pagination';
 
     const prevBtn = document.createElement('button');
     prevBtn.type = 'button';
     prevBtn.className = 'resp-act-btn resp-act-prev' + (group._currentIterationIndex <= 0 ? ' disabled' : '');
-    prevBtn.setAttribute('aria-label', 'Previous iteration');
-    prevBtn.innerHTML = icon('chevron-left', { size: 13, stroke: 2 });
+    prevBtn.setAttribute('aria-label', 'Previous iteration (Alt+E)');
+    prevBtn.innerHTML = `<span class="resp-act-icon">${icon('chevron-left', { size: 13, stroke: 2 })}</span><span class="resp-act-hint">Alt+E</span>`;
     if (group._currentIterationIndex <= 0) prevBtn.disabled = true;
 
     const pageNum = document.createElement('span');
@@ -513,20 +557,16 @@
     const nextBtn = document.createElement('button');
     nextBtn.type = 'button';
     nextBtn.className = 'resp-act-btn resp-act-next' + (group._currentIterationIndex >= group._iterations.length - 1 ? ' disabled' : '');
-    nextBtn.setAttribute('aria-label', 'Next iteration');
-    nextBtn.innerHTML = icon('chevron-right', { size: 13, stroke: 2 });
+    nextBtn.setAttribute('aria-label', 'Next iteration (Alt+T)');
+    nextBtn.innerHTML = `<span class="resp-act-icon">${icon('chevron-right', { size: 13, stroke: 2 })}</span><span class="resp-act-hint">Alt+T</span>`;
     if (group._currentIterationIndex >= group._iterations.length - 1) nextBtn.disabled = true;
 
     prevBtn.addEventListener('click', () => {
-      if (group._currentIterationIndex > 0) {
-        showIteration(group, group._currentIterationIndex - 1);
-      }
+      goToPreviousAnswer(group);
     });
 
     nextBtn.addEventListener('click', () => {
-      if (group._currentIterationIndex < group._iterations.length - 1) {
-        showIteration(group, group._currentIterationIndex + 1);
-      }
+      goToNextAnswer(group);
     });
 
     pagination.appendChild(prevBtn);
@@ -534,43 +574,13 @@
     pagination.appendChild(nextBtn);
     wrap.appendChild(pagination);
 
-    // 1. Thumbs Up
-    const thumbsUpBtn = document.createElement('button');
-    thumbsUpBtn.type = 'button';
-    thumbsUpBtn.className = 'resp-act-btn resp-act-thumbs-up';
-    thumbsUpBtn.setAttribute('aria-label', 'Good response');
-    thumbsUpBtn.innerHTML = icon('thumbs-up', { size: 14, stroke: 1.8 });
-
-    // 2. Thumbs Down
-    const thumbsDownBtn = document.createElement('button');
-    thumbsDownBtn.type = 'button';
-    thumbsDownBtn.className = 'resp-act-btn resp-act-thumbs-down';
-    thumbsDownBtn.setAttribute('aria-label', 'Bad response');
-    thumbsDownBtn.innerHTML = icon('thumbs-down', { size: 14, stroke: 1.8 });
-
-    thumbsUpBtn.addEventListener('click', () => {
-      const active = thumbsUpBtn.classList.toggle('active');
-      if (active) {
-        thumbsDownBtn.classList.remove('active');
-        showToast('Thanks for the feedback!', 1800);
-      }
-    });
-
-    thumbsDownBtn.addEventListener('click', () => {
-      const active = thumbsDownBtn.classList.toggle('active');
-      if (active) {
-        thumbsUpBtn.classList.remove('active');
-        showToast('Thanks for the feedback!', 1800);
-      }
-    });
-
-    // 3. Retry Button (below every prompt / response)
+    // 1. Retry Button with Alt+R hint below it
     const retryBtn = document.createElement('button');
     retryBtn.type = 'button';
     retryBtn.className = 'resp-act-btn resp-act-retry';
     const currentIsError = group._iterations[group._currentIterationIndex] ? group._iterations[group._currentIterationIndex].isError : isError;
-    retryBtn.setAttribute('aria-label', currentIsError ? 'Retry failed prompt' : 'Retry prompt');
-    retryBtn.innerHTML = icon('rotate-cw', { size: 14, stroke: 1.8 });
+    retryBtn.setAttribute('aria-label', currentIsError ? 'Retry failed prompt (Alt+R)' : 'Retry prompt (Alt+R)');
+    retryBtn.innerHTML = `<span class="resp-act-icon">${icon('rotate-cw', { size: 14, stroke: 1.8 })}</span><span class="resp-act-hint">Alt+R</span>`;
 
     retryBtn.addEventListener('click', () => {
       if (busy) {
@@ -580,12 +590,12 @@
       retryResponse(group);
     });
 
-    // 4. Copy Button
+    // 2. Copy Button
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'resp-act-btn resp-act-copy';
     copyBtn.setAttribute('aria-label', 'Copy response');
-    copyBtn.innerHTML = icon('copy', { size: 14, stroke: 1.8 });
+    copyBtn.innerHTML = `<span class="resp-act-icon">${icon('copy', { size: 14, stroke: 1.8 })}</span><span class="resp-act-hint">Copy</span>`;
 
     let copyResetTimer = null;
     copyBtn.addEventListener('click', () => {
@@ -594,74 +604,20 @@
       if (!textToCopy) return;
       navigator.clipboard.writeText(textToCopy).then(() => {
         copyBtn.classList.add('copied');
-        copyBtn.innerHTML = icon('check', { size: 14, stroke: 2 });
+        copyBtn.innerHTML = `<span class="resp-act-icon">${icon('check', { size: 14, stroke: 2 })}</span><span class="resp-act-hint">Copied</span>`;
         showToast('Copied to clipboard', 1800);
         clearTimeout(copyResetTimer);
         copyResetTimer = setTimeout(() => {
           copyBtn.classList.remove('copied');
-          copyBtn.innerHTML = icon('copy', { size: 14, stroke: 1.8 });
+          copyBtn.innerHTML = `<span class="resp-act-icon">${icon('copy', { size: 14, stroke: 1.8 })}</span><span class="resp-act-hint">Copy</span>`;
         }, 1500);
       }).catch(() => {
         showToast('Failed to copy', 1800);
       });
     });
 
-    // 5. More Options Button
-    const moreBtn = document.createElement('button');
-    moreBtn.type = 'button';
-    moreBtn.className = 'resp-act-btn resp-act-more';
-    moreBtn.setAttribute('aria-label', 'More options');
-    moreBtn.innerHTML = icon('more-horizontal', { size: 14, stroke: 1.8 });
-
-    const menu = document.createElement('div');
-    menu.className = 'resp-more-menu hidden';
-
-    const copyAllItem = document.createElement('button');
-    copyAllItem.type = 'button';
-    copyAllItem.className = 'resp-menu-item';
-    copyAllItem.setAttribute('aria-label', 'Copy prompt and response');
-    copyAllItem.textContent = 'Copy prompt & response';
-    copyAllItem.addEventListener('click', (e) => {
-      e.stopPropagation();
-      menu.classList.add('hidden');
-      const userBubble = group.querySelector('.user-bubble');
-      const promptText = userBubble ? userBubble.textContent : (group.dataset.text || group.dataset.mode || '');
-      const currentIter = (group._iterations && group._iterations[group._currentIterationIndex]) ? group._iterations[group._currentIterationIndex].raw : '';
-      const aiText = currentIter || rawText || (group.querySelector('.ai-text') ? group.querySelector('.ai-text').innerText : '');
-      const fullText = (promptText ? `Q: ${promptText}\n\n` : '') + `A: ${aiText}`;
-      navigator.clipboard.writeText(fullText).then(() => {
-        showToast('Copied prompt & response', 1800);
-      }).catch(() => {});
-    });
-
-    const deleteItem = document.createElement('button');
-    deleteItem.type = 'button';
-    deleteItem.className = 'resp-menu-item danger';
-    deleteItem.setAttribute('aria-label', 'Delete this response');
-    deleteItem.textContent = 'Delete response';
-    deleteItem.addEventListener('click', (e) => {
-      e.stopPropagation();
-      menu.classList.add('hidden');
-      group.remove();
-      if (responseCount > 0) responseCount--;
-    });
-
-    menu.appendChild(copyAllItem);
-    menu.appendChild(deleteItem);
-
-    moreBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isHidden = menu.classList.contains('hidden');
-      document.querySelectorAll('.resp-more-menu').forEach((m) => m.classList.add('hidden'));
-      if (isHidden) menu.classList.remove('hidden');
-    });
-
-    wrap.appendChild(thumbsUpBtn);
-    wrap.appendChild(thumbsDownBtn);
     wrap.appendChild(retryBtn);
     wrap.appendChild(copyBtn);
-    wrap.appendChild(moreBtn);
-    wrap.appendChild(menu);
 
     return wrap;
   }
@@ -718,12 +674,6 @@
     caretEl = null;
     retryingGroup = null;
   }
-
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.resp-more-menu') && !e.target.closest('.resp-act-more')) {
-      document.querySelectorAll('.resp-more-menu').forEach((m) => m.classList.add('hidden'));
-    }
-  });
 
   let busyFailsafe = null;
   function setBusy(v) {
@@ -1078,6 +1028,40 @@
     }
   }
 
+  // ---- Prompt history for Alt+W ----
+  let promptHistory = [];
+  let promptHistoryIndex = -1;
+
+  function restorePreviousPrompt() {
+    if (promptHistory.length === 0) {
+      const bubbles = messages.querySelectorAll('.user-bubble');
+      bubbles.forEach((b) => {
+        const t = (b.textContent || '').trim();
+        if (t && !promptHistory.includes(t)) promptHistory.push(t);
+      });
+    }
+    if (promptHistory.length === 0) {
+      showToast('No previous prompt', 1500);
+      return;
+    }
+    if (promptHistoryIndex < 0 || promptHistoryIndex >= promptHistory.length) {
+      promptHistoryIndex = promptHistory.length - 1;
+    } else if (promptHistoryIndex > 0) {
+      promptHistoryIndex--;
+    }
+    const text = promptHistory[promptHistoryIndex];
+    input.value = text;
+    // CRITICAL: Must not touch the status of Alt+C (stealth typing mode)
+    if (isStealthTypingActive) {
+      setStealthCaretPos(text.length);
+    }
+    syncPlaceholder();
+    updateSendButtonState();
+    updateDeleteButton();
+    syncCaretMirror();
+    showToast('Previous prompt restored', 1200);
+  }
+
   // ---- Restore last question from history (Ctrl+Z) ----
   function restoreLastQuestion() {
     const last = questionHistory.pop();
@@ -1402,6 +1386,10 @@
     
     // Save to history before clearing (in case user wants to redo)
     saveToQuestionHistory(text);
+    if (!promptHistory.length || promptHistory[promptHistory.length - 1] !== text) {
+      promptHistory.push(text);
+    }
+    promptHistoryIndex = -1;
     
     input.value = '';
     inputFromSTT = false;
@@ -1437,10 +1425,37 @@
         return;
       }
     }
-    // Alt+R: Run recap
-    if (e.altKey && (e.key === 'r' || e.key === 'R') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+    // Alt+Q: Run recap
+    if (e.altKey && (e.key === 'q' || e.key === 'Q') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       runMode('recap', '');
+      return;
+    }
+    // Alt+W: Bring back previous prompt in input box
+    if (e.altKey && (e.key === 'w' || e.key === 'W') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      restorePreviousPrompt();
+      return;
+    }
+    // Alt+E: Go to previous answer
+    if (e.altKey && (e.key === 'e' || e.key === 'E') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      goToPreviousAnswer();
+      return;
+    }
+    // Alt+R: Retry prompt
+    if (e.altKey && (e.key === 'r' || e.key === 'R') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      const group = getActiveResponseGroup();
+      if (!group) {
+        showToast('No prompt to retry', 1500);
+        return;
+      }
+      if (busy) {
+        showToast('Please wait for the current response to finish', 2000);
+        return;
+      }
+      retryResponse(group);
       return;
     }
     // Alt+O: Reduce opacity
@@ -1483,8 +1498,14 @@
       toggleHide();
       return;
     }
-    // Alt+T: Toggle transcription
+    // Alt+T: Go to next answer
     if (e.altKey && (e.key === 't' || e.key === 'T') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      goToNextAnswer();
+      return;
+    }
+    // Alt+Y: Toggle transcription
+    if (e.altKey && (e.key === 'y' || e.key === 'Y') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       toggleTranscription();
       return;
@@ -1554,10 +1575,37 @@
         return;
       }
     }
-    // Alt+R: Run recap
-    if (e.altKey && (e.key === 'r' || e.key === 'R') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+    // Alt+Q: Run recap
+    if (e.altKey && (e.key === 'q' || e.key === 'Q') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       runMode('recap', '');
+      return;
+    }
+    // Alt+W: Bring back previous prompt in input box
+    if (e.altKey && (e.key === 'w' || e.key === 'W') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      restorePreviousPrompt();
+      return;
+    }
+    // Alt+E: Go to previous answer
+    if (e.altKey && (e.key === 'e' || e.key === 'E') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      goToPreviousAnswer();
+      return;
+    }
+    // Alt+R: Retry prompt
+    if (e.altKey && (e.key === 'r' || e.key === 'R') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      const group = getActiveResponseGroup();
+      if (!group) {
+        showToast('No prompt to retry', 1500);
+        return;
+      }
+      if (busy) {
+        showToast('Please wait for the current response to finish', 2000);
+        return;
+      }
+      retryResponse(group);
       return;
     }
     // Alt+O: Reduce opacity
@@ -1600,8 +1648,14 @@
       toggleHide();
       return;
     }
-    // Alt+T: Toggle transcription
+    // Alt+T: Go to next answer
     if (e.altKey && (e.key === 't' || e.key === 'T') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      goToNextAnswer();
+      return;
+    }
+    // Alt+Y: Toggle transcription
+    if (e.altKey && (e.key === 'y' || e.key === 'Y') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       toggleTranscription();
       return;
@@ -1853,6 +1907,31 @@
     if (typeof delta === 'number') {
       changeOpacityBy(delta);
     }
+  });
+
+  cue.on('response:retry', () => {
+    const group = getActiveResponseGroup();
+    if (!group) {
+      showToast('No prompt to retry', 1500);
+      return;
+    }
+    if (busy) {
+      showToast('Please wait for the current response to finish', 2000);
+      return;
+    }
+    retryResponse(group);
+  });
+
+  cue.on('prompt:previous', () => {
+    restorePreviousPrompt();
+  });
+
+  cue.on('response:previous', () => {
+    goToPreviousAnswer();
+  });
+
+  cue.on('response:next', () => {
+    goToNextAnswer();
   });
 
   // Toggle transcription (start/stop listening). Kick off system-audio capture straight from the click so
@@ -3750,11 +3829,16 @@
     const smartHintEl = document.getElementById('smart-shortcut-hint');
     if (smartHintEl) smartHintEl.textContent = isWindows ? 'Alt+S' : '⌥S';
     const recapHintEl = document.getElementById('recap-shortcut-hint');
-    if (recapHintEl) recapHintEl.textContent = isWindows ? 'Alt+R' : '⌥R';
+    if (recapHintEl) recapHintEl.textContent = isWindows ? 'Alt+Q' : '⌥Q';
+    const hideHintEl = document.getElementById('hide-shortcut-hint');
+    if (hideHintEl) hideHintEl.textContent = isWindows ? 'Alt+H' : '⌥H';
+    const stopHintEl = document.getElementById('stop-shortcut-hint');
+    if (stopHintEl) stopHintEl.textContent = isWindows ? 'Alt+Y' : '⌥Y';
     const sayBtn = document.querySelector('.act[data-mode="say"]');
     const assistBtn = document.querySelector('.act[data-mode="assist"]');
     const recapBtn = document.querySelector('.act[data-mode="recap"]');
     const prev4Btn = document.querySelector('.act[data-mode="previous4"]');
+    const hideBtn = document.getElementById('hide-btn');
     const historyBtnEl = document.getElementById('history-btn');
     if (sayBtn) sayBtn.setAttribute('aria-label', isWindows
       ? 'Suggests what to say next based on the conversation (Ctrl+Enter)'
@@ -3763,8 +3847,11 @@
       ? 'Scans your screen and conversation to decide what you need (Ctrl+Shift+Enter)'
       : 'Scans your screen and conversation to decide what you need (⌘⇧↵)');
     if (recapBtn) recapBtn.setAttribute('aria-label', isWindows
-      ? 'Recap (Alt+R)'
-      : 'Recap (⌥R)');
+      ? 'Recap (Alt+Q)'
+      : 'Recap (⌥Q)');
+    if (hideBtn) hideBtn.setAttribute('aria-label', isWindows
+      ? 'Hide (Alt+H)'
+      : 'Hide (⌥H)');
     if (prev4Btn) prev4Btn.setAttribute('aria-label', isWindows
       ? 'Explain terms from the last 4 messages with priority on newest (Alt+B)'
       : 'Explain terms from the last 4 messages with priority on newest (⌥B)');

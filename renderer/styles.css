@@ -147,6 +147,8 @@ html, body {
 .tb-hide:hover { background: rgba(255,255,255,0.08); }
 .tb-hide .chev { width: 14px; height: 14px; display: inline-flex; color: rgba(255,255,255,0.9); }
 .tb-hide.collapsed .chev { transform: rotate(180deg); }
+.tb-hide .shortcut-hint, .tb-stop .shortcut-hint { font-size: 10px; font-weight: 500; color: var(--tx-mut); margin-left: 2px; white-space: nowrap; }
+.tb-hide:hover .shortcut-hint, .tb-stop:hover .shortcut-hint { color: rgba(255,255,255,0.7); }
 .tb-focus {
   gap: 5px;
   padding: 4px 8px;
@@ -1356,7 +1358,7 @@ body.transparency-mode .stealth-pill-dot {
   display: flex;
   align-items: center;
   position: relative;
-  gap: 3px;
+  gap: 5px;
   margin-top: 6px;
   margin-bottom: 2px;
   padding: 2px 0;
@@ -1365,12 +1367,11 @@ body.transparency-mode .stealth-pill-dot {
 .resp-pagination {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
-  margin-right: 5px;
+  gap: 3px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 6px;
-  padding: 1px 3px;
+  border-radius: 8px;
+  padding: 2px 4px;
   user-select: none;
 }
 .resp-pagination.hidden {
@@ -1381,29 +1382,20 @@ body.transparency-mode .stealth-pill-dot {
   font-weight: 600;
   color: var(--tx-mut);
   padding: 0 4px;
-  min-width: 22px;
+  min-width: 24px;
   text-align: center;
   font-family: var(--mono);
   letter-spacing: -0.02em;
 }
-.resp-pagination .resp-act-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-}
-.resp-pagination .resp-act-btn:disabled,
-.resp-pagination .resp-act-btn.disabled {
-  opacity: 0.25;
-  pointer-events: none;
-  cursor: default;
-}
 .resp-act-btn {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  gap: 2px;
+  min-width: 32px;
+  height: 34px;
+  padding: 2px 5px;
   border: none;
   background: transparent;
   color: var(--tx-mut);
@@ -1412,12 +1404,29 @@ body.transparency-mode .stealth-pill-dot {
   transition: color 120ms ease, background 120ms ease, transform 120ms ease;
   flex-shrink: 0;
 }
+.resp-act-hint {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--tx-mut);
+  line-height: 1;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
 .resp-act-btn svg {
   display: block;
+}
+.resp-act-btn:disabled,
+.resp-act-btn.disabled {
+  opacity: 0.3;
+  pointer-events: none;
+  cursor: default;
 }
 .resp-act-btn:hover {
   color: var(--tx-1);
   background: rgba(255, 255, 255, 0.08);
+}
+.resp-act-btn:hover .resp-act-hint {
+  color: var(--tx-1);
 }
 .resp-act-btn:active {
   transform: scale(0.92);

@@ -7,7 +7,7 @@ const DEFAULTS = {
   leetcode: 'CommandOrControl+H',
   quit: 'CommandOrControl+Shift+X',
   hide: 'Alt+H',
-  transcription: 'Alt+T',
+  transcription: 'Alt+Y',
   passthrough: 'CommandOrControl+Shift+I',
   screen: 'CommandOrControl+Shift+S',
   nofocus: 'CommandOrControl+Shift+F',
@@ -17,7 +17,11 @@ const DEFAULTS = {
   history: 'Alt+N',
   model: 'Alt+M',
   smart: 'Alt+S',
-  recap: 'Alt+R',
+  recap: 'Alt+Q',
+  retry: 'Alt+R',
+  previousPrompt: 'Alt+W',
+  prevAnswer: 'Alt+E',
+  nextAnswer: 'Alt+T',
   opacityDown: 'Alt+O',
   opacityUp: 'Alt+P'
 };
