@@ -1564,13 +1564,13 @@
     // Alt+O: Reduce opacity
     if (e.altKey && (e.key === 'o' || e.key === 'O') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
-      changeOpacityBy(-10);
+      changeOpacityBy(-5);
       return;
     }
     // Alt+P: Increase opacity
     if (e.altKey && (e.key === 'p' || e.key === 'P') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
-      changeOpacityBy(10);
+      changeOpacityBy(5);
       return;
     }
     // Alt+I / J / K / L: Move window Up / Left / Down / Right
@@ -1720,13 +1720,13 @@
     // Alt+O: Reduce opacity
     if (e.altKey && (e.key === 'o' || e.key === 'O') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
-      changeOpacityBy(-10);
+      changeOpacityBy(-5);
       return;
     }
     // Alt+P: Increase opacity
     if (e.altKey && (e.key === 'p' || e.key === 'P') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
-      changeOpacityBy(10);
+      changeOpacityBy(5);
       return;
     }
     // Alt+I / J / K / L: Move window Up / Left / Down / Right

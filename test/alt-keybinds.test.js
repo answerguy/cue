@@ -47,8 +47,8 @@ test('renderer.js binds Alt+Q to recap, Alt+W to previous prompt, Alt+E to prev 
   assert.match(jsSrc, /e\.altKey && \(e\.key === 'r' \|\| e\.key === 'R'\)[\s\S]*?retryResponse/);
   assert.match(jsSrc, /e\.altKey && \(e\.key === 't' \|\| e\.key === 'T'\)[\s\S]*?goToNextAnswer\(\)/);
   assert.match(jsSrc, /e\.altKey && \(e\.key === 'y' \|\| e\.key === 'Y'\)[\s\S]*?toggleTranscription\(\)/);
-  assert.match(jsSrc, /e\.altKey && \(e\.key === 'o' \|\| e\.key === 'O'\)[\s\S]*?changeOpacityBy\(-10\)/);
-  assert.match(jsSrc, /e\.altKey && \(e\.key === 'p' \|\| e\.key === 'P'\)[\s\S]*?changeOpacityBy\(10\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'o' \|\| e\.key === 'O'\)[\s\S]*?changeOpacityBy\(-5\)/);
+  assert.match(jsSrc, /e\.altKey && \(e\.key === 'p' \|\| e\.key === 'P'\)[\s\S]*?changeOpacityBy\(5\)/);
   assert.match(jsSrc, /cue\.windowMove\(dir\)/);
 
   // Document keydown handlers
@@ -110,8 +110,8 @@ test('stealth-input.cs defines and masks Alt+U, Alt+R, Alt+O, Alt+P, and Alt+(I,
   // Events emitted
   assert.match(csSrc, /\\"event\\":\\"stt_insert\\"/);
   assert.match(csSrc, /\\"event\\":\\"shortcut\\",\\"action\\":\\"recap\\"/);
-  assert.match(csSrc, /\\"event\\":\\"opacity_step\\",\\"delta\\":-10/);
-  assert.match(csSrc, /\\"event\\":\\"opacity_step\\",\\"delta\\":10/);
+  assert.match(csSrc, /\\"event\\":\\"opacity_step\\",\\"delta\\":-5/);
+  assert.match(csSrc, /\\"event\\":\\"opacity_step\\",\\"delta\\":5/);
   assert.match(csSrc, /\\"event\\":\\"window_move\\",\\"direction\\":\\"up\\"/);
   assert.match(csSrc, /\\"event\\":\\"window_move\\",\\"direction\\":\\"left\\"/);
   assert.match(csSrc, /\\"event\\":\\"window_move\\",\\"direction\\":\\"down\\"/);

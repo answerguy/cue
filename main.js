@@ -1470,10 +1470,10 @@ function registerShortcuts() {
     triggerShortcutAction('next_answer');
   });
   shortcutState.opacityDown = globalShortcut.register('Alt+O', () => {
-    send('opacity:step', { delta: -10 });
+    send('opacity:step', { delta: -5 });
   });
   shortcutState.opacityUp = globalShortcut.register('Alt+P', () => {
-    send('opacity:step', { delta: 10 });
+    send('opacity:step', { delta: 5 });
   });
   shortcutState.moveUp = globalShortcut.register('Alt+I', () => {
     moveWindow('up');

@@ -634,12 +634,12 @@ namespace CueStealthInput
                     return true;
 
                 case 0x4F: // 'O' key (Opacity down)
-                    Console.WriteLine("{\"event\":\"opacity_step\",\"delta\":-10}");
+                    Console.WriteLine("{\"event\":\"opacity_step\",\"delta\":-5}");
                     Console.Out.Flush();
                     return true;
 
                 case 0x50: // 'P' key (Opacity up)
-                    Console.WriteLine("{\"event\":\"opacity_step\",\"delta\":10}");
+                    Console.WriteLine("{\"event\":\"opacity_step\",\"delta\":5}");
                     Console.Out.Flush();
                     return true;
 
