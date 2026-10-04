@@ -706,16 +706,32 @@
   let toastFadeTimer = null;
   function showToast(message, ms) {
     let el = document.getElementById('toast');
+    const panelWrap = document.getElementById('panel-wrap');
     if (!el) {
       el = document.createElement('div');
       el.id = 'toast';
-      document.getElementById('panel-wrap').appendChild(el);
+      if (panelWrap) panelWrap.appendChild(el);
+      else document.body.appendChild(el);
     }
     // Clear any pending timers to prevent overlap
     clearTimeout(toastTimer);
     clearTimeout(toastFadeTimer);
     // Immediately update content (no stacking)
     el.textContent = message;
+
+    // Guard against window bottom clipping: if panel-wrap reaches near the bottom of the window,
+    // dock toast inside panel-wrap at the bottom so it is never clipped off-screen.
+    if (panelWrap) {
+      const wrapRect = panelWrap.getBoundingClientRect();
+      if (wrapRect.bottom + 48 > window.innerHeight) {
+        el.style.top = 'auto';
+        el.style.bottom = '12px';
+      } else {
+        el.style.top = '';
+        el.style.bottom = '';
+      }
+    }
+
     el.classList.add('show');
     toastTimer = setTimeout(() => {
       el.classList.remove('show');
@@ -750,9 +766,9 @@
   let isNoFocusMode = true;
   let temporaryFocusActive = false;
   let isStealthTypingActive = false;
-  let isTransparencyMode = false;
+  let isTransparencyMode = true;
   let lastStealthNotified = false;
-  let lastTransparencyNotified = false;
+  let lastTransparencyNotified = true;
   let stealthCaretPos = -1;
   let isStealthSelectAll = false;
 
@@ -899,6 +915,18 @@
 
   // Initialize placeholder and button to default active state immediately
   setNoFocusUI(true);
+
+  // Initialize transparency mode styling and indicator for default ON state
+  document.body.classList.toggle('transparency-mode', isTransparencyMode);
+  if (stealthIndicator) {
+    stealthIndicator.classList.toggle('hidden', !isStealthTypingActive && !isTransparencyMode);
+    const pillText = stealthIndicator.querySelector('.stealth-pill-text');
+    if (pillText) {
+      if (isStealthTypingActive && isTransparencyMode) pillText.textContent = 'Stealth + Click-Through';
+      else if (isStealthTypingActive) pillText.textContent = 'Stealth';
+      else if (isTransparencyMode) pillText.textContent = 'Click-Through';
+    }
+  }
 
   // ========== INTERVIEWER PILL & SMART BUFFER SYSTEM ==========
   const interviewerPill = document.getElementById('interviewer-pill');
@@ -2598,14 +2626,31 @@
     }
   });
 
+  let lastArrowTime = 0;
+  let lastArrowDir = 0;
+
+  function doArrowScroll(direction) {
+    if (!messages) return;
+    const now = Date.now();
+    const dt = now - lastArrowTime;
+    lastArrowTime = now;
+
+    if (dt < 400 && lastArrowDir === direction) {
+      // Key held down: instant scroll avoids Chromium smooth-scroll easing cancellation
+      messages.scrollBy({ top: direction * 55, behavior: 'auto' });
+    } else {
+      // Individual press: smooth scroll step
+      lastArrowDir = direction;
+      messages.scrollBy({ top: direction * 85, behavior: 'smooth' });
+    }
+  }
+
   cue.on('stealth:arrow-up', () => {
     if (isStealthTypingActive) {
       isStealthSelectAll = false;
       moveStealthCaretVertical(-1);
     } else if (isTransparencyMode) {
-      if (messages) {
-        messages.scrollBy({ top: -75, behavior: 'smooth' });
-      }
+      doArrowScroll(-1);
     }
   });
 
@@ -2614,9 +2659,7 @@
       isStealthSelectAll = false;
       moveStealthCaretVertical(1);
     } else if (isTransparencyMode) {
-      if (messages) {
-        messages.scrollBy({ top: 75, behavior: 'smooth' });
-      }
+      doArrowScroll(1);
     }
   });
 
@@ -3565,6 +3608,12 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !scrim.classList.contains('hidden')) void closeSettings();
     if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); openSettings(); }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && document.activeElement !== input && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (messages) {
+        e.preventDefault();
+        doArrowScroll(e.key === 'ArrowUp' ? -1 : 1);
+      }
+    }
   });
 
   // Safety net for the same class of bug: html/body are overflow:hidden, so any

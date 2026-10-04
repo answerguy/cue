@@ -49,7 +49,7 @@ namespace CueStealthInput
 
         private static readonly long[] _lastAltKeyTicks = new long[256];
         private static long _lastAltVTicks = 0;
-        private static volatile bool _transparencyMode = false;
+        private static volatile bool _transparencyMode = true;
         private static long _lastNoFocusTicks = 0;
         private static long _lastShortcutTicks = 0;
         private static readonly bool[] _swallowedKeys = new bool[256];

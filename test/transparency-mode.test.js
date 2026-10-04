@@ -30,12 +30,13 @@ test('main.js handles transparency mode, global shortcut, and guards mouse:ignor
   assert.match(mainSrc, /ipcMain\.handle\('transparency:get'/);
   assert.match(mainSrc, /ipcMain\.handle\('transparency:set'/);
   assert.match(mainSrc, /ipcMain\.handle\('transparency:toggle'/);
+  assert.match(mainSrc, /let\s+isTransparencyMode\s*=\s*true;/);
   assert.match(mainSrc, /send\('transparency:state'/);
 });
 
 test('renderer.js guards mousemove during transparency mode and handles arrow key scrolling', () => {
   const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
-  assert.match(rendererSrc, /let\s+isTransparencyMode\s*=\s*false;/);
+  assert.match(rendererSrc, /let\s+isTransparencyMode\s*=\s*true;/);
   assert.match(rendererSrc, /cue\.on\('transparency:state'/);
   assert.match(rendererSrc, /document\.addEventListener\('mousemove',\s*\(e\)\s*=>\s*\{\s*if\s*\(isTransparencyMode\)\s*return;/);
   assert.match(rendererSrc, /cue\.on\('stealth:arrow-up'/);
@@ -50,7 +51,7 @@ test('native stealth-input.cs defines Alt+V swallowing, arrow keys, and transpar
   assert.match(csSrc, /VK_DOWN\s*=\s*0x28/);
   assert.match(csSrc, /VK_PRIOR\s*=\s*0x21/);
   assert.match(csSrc, /VK_NEXT\s*=\s*0x22/);
-  assert.match(csSrc, /_transparencyMode/);
+  assert.match(csSrc, /_transparencyMode\s*=\s*true;/);
   assert.match(csSrc, /_lastAltVTicks/);
   assert.match(csSrc, /isV\s*&&\s*\(alt\s*\|\|\s*_altPending\)\s*&&\s*!ctrl\s*&&\s*!win/);
   assert.ok(csSrc.includes('transparency_toggle'));
@@ -78,6 +79,13 @@ test('stealth-input.cs strictly reserves Up/Down arrows in either mode and guara
   assert.match(csSrc, /if\s*\(_altSwallowed\)[\s\S]*?_altSwallowed\s*=\s*false;[\s\S]*?return\s*\(IntPtr\)1;/);
   // Alt+C toggle preserves _altSwallowed on exit so releasing Alt does not leak
   assert.doesNotMatch(csSrc, /_capturing\s*=\s*!_capturing;\s*if\s*\(!_capturing\)\s*\{[^}]*_altSwallowed/);
+});
+
+test('renderer.js scrolls smoothly on up/down arrow keys and handles key hold without ease choking', () => {
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
+  assert.match(rendererSrc, /function doArrowScroll\(direction\)/);
+  assert.match(rendererSrc, /behavior:\s*'auto'/);
+  assert.match(rendererSrc, /behavior:\s*'smooth'/);
 });
 
 

@@ -125,6 +125,9 @@ function initStealthHook() {
     onShortcut: (action) => triggerShortcutAction(action),
     log: (msg) => console.log(msg)
   });
+  if (isTransparencyMode && stealthHookManager && stealthHookManager.isAvailable()) {
+    stealthHookManager.setTransparency(true);
+  }
 }
 // Which global shortcuts cue actually holds. `globalShortcut.register` returns
 // false when another application already owns the combination, and nothing used
@@ -155,7 +158,7 @@ function toggleNoFocusMode() {
   setNoFocusMode(!isNoFocusMode);
 }
 
-let isTransparencyMode = false;
+let isTransparencyMode = true;
 let lastTransparencyToggleTime = 0;
 
 function setTransparencyMode(enabled, syncToHelper = true) {
@@ -386,7 +389,7 @@ function saveWindowPosition() {
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  const W = SIDE_W + MAIN_W + SIDE_W, H = 600;
+  const W = SIDE_W + MAIN_W + SIDE_W, H = 680;
 
   const savedSettings = store.getSettings();
   let startX = Math.round(workArea.x + (workArea.width - MAIN_W) / 2);
@@ -435,6 +438,9 @@ function createWindow() {
   }
 
   win = new BrowserWindow(winOptions);
+  if (isTransparencyMode) {
+    win.setIgnoreMouseEvents(true, { forward: false });
+  }
 
   // Fix 2: Only call setContentProtection if the OS supports it, and only on
   // a session where it will not blank the window out for the user themself
@@ -479,6 +485,9 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     win.showInactive();
     win.setTitle('Microsoft Edge Update');
+    if (isTransparencyMode) {
+      win.setIgnoreMouseEvents(true, { forward: false });
+    }
     send('nofocus:state', isNoFocusMode);
     send('transparency:state', isTransparencyMode);
     if (restoredTurns.length) {
