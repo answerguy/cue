@@ -27,7 +27,7 @@ function getRecent(turns, n) {
 // Compose the system prompt for a mode, weaving in profile/memory.
 function buildSystem(def, ctx) {
   let system = typeof def.buildSystem === 'function' ? def.buildSystem('') : (def.system || '');
-  if (ctx.profile && ['assist', 'say', 'ask', 'previous4'].includes(def.key)) {
+  if (ctx.profile && ['assist', 'say', 'ask', 'previous4', 'hr'].includes(def.key)) {
     system = 'Here is my background and experience. Weave it into my answer naturally. Name the projects, the tech, the results. This keeps my answer real instead of generic.\n\n---\n' + ctx.profile + '\n---\n\n' + system;
   }
   return system;
@@ -39,7 +39,7 @@ function buildUserTurn(def, ctx) {
 }
 
 // How much of the conversation to include per mode (turns).
-const MODE_WINDOW = { assist: 12, say: 14, recap: 0, ask: 12, leetcode: 0, previous4: 4 };
+const MODE_WINDOW = { assist: 12, say: 14, recap: 0, ask: 12, leetcode: 0, previous4: 4, hr: 12 };
 
 function windowFor(mode) {
   const n = MODE_WINDOW[mode];

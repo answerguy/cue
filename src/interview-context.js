@@ -174,17 +174,51 @@ function buildInterviewContext(settings, mode, transcript) {
   const resume    = settings.resumeText || '';
   const jd        = settings.jobDescription || '';
   const stories   = settings.starStories || '';
+  const hrStories = (settings.hrStories || settings.hrQa || '').trim();
   const whyCo     = settings.whyCompany || '';
   const whyLeave  = settings.whyLeaving || '';
   const workStyle = settings.workStyle || '';
   const salary    = settings.salaryTarget || '';
   const questions = settings.questionsToAsk || '';
 
-  const hasResume  = resume.trim().length > 0;
-  const hasStories = stories.trim().length > 0;
-  const hasJD      = jd.trim().length > 0;
+  const hasResume    = resume.trim().length > 0;
+  const hasStories   = stories.trim().length > 0;
+  const hasHrStories = hrStories.length > 0;
+  const hasJD        = jd.trim().length > 0;
 
   const blocks = [];
+
+  // Dedicated handling for HR mode
+  if (mode === 'hr') {
+    if (hasResume) {
+      const rb = buildResumeBlock(resume, 1800);
+      if (rb) blocks.push('=== Your Background ===\n' + rb);
+    }
+    if (hasJD) {
+      blocks.push(buildJDBlock(jd, 500));
+    }
+    if (hasHrStories) {
+      blocks.push(
+        '=== Prepared HR Questions, Answers & Stories ===\n' +
+        hrStories + '\n' +
+        'IMPORTANT: Use these prepared stories and Q&A pairs as the foundation for answering the HR question. Maintain strict continuity with these experiences so the candidate stays consistent across the interview. Feel free to adapt or invent details as and when required to fit the question.'
+      );
+    } else if (hasResume) {
+      blocks.push(
+        '(No prepared HR stories provided — invent a realistic, compelling, and consistent professional story grounded in the candidate\'s background above to answer the question convincingly.)'
+      );
+    }
+    if (workStyle) blocks.push('Work Style / Values:\n' + clip(workStyle, 400));
+    if (whyCo) blocks.push('Why This Company:\n' + clip(whyCo, 400));
+
+    if (!blocks.length) return null;
+
+    const tailorNote = hasJD
+      ? '\nTailor every answer to highlight fit with the target role above.'
+      : '';
+
+    return blocks.join('\n\n') + tailorNote;
+  }
 
   // Always include resume if available (but size varies by category)
   if (hasResume) {

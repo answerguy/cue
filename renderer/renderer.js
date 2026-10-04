@@ -338,6 +338,8 @@
   document.querySelector('.act[data-mode="recap"] .ic').innerHTML = icon('refresh-cw', { size: 16 });
   const prev4IC = document.querySelector('.act[data-mode="previous4"] .ic');
   if (prev4IC) prev4IC.innerHTML = icon('message-square-text', { size: 16 });
+  const hrActIC = document.querySelector('.act[data-mode="hr"] .ic');
+  if (hrActIC) hrActIC.innerHTML = icon('message-circle', { size: 16 });
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
   $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
   $('#send-btn').innerHTML = icon('play', { size: 15 });
@@ -1393,16 +1395,74 @@
     input.focus();
   });
 
-  function send() {
+  function triggerHrMode() {
     retryingGroup = null;
-    const text = input.value.trim();
+    let text = input.value.trim();
     deactivateStealthTyping();
     if (temporaryFocusActive) {
       input.blur();
       temporaryFocusActive = false;
       if (typeof cue.nofocusSet === 'function') cue.nofocusSet(true).catch(() => {});
     }
-    if (!text) {
+
+    // Strip /hr prefix or suffix if present
+    const hrStartRegex = /^\/hr\b/i;
+    const hrEndRegex = /\/hr$/i;
+    if (hrStartRegex.test(text)) {
+      text = text.replace(hrStartRegex, '').trim();
+    } else if (hrEndRegex.test(text)) {
+      text = text.replace(hrEndRegex, '').trim();
+    }
+
+    if (!text && stagedInterviewerQuestion) {
+      text = stagedInterviewerQuestion.text || '';
+    }
+
+    if (text) {
+      saveToQuestionHistory(text);
+      if (!promptHistory.length || promptHistory[promptHistory.length - 1] !== text) {
+        promptHistory.push(text);
+      }
+      promptHistoryIndex = -1;
+    }
+
+    input.value = '';
+    inputFromSTT = false;
+    lastSTTValue = '';
+    userSpeechStart = null;
+    composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
+    clearTimeout(softClearTimer);
+    clearTimeout(questionFinalizeTimer);
+    clearTimeout(sttFillTimer);
+    dismissInterviewerPill();
+    syncPlaceholder();
+    updateSendButtonState();
+
+    runMode('hr', text);
+  }
+
+  function send() {
+    retryingGroup = null;
+    let text = input.value.trim();
+    deactivateStealthTyping();
+    if (temporaryFocusActive) {
+      input.blur();
+      temporaryFocusActive = false;
+      if (typeof cue.nofocusSet === 'function') cue.nofocusSet(true).catch(() => {});
+    }
+
+    let isHrMode = false;
+    const hrStartRegex = /^\/hr\b/i;
+    const hrEndRegex = /\/hr$/i;
+    if (hrStartRegex.test(text)) {
+      isHrMode = true;
+      text = text.replace(hrStartRegex, '').trim();
+    } else if (hrEndRegex.test(text)) {
+      isHrMode = true;
+      text = text.replace(hrEndRegex, '').trim();
+    }
+
+    if (!text && !isHrMode) {
       if (stagedInterviewerQuestion) {
         answerInterviewerQuestion();
         return;
@@ -1411,13 +1471,19 @@
       return;
     }
     const wasFromSTT = inputFromSTT;
+
+    if (!text && isHrMode && stagedInterviewerQuestion) {
+      text = stagedInterviewerQuestion.text || '';
+    }
     
     // Save to history before clearing (in case user wants to redo)
-    saveToQuestionHistory(text);
-    if (!promptHistory.length || promptHistory[promptHistory.length - 1] !== text) {
-      promptHistory.push(text);
+    if (text) {
+      saveToQuestionHistory(text);
+      if (!promptHistory.length || promptHistory[promptHistory.length - 1] !== text) {
+        promptHistory.push(text);
+      }
+      promptHistoryIndex = -1;
     }
-    promptHistoryIndex = -1;
     
     input.value = '';
     inputFromSTT = false;
@@ -1431,9 +1497,11 @@
     syncPlaceholder();
     updateSendButtonState(); // FIX #9
     
-    // If text came from STT (interviewer question), use answerThis mode
-    // Otherwise use ask mode (user typed their own question)
-    runMode(wasFromSTT ? 'answerThis' : 'ask', text);
+    if (isHrMode) {
+      runMode('hr', text);
+    } else {
+      runMode(wasFromSTT ? 'answerThis' : 'ask', text);
+    }
   }
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
@@ -1457,6 +1525,12 @@
     if (e.altKey && (e.key === 'q' || e.key === 'Q') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       runMode('recap', '');
+      return;
+    }
+    // Alt+G: Run HR mode
+    if (e.altKey && (e.key === 'g' || e.key === 'G') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      triggerHrMode();
       return;
     }
     // Alt+W: Bring back previous prompt in input box
@@ -1607,6 +1681,12 @@
     if (e.altKey && (e.key === 'q' || e.key === 'Q') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       runMode('recap', '');
+      return;
+    }
+    // Alt+G: Run HR mode
+    if (e.altKey && (e.key === 'g' || e.key === 'G') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      triggerHrMode();
       return;
     }
     // Alt+W: Bring back previous prompt in input box
@@ -2422,6 +2502,10 @@
 
   cue.on('nofocus:state', (active) => {
     setNoFocusUI(active);
+  });
+
+  cue.on('hr:trigger', () => {
+    triggerHrMode();
   });
 
   cue.on('composer:focus', ({ temporary } = {}) => {
@@ -3266,6 +3350,9 @@
     // Style tab
     $('#ai-rules').value = settings.aiRules || '';
     updateAiRulesCounter();
+    // HR tab
+    const hrQaEl = $('#hr-qa');
+    if (hrQaEl) hrQaEl.value = settings.hrStories || settings.hrQa || '';
     // Appearance tab
     applyOpacity(settings.opacity, false);
   }
@@ -3565,6 +3652,12 @@
     }
     // Style tab
     settings.aiRules = $('#ai-rules').value.trim();
+    // HR tab
+    const hrQaEl = $('#hr-qa');
+    if (hrQaEl) {
+      settings.hrStories = hrQaEl.value.trim();
+      settings.hrQa = settings.hrStories;
+    }
     // Appearance tab
     const opacitySlider = $('#s-opacity-slider');
     if (opacitySlider) settings.opacity = clampOpacity(Number(opacitySlider.value) / 100);
@@ -3887,6 +3980,9 @@
     const assistBtn = document.querySelector('.act[data-mode="assist"]');
     const recapBtn = document.querySelector('.act[data-mode="recap"]');
     const prev4Btn = document.querySelector('.act[data-mode="previous4"]');
+    const hrBtn = document.querySelector('.act[data-mode="hr"]');
+    const hrHintEl = document.getElementById('hr-shortcut-hint');
+    if (hrHintEl) hrHintEl.textContent = isWindows ? 'Alt+G' : '⌥G';
     const hideBtn = document.getElementById('hide-btn');
     const historyBtnEl = document.getElementById('history-btn');
     if (sayBtn) sayBtn.setAttribute('aria-label', isWindows
@@ -3904,6 +4000,9 @@
     if (prev4Btn) prev4Btn.setAttribute('aria-label', isWindows
       ? 'Explain terms from the last 4 messages with priority on newest (Alt+B)'
       : 'Explain terms from the last 4 messages with priority on newest (⌥B)');
+    if (hrBtn) hrBtn.setAttribute('aria-label', isWindows
+      ? 'Answer HR question with prepared stories (Alt+G)'
+      : 'Answer HR question with prepared stories (⌥G)');
     if (historyBtnEl) historyBtnEl.setAttribute('aria-label', isWindows
       ? 'Transcription history (Alt+N)'
       : 'Transcription history (⌥N)');

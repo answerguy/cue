@@ -21,6 +21,7 @@ test('defaults cover the core actions', () => {
   assert.strictEqual(DEFAULTS.nextAnswer, 'Alt+T');
   assert.strictEqual(DEFAULTS.opacityDown, 'Alt+O');
   assert.strictEqual(DEFAULTS.opacityUp, 'Alt+P');
+  assert.strictEqual(DEFAULTS.hr, 'Alt+G');
   assert.ok(DEFAULTS.leetcode);
   assert.ok(DEFAULTS.quit);
 });

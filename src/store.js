@@ -72,6 +72,9 @@ const DEFAULTS = {
   // Tab 4: Q&A
   salaryTarget: '',      // e.g. "$150k-$180k base + equity"
   questionsToAsk: '',    // Questions to ask the interviewer
+  // HR Mode — prepared common questions, answers & stories
+  hrStories: '',
+  hrQa: '',
   // Tab 5: Style — custom response rules
   // The user writes how the AI should write: e.g. "no em-dashes", "use bullet
   // points", "casual tone". Applied to every LLM mode EXCEPT LeetCode (kept

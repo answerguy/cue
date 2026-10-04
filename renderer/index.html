@@ -76,6 +76,11 @@
                 <span class="ic"></span><span>Prev 4</span>
                 <span class="shortcut-hint" id="prev4-shortcut-hint">Alt+B</span>
               </button>
+              <span class="sep">•</span>
+              <button class="act" data-mode="hr" aria-label="Answer HR question (Alt+G)">
+                <span class="ic"></span><span>HR</span>
+                <span class="shortcut-hint" id="hr-shortcut-hint">Alt+G</span>
+              </button>
             </div>
             <div id="interviewer-pill" class="interviewer-pill hidden" role="region" aria-label="Interviewer question">
               <div class="ip-header">
@@ -148,6 +153,7 @@
       <div class="s-tabs">
         <button class="s-tab on" data-tab="keys">🔑 API Keys</button>
         <button class="s-tab" data-tab="transcription">🔉 Audio</button>
+        <button class="s-tab" data-tab="hr">👔 HR Mode</button>
         <button class="s-tab" data-tab="style">✨ Style</button>
         <button class="s-tab" data-tab="appearance">🌗 Appearance</button>
       </div>
@@ -379,6 +385,23 @@
         <div class="s-opacity-row">
           <input type="range" id="s-opacity-slider" min="0" max="100" step="1" value="100" />
           <span id="s-opacity-value">100%</span>
+        </div>
+      </div>
+
+      <!-- Tab: HR Mode -->
+      <div class="s-body s-tab-pane hidden" data-pane="hr">
+        <label class="s-label" for="hr-qa">HR Stories &amp; Prepared Q&amp;A <span class="s-hint">commonly asked HR questions, answers &amp; stories</span></label>
+        <textarea id="hr-qa" rows="12" spellcheck="false" placeholder="Enter your prepared HR stories and commonly asked question-answer pairs here.
+
+Example:
+Q: Tell me about a time you handled a difficult conflict with a coworker.
+A: On our payment integration project, a colleague and I had opposing views on API architecture. I scheduled a whiteboarding session where we mapped out latency and maintenance tradeoffs, and we combined the best of both designs, shipping ahead of deadline.
+
+Q: Describe a failure and what you learned from it.
+A: Early in my career, I deployed an untested cache invalidation script that caused high database load. I resolved it within 15 minutes and implemented automated staging canary checks, which eliminated future recurrence.
+"></textarea>
+        <div class="s-hint-block">
+          When HR mode is triggered (by prefixing or suffixing your message with <strong>/hr</strong>, or pressing <span class="keycap">Alt</span><span class="keycap">G</span>), this entire set of question-answer pairs and stories is sent as context to the AI. The AI anchors its answer in your prepared background to maintain continuity in your story. If no story is set, the AI will invent a plausible story on its own.
         </div>
       </div>
 

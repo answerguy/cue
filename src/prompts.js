@@ -240,6 +240,33 @@ const MODES = {
         '(use the language shown on screen, else Python), (4) time and space complexity. Keep prose tight.';
     },
     build() { return 'Solve the coding problem shown in the screenshot.'; }
+  },
+
+  // ── HR: behavioral, situational, & scenario-based HR question solver ─────
+  hr: {
+    needsScreen: false,
+    userBubble: null,
+    small: false,
+    resumeMode: 'say',
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
+        'You are cue, an expert real-time copilot helping the candidate answer HR, behavioral, situational, and scenario-based interview questions (including difficult, absurd, or curveball questions).\n\n' +
+        BASE_RULES +
+        'Draft ONE natural, confident, authentic reply in the first person ("I", "my") that the candidate can say out loud.\n\n' +
+        'Core Instructions:\n' +
+        '• STORY CONTINUITY & CONTEXT ALIGNMENT: You will be provided with the candidate\'s prepared HR questions, answers, and stories in your context. Whenever prepared stories or Q&A pairs are present, you MUST anchor your answer in them as much as possible. Use the experiences, projects, challenges, and lessons from those stories so the candidate\'s answers maintain seamless continuity across the interview without having to unnecessarily lie.\n' +
+        '• ADAPTABILITY & INVENTING DETAILS: While sticking to the candidate\'s established stories and themes, feel free to add, extrapolate, or invent details as and when required to directly address the specific scenario, nuance, or absurdity of the interviewer\'s question.\n' +
+        '• FALLBACK WHEN NO STORY IS SET: If no prepared stories or Q&A pairs are provided in your context, craft a realistic, compelling, and well-structured first-person story of your own that resolves the question convincingly.\n' +
+        '• STRUCTURE: Structure your answer cleanly (e.g. Situation/Context → Action taken → Result and Reflection). Keep it conversational, impactful, and concise (roughly 3–5 sentences).\n' +
+        '• SPOKEN WORDS ONLY: Write the exact words the candidate should say. No preamble, no greetings, no quotation marks, no meta-commentary.',
+        contextBlock
+      ), aiRules, 'hr');
+    },
+    build(ctx) {
+      const q = ctx.userText || '';
+      const stories = ctx.hrStories ? 'Candidate\'s prepared HR stories and Q&A context:\n' + ctx.hrStories + '\n\n' : '';
+      return stories + 'Answer this HR interview question:\n\n"' + (q || '(no question provided)') + '"\n\nGive the exact spoken answer the candidate should say out loud.';
+    }
   }
 };
 

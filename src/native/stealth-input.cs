@@ -663,6 +663,11 @@ namespace CueStealthInput
                     Console.Out.Flush();
                     return true;
 
+                case 0x47: // 'G' key (HR mode)
+                    Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"hr\"}");
+                    Console.Out.Flush();
+                    return true;
+
                 default:
                     return false;
             }
@@ -782,7 +787,8 @@ namespace CueStealthInput
                     bool isH = (vk == 0x48 || vk == 0x68); // 'H' key
                     bool isM = (vk == 0x4D); // 'M' key
                     bool isS = (vk == 0x53); // 'S' key
-                    bool isAltShortcutKey = isC || isV || isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL || isQ || isW || isE || isY;
+                    bool isG = (vk == 0x47 || vk == 0x67); // 'G' key
+                    bool isAltShortcutKey = isC || isV || isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL || isQ || isW || isE || isY || isG;
 
                     // A. In focus/stealth mode (_capturing == true), consume Shift and Ctrl keypresses completely!
                     if (_capturing && IsShiftKey(vk))

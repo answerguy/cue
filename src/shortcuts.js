@@ -23,7 +23,8 @@ const DEFAULTS = {
   prevAnswer: 'Alt+E',
   nextAnswer: 'Alt+T',
   opacityDown: 'Alt+O',
-  opacityUp: 'Alt+P'
+  opacityUp: 'Alt+P',
+  hr: 'Alt+G'
 };
 
 // Every action that maps to a shortcut. Values = defaults; can be overridden via settings.

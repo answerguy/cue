@@ -73,6 +73,8 @@ function triggerShortcutAction(action) {
     send('response:previous');
   } else if (action === 'next_answer') {
     send('response:next');
+  } else if (action === 'hr') {
+    send('hr:trigger');
   } else {
     runFeature(action, '');
   }
@@ -913,8 +915,8 @@ async function runFeature(mode, userText) {
     const llm = createLLM(settings);
     const userBubble = def.userBubble !== null
       ? def.userBubble
-      : (mode === 'ask' ? userText : mode === 'answerThis' ? `"${(userText || '').slice(0, 60)}${userText && userText.length > 60 ? '…' : ''}"` : null);
-    const category = mode !== 'leetcode' ? detectCategory(transcript) : null;
+      : (mode === 'ask' || mode === 'hr' ? (userText || 'HR Question') : mode === 'answerThis' ? `"${(userText || '').slice(0, 60)}${userText && userText.length > 60 ? '…' : ''}"` : null);
+    const category = mode !== 'leetcode' ? (mode === 'hr' ? 'HR' : detectCategory(transcript)) : null;
     send('llm:start', { userBubble, small: !!def.small, category, mode, text: userText || '' });
 
     if (!llm.ready) {
@@ -978,7 +980,7 @@ async function runFeature(mode, userText) {
     const memoryBlock = mode !== 'leetcode' && meetingMemory ? meetingMemory.memoryBlock() : null;
     if (memoryBlock) contextBlock = contextBlock ? contextBlock + '\n\n' + memoryBlock : memoryBlock;
     const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
-    const built = def.build({ transcript, userText: userText || '' });
+    const built = def.build({ transcript, userText: userText || '', hrStories: settingsForPrompt.hrStories || settingsForPrompt.hrQa || '' });
 
     // Watchdog: a provider that stalls mid-stream would otherwise hang the await forever,
     // leaving state.busy = true and wedging every later question until an app restart.
@@ -1487,6 +1489,9 @@ function registerShortcuts() {
   });
   globalShortcut.register('Alt+U', () => {
     send('stt:insert-question');
+  });
+  shortcutState.hr = globalShortcut.register('Alt+G', () => {
+    triggerShortcutAction('hr');
   });
   for (const [name, wasRegistered] of Object.entries(shortcutState)) {
     if (!wasRegistered) {
