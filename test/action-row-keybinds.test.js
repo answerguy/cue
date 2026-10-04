@@ -32,6 +32,11 @@ test('action-row buttons display keybinds on the line below text labels', () => 
   assert.ok(hrMatch, 'hr button exists');
   assert.match(hrMatch[1], /class="act-top"[^>]*>[\s\S]*?HR[\s\S]*?<\/span>/);
   assert.match(hrMatch[1], /id="hr-shortcut-hint">Alt\+G<\/span>/);
+
+  const leetcodeMatch = htmlSrc.match(/<button[^>]*data-mode="leetcode"[^>]*>([\s\S]*?)<\/button>/);
+  assert.ok(leetcodeMatch, 'leetcode button exists');
+  assert.match(leetcodeMatch[1], /class="act-top"[^>]*>[\s\S]*?LeetCode[\s\S]*?<\/span>/);
+  assert.match(leetcodeMatch[1], /id="leetcode-shortcut-hint">Ctrl\+H<\/span>/);
 });
 
 test('styles.css lays out action-row buttons in column orientation to save horizontal space', () => {

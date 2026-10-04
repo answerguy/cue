@@ -340,6 +340,8 @@
   if (prev4IC) prev4IC.innerHTML = icon('message-square-text', { size: 16 });
   const hrActIC = document.querySelector('.act[data-mode="hr"] .ic');
   if (hrActIC) hrActIC.innerHTML = icon('message-circle', { size: 16 });
+  const leetcodeIC = document.querySelector('.act[data-mode="leetcode"] .ic');
+  if (leetcodeIC) leetcodeIC.innerHTML = icon('code', { size: 16 });
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
   $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
   $('#send-btn').innerHTML = icon('play', { size: 15 });
@@ -1534,6 +1536,12 @@
       triggerHrMode();
       return;
     }
+    // Ctrl+H (Cmd+H): Run LeetCode mode
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H') && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      runMode('leetcode', '');
+      return;
+    }
     // Alt+W: Bring back previous prompt in input box
     if (e.altKey && (e.key === 'w' || e.key === 'W') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
@@ -1688,6 +1696,12 @@
     if (e.altKey && (e.key === 'g' || e.key === 'G') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       triggerHrMode();
+      return;
+    }
+    // Ctrl+H (Cmd+H): Run LeetCode mode
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H') && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      runMode('leetcode', '');
       return;
     }
     // Alt+W: Bring back previous prompt in input box
@@ -3984,6 +3998,9 @@
     const hrBtn = document.querySelector('.act[data-mode="hr"]');
     const hrHintEl = document.getElementById('hr-shortcut-hint');
     if (hrHintEl) hrHintEl.textContent = isWindows ? 'Alt+G' : '⌥G';
+    const leetcodeBtn = document.querySelector('.act[data-mode="leetcode"]');
+    const leetcodeHintEl = document.getElementById('leetcode-shortcut-hint');
+    if (leetcodeHintEl) leetcodeHintEl.textContent = isWindows ? 'Ctrl+H' : '⌘H';
     const hideBtn = document.getElementById('hide-btn');
     const historyBtnEl = document.getElementById('history-btn');
     if (sayBtn) sayBtn.setAttribute('aria-label', isWindows
@@ -4004,6 +4021,9 @@
     if (hrBtn) hrBtn.setAttribute('aria-label', isWindows
       ? 'Answer HR question with prepared stories (Alt+G)'
       : 'Answer HR question with prepared stories (⌥G)');
+    if (leetcodeBtn) leetcodeBtn.setAttribute('aria-label', isWindows
+      ? 'Solve LeetCode problem from screen (Ctrl+H)'
+      : 'Solve LeetCode problem from screen (⌘H)');
     if (historyBtnEl) historyBtnEl.setAttribute('aria-label', isWindows
       ? 'Transcription history (Alt+N)'
       : 'Transcription history (⌥N)');
