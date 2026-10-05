@@ -8,6 +8,7 @@ out/
 *.tar.bz2
 *.zip
 parakeet-v0.5.0-bin-win-cuda-x64/
+test-extract/
 
 # Native binaries
 native/systemaudio
