@@ -314,7 +314,15 @@ async function startLocalWhisper(settings) {
   if (!whisperModelManager) throw new Error('The local Whisper model manager is not ready.');
   const localSettings = settings.localWhisper || {};
   const model = requireWhisperModel(localSettings.modelId || 'base.en');
-  const runtime = getWhisperRuntime();
+  let runtime = getWhisperRuntime();
+  if (!runtime.available && !app.isPackaged) {
+    send('status', { message: 'Preparing local whisper runtime...' });
+    try {
+      const { prepareWhisperRuntime } = require('./scripts/prepare-whisper-runtime');
+      await prepareWhisperRuntime({ platform: process.platform, architecture: process.arch });
+      runtime = getWhisperRuntime();
+    } catch (_) {}
+  }
   if (!runtime.available) throw new Error(runtime.message);
   activeWhisperModelId = model.id;
   let transcriber = null;
@@ -377,7 +385,15 @@ async function startLocalSherpa(settings) {
   if (!sherpaModelManager) throw new Error('The local Sherpa-ONNX model manager is not ready.');
   const localSettings = settings.localSherpa || {};
   const model = requireSherpaModel(localSettings.modelId || 'parakeet-ctc-0.6b');
-  const runtime = getSherpaRuntime();
+  let runtime = getSherpaRuntime();
+  if (!runtime.available && !app.isPackaged) {
+    send('status', { message: 'Preparing local Sherpa-ONNX runtime...' });
+    try {
+      const { prepareSherpaRuntime } = require('./scripts/prepare-sherpa-runtime');
+      await prepareSherpaRuntime({ platform: process.platform, architecture: process.arch });
+      runtime = getSherpaRuntime();
+    } catch (_) {}
+  }
   if (!runtime.available) throw new Error(runtime.message);
   activeSherpaModelId = model.id;
   let transcriber = null;

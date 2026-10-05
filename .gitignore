@@ -29,6 +29,7 @@ cue-data.json
 # Test artefacts
 test-stt-connection.js
 test-resume.js
+fake/
 
 # Kiro IDE internals — hide spec/steering from public repo
 .kiro/

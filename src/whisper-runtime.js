@@ -30,8 +30,9 @@ function locateWhisperRuntime({
   // 3. Local build cache / prepared directory
   if (appPath) {
     candidates.push(path.join(appPath, '.cache', 'whisper-runtime', target.key));
+  } else {
+    candidates.push(path.join(process.cwd(), '.cache', 'whisper-runtime', target.key));
   }
-  candidates.push(path.join(process.cwd(), '.cache', 'whisper-runtime', target.key));
 
   // 4. System PATH directories (e.g. whisper.cpp installed on user's PC)
   const pathEnv = environment.PATH || environment.Path || '';
