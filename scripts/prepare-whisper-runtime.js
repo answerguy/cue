@@ -131,7 +131,11 @@ async function prepareArchiveTarget(target, temporaryDirectory, destinationDirec
   await downloadArtifact(target.url, archivePath, target.bytes, target.sha256);
 
   if (target.archiveType === 'zip') {
-    await extractZip(archivePath, { dir: extractionDirectory });
+    if (process.platform === 'win32') {
+      execFileSync('tar.exe', ['-xf', archivePath, '-C', extractionDirectory]);
+    } else {
+      await extractZip(archivePath, { dir: extractionDirectory });
+    }
   } else {
     await extractTarWithMaterializedLinks(archivePath, extractionDirectory);
   }

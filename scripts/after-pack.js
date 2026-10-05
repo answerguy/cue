@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 // electron-builder's Arch enum, inlined rather than imported: `builder-util` is a
 // transitive dependency of electron-builder, not a declared one, so requiring it made
@@ -5,6 +6,7 @@ const path = require('path');
 const Arch = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal',
                ia32: 0, x64: 1, armv7l: 2, arm64: 3, universal: 4 };
 const { prepareWhisperRuntime } = require('./prepare-whisper-runtime');
+const { prepareSherpaRuntime } = require('./prepare-sherpa-runtime');
 const { getRuntimeTarget } = require('../src/whisper-runtime-manifest');
 
 /** Add the matching native runtime after Electron has assembled each target.
@@ -31,9 +33,17 @@ module.exports = async function afterPack(context) {
   const bundleWhisper = explicitChoice ? explicitChoice !== '0' : target.kind === 'archive';
   if (!bundleWhisper) {
     console.log('[cue] Skipping the bundled whisper runtime (set CUE_BUNDLE_WHISPER=1 to include it on this platform).');
-    return;
+  } else {
+    const outputDirectory = path.join(context.appOutDir, 'resources', 'whisper-runtime');
+    await prepareWhisperRuntime({ platform, architecture, outputDirectory });
   }
 
-  const outputDirectory = path.join(context.appOutDir, 'resources', 'whisper-runtime');
-  await prepareWhisperRuntime({ platform, architecture, outputDirectory });
+  const explicitSherpa = process.env.CUE_BUNDLE_SHERPA;
+  const bundleSherpa = explicitSherpa ? explicitSherpa !== '0' : true;
+  if (!bundleSherpa) {
+    console.log('[cue] Skipping the bundled sherpa runtime (set CUE_BUNDLE_SHERPA=1 to include it).');
+  } else {
+    const sherpaOut = path.join(context.appOutDir, 'resources', 'sherpa-runtime');
+    await prepareSherpaRuntime({ platform, architecture, outputDirectory: sherpaOut });
+  }
 };

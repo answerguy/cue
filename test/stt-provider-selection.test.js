@@ -24,6 +24,19 @@ test('explicit local mode never constructs a cloud fallback', () => {
   });
 });
 
+test('explicit sherpa-onnx selection also keeps audio local with zero cloud fallback', () => {
+  const settings = {
+    sttProvider: 'sherpa-onnx',
+    apiKeys: { openai: 'openai-key', gemini: 'gemini-key', deepgram: 'deepgram-key' }
+  };
+  assert.equal(createSTT(settings).available, false);
+  assert.deepEqual(createStreamingSTT(settings, 'you', callbacks), {
+    type: 'batch',
+    provider: 'sherpa-onnx',
+    instance: null
+  });
+});
+
 test('explicit cloud selection does not cross-fallback to another provider', () => {
   const openai = createSTT({
     sttProvider: 'openai',

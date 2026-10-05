@@ -613,7 +613,7 @@ function createStreamingSTT(settings, channel, callbacks) {
   const selectedProvider = settings.sttProvider || 'auto';
   const { onTranscript, onInterim, onError, onStatusChange } = callbacks;
 
-  if (selectedProvider === 'local') {
+  if (selectedProvider === 'local' || selectedProvider === 'sherpa-onnx') {
     return { type: 'batch', provider: selectedProvider, instance: null };
   }
 

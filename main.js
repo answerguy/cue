@@ -49,6 +49,11 @@ const { requireWhisperModel } = require('./src/whisper-model-catalog');
 const { locateWhisperRuntime } = require('./src/whisper-runtime');
 const { LocalWhisperTranscriber } = require('./src/local-whisper-transcriber');
 
+const { SherpaModelManager } = require('./src/sherpa-model-manager');
+const { requireSherpaModel, getSherpaModel } = require('./src/sherpa-model-catalog');
+const { locateSherpaRuntime } = require('./src/sherpa-runtime');
+const { LocalSherpaTranscriber } = require('./src/local-sherpa-transcriber');
+
 const { createStealthHookManager } = require('./src/stealth-hook-manager');
 
 let win = null;
@@ -237,6 +242,8 @@ let flushTimer = null;
 let whisperModelManager = null;
 let localWhisperTranscriber = null;
 let activeWhisperModelId = null;
+let sherpaModelManager = null;
+let activeSherpaModelId = null;
 let desiredCaptureState = false;
 let captureTransition = Promise.resolve(false);
 
@@ -275,6 +282,17 @@ function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.se
 
 function getWhisperRuntime() {
   return locateWhisperRuntime({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    platform: process.platform,
+    architecture: process.arch,
+    environment: process.env
+  });
+}
+
+function getSherpaRuntime() {
+  return locateSherpaRuntime({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
@@ -344,6 +362,68 @@ async function getWhisperOverview() {
   if (!whisperModelManager) throw new Error('The local Whisper model manager is not ready.');
   const runtime = getWhisperRuntime();
   const models = await whisperModelManager.listModels();
+  return {
+    runtime: {
+      available: runtime.available,
+      version: runtime.version,
+      target: runtime.target,
+      message: runtime.message || null
+    },
+    models
+  };
+}
+
+async function startLocalSherpa(settings) {
+  if (!sherpaModelManager) throw new Error('The local Sherpa-ONNX model manager is not ready.');
+  const localSettings = settings.localSherpa || {};
+  const model = requireSherpaModel(localSettings.modelId || 'parakeet-ctc-0.6b');
+  const runtime = getSherpaRuntime();
+  if (!runtime.available) throw new Error(runtime.message);
+  activeSherpaModelId = model.id;
+  let transcriber = null;
+  try {
+    const modelConfig = await sherpaModelManager.verifyInstalledModel(model.id).catch((error) => {
+      if (error.code === 'ENOENT') {
+        throw new Error(`Download the ${model.id} model in Settings → Audio before listening.`);
+      }
+      throw error;
+    });
+
+    transcriber = new LocalSherpaTranscriber({
+      sessionOptions: {
+        executablePath: runtime.executablePath,
+        runtimeDirectory: runtime.runtimeDirectory,
+        modelConfig,
+        threads: Number(localSettings.threads) || 0,
+        provider: localSettings.provider || 'cpu'
+      },
+      onTranscript: publishTranscript,
+      onSpeechState: (channel, speaking, durationMs) => {
+        send('vad:state', { channel, speaking, durationMs });
+      },
+      onStatus: (status) => send('stt:status', { provider: 'local', engine: 'sherpa-onnx', ...status }),
+      onError: (error) => {
+        sttDisabled = true;
+        console.log('[local-sherpa] error', error && error.message);
+        send('stt:status', { provider: 'local', engine: 'sherpa-onnx', status: 'error' });
+        send('status', { message: `Local transcription error: ${error.message}. Audio was not sent to a cloud fallback.` });
+      }
+    });
+
+    localWhisperTranscriber = transcriber;
+    await transcriber.start();
+  } catch (error) {
+    if (localWhisperTranscriber === transcriber) localWhisperTranscriber = null;
+    activeSherpaModelId = null;
+    if (transcriber) await transcriber.forceStop().catch(() => {});
+    throw error;
+  }
+}
+
+async function getSherpaOverview() {
+  if (!sherpaModelManager) throw new Error('The local Sherpa-ONNX model manager is not ready.');
+  const runtime = getSherpaRuntime();
+  const models = await sherpaModelManager.listModels();
   return {
     runtime: {
       available: runtime.available,
@@ -794,9 +874,14 @@ async function setCapturing(active) {
     const settings = store.getSettings();
     if ((settings.sttProvider || 'auto') === 'local') {
       try {
-        await startLocalWhisper(settings);
+        const engine = settings.localEngine || 'whisper';
+        if (engine === 'sherpa-onnx') {
+          await startLocalSherpa(settings);
+        } else {
+          await startLocalWhisper(settings);
+        }
         state.capturing = true;
-        console.log('[cue] capture started, mode: local');
+        console.log(`[cue] capture started, mode: local (${engine})`);
         slideDisabled = false;
         slideTxCursor = transcript.length;
         slideStore = createSlideStore({ maxSlides: getSlidesConfig().maxSlides });
@@ -862,9 +947,10 @@ async function setCapturing(active) {
     try {
       await stoppingLocalTranscriber.stop();
     } catch (error) {
-      console.log('[local-whisper] stop error', error && error.message);
+      console.log('[local-stt] stop error', error && error.message);
     } finally {
       activeWhisperModelId = null;
+      activeSherpaModelId = null;
     }
   }
   return false;
@@ -1219,6 +1305,37 @@ ipcMain.handle('whisper:model-import', async (_event, modelId) => {
   if (selection.canceled || !selection.filePaths[0]) return { cancelled: true };
   const result = await whisperModelManager.importModel(modelId, selection.filePaths[0]);
   send('whisper:models-changed', { modelId });
+  return result;
+});
+ipcMain.handle('sherpa:models', () => getSherpaOverview());
+ipcMain.handle('sherpa:model-download', async (_event, modelId) => {
+  if (!sherpaModelManager) throw new Error('The local Sherpa-ONNX model manager is not ready.');
+  const result = await sherpaModelManager.download(modelId, (progress) => send('sherpa:download-progress', progress));
+  send('sherpa:models-changed', { modelId });
+  return result;
+});
+ipcMain.handle('sherpa:model-cancel', (_event, modelId) => {
+  if (!sherpaModelManager) throw new Error('The local Sherpa-ONNX model manager is not ready.');
+  return sherpaModelManager.cancelDownload(modelId);
+});
+ipcMain.handle('sherpa:model-delete', async (_event, modelId) => {
+  if (!sherpaModelManager) throw new Error('The local Sherpa-ONNX model manager is not ready.');
+  if (activeSherpaModelId === modelId && localWhisperTranscriber) {
+    throw new Error('Stop active capture before deleting this model.');
+  }
+  const result = await sherpaModelManager.deleteModel(modelId);
+  send('sherpa:models-changed', { modelId });
+  return result;
+});
+ipcMain.handle('sherpa:model-import', async (_event, modelId) => {
+  if (!sherpaModelManager) throw new Error('The local Sherpa-ONNX model manager is not ready.');
+  const selection = await dialog.showOpenDialog(win, {
+    title: 'Select Sherpa-ONNX model file or folder',
+    properties: ['openFile', 'openDirectory']
+  });
+  if (selection.canceled || !selection.filePaths[0]) return { cancelled: true };
+  const result = await sherpaModelManager.importModel(modelId, selection.filePaths[0]);
+  send('sherpa:models-changed', { modelId });
   return result;
 });
 ipcMain.handle('platform:info', () => ({
@@ -1584,6 +1701,7 @@ function launchApp() {
   initStealthHook();
 
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
+  sherpaModelManager = new SherpaModelManager({ userDataPath: app.getPath('userData') });
 
   meetingMemory = createMeetingMemory({
     store: createMeetingStore({ file: path.join(app.getPath('userData'), 'meetings.json'), debounceMs: 1500 }),

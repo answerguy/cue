@@ -22,6 +22,12 @@ const DEFAULTS = {
     language: 'auto',
     threads: 0
   },
+  localEngine: 'whisper',
+  localSherpa: {
+    modelId: 'parakeet-ctc-0.6b',
+    threads: 0,
+    provider: 'cpu'
+  },
   smart: false,
   modelToggle: [
     'gemini',

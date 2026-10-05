@@ -3173,6 +3173,7 @@
     fillSettings();
     scrim.classList.remove('hidden');
     refreshWhisperModels();
+    refreshSherpaModels();
   }
   // Only hide after a successful save. A second closeSettings used to shadow
   // this one and always dismiss the modal, so validation errors (and any
@@ -3353,9 +3354,33 @@
     document.querySelectorAll('#stt-provider-seg button').forEach((button) => {
       button.classList.toggle('on', button.dataset.sttProvider === (settings.sttProvider || 'auto'));
     });
+    const isLocalStt = (settings.sttProvider || 'auto') === 'local';
+    const localEngineGroup = $('#local-engine-group');
+    if (localEngineGroup) localEngineGroup.classList.toggle('hidden', !isLocalStt);
+    const localEngine = settings.localEngine || 'whisper';
+    document.querySelectorAll('#local-engine-seg button').forEach((button) => {
+      button.classList.toggle('on', button.dataset.localEngine === localEngine);
+    });
+    const isWhisperActive = isLocalStt && localEngine === 'whisper';
+    const isSherpaActive = isLocalStt && localEngine === 'sherpa-onnx';
+    const whisperCard = $('#whisper-card');
+    const whisperStatus = $('#whisper-status');
+    if (whisperCard) whisperCard.classList.toggle('hidden', !isWhisperActive);
+    if (whisperStatus) whisperStatus.classList.toggle('hidden', !isWhisperActive);
+    const sherpaCard = $('#sherpa-card');
+    const sherpaStatus = $('#sherpa-status');
+    if (sherpaCard) sherpaCard.classList.toggle('hidden', !isSherpaActive);
+    if (sherpaStatus) sherpaStatus.classList.toggle('hidden', !isSherpaActive);
+
     const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
     $('#whisper-language').value = localWhisper.language || 'auto';
     $('#whisper-threads').value = Number(localWhisper.threads) || 0;
+
+    const localSherpa = settings.localSherpa || { modelId: 'parakeet-ctc-0.6b', threads: 0, provider: 'cpu' };
+    const sherpaProviderEl = $('#sherpa-provider');
+    if (sherpaProviderEl) sherpaProviderEl.value = localSherpa.provider || 'cpu';
+    const sherpaThreadsEl = $('#sherpa-threads');
+    if (sherpaThreadsEl) sherpaThreadsEl.value = Number(localSherpa.threads) || 0;
     // Slides tab (inside Transcription pane)
     const slidesCfg = settings.slides || { enabled: false, intervalMs: 3000 };
     const slidesEnabled = $('#slides-enabled');
@@ -3419,7 +3444,10 @@
     // is reported as-is so the status line matches what will actually be used.
     const selectedSttProvider = settings.sttProvider || 'auto';
     const automaticStt = k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : 'none');
-    const stt = selectedSttProvider === 'auto' ? automaticStt : selectedSttProvider;
+    let stt = selectedSttProvider === 'auto' ? automaticStt : selectedSttProvider;
+    if (selectedSttProvider === 'local') {
+      stt = `local (${settings.localEngine || 'whisper'})`;
+    }
     return `${labels[settings.provider] || settings.provider}${publikPart} · STT: ${stt}`;
   }
 
@@ -3449,7 +3477,29 @@
     document.querySelectorAll('#stt-provider-seg button').forEach((candidate) => {
       candidate.classList.toggle('on', candidate === button);
     });
+    const isLocal = settings.sttProvider === 'local';
+    $('#local-engine-group')?.classList.toggle('hidden', !isLocal);
+    const isWhisper = isLocal && (settings.localEngine || 'whisper') === 'whisper';
+    const isSherpa = isLocal && settings.localEngine === 'sherpa-onnx';
+    $('#whisper-card')?.classList.toggle('hidden', !isWhisper);
+    $('#whisper-status')?.classList.toggle('hidden', !isWhisper);
+    $('#sherpa-card')?.classList.toggle('hidden', !isSherpa);
+    $('#sherpa-status')?.classList.toggle('hidden', !isSherpa);
     $('#s-status').textContent = statusText();
+  }));
+
+  document.querySelectorAll('#local-engine-seg button').forEach((button) => button.addEventListener('click', () => {
+    settings.localEngine = button.dataset.localEngine;
+    document.querySelectorAll('#local-engine-seg button').forEach((candidate) => {
+      candidate.classList.toggle('on', candidate === button);
+    });
+    const isWhisper = settings.localEngine === 'whisper';
+    $('#whisper-card')?.classList.toggle('hidden', !isWhisper);
+    $('#whisper-status')?.classList.toggle('hidden', !isWhisper);
+    $('#sherpa-card')?.classList.toggle('hidden', isWhisper);
+    $('#sherpa-status')?.classList.toggle('hidden', isWhisper);
+    $('#s-status').textContent = statusText();
+    if (!isWhisper) refreshSherpaModels();
   }));
 
   for (let i = 1; i <= 4; i++) {
@@ -3615,6 +3665,146 @@
   });
   cue.on('whisper:models-changed', () => refreshWhisperModels());
 
+  // ---- Sherpa-ONNX (Parakeet) Model UI ----
+  let sherpaOverview = null;
+
+  function getSelectedSherpaModel() {
+    if (!sherpaOverview) return null;
+    return sherpaOverview.models.find((model) => model.id === $('#sherpa-model').value) || null;
+  }
+
+  function renderSherpaModelState() {
+    const model = getSelectedSherpaModel();
+    if (!model) return;
+    const progressWrap = $('#sherpa-progress-wrap');
+    progressWrap.classList.toggle('hidden', !model.downloading);
+    $('#sherpa-model-detail').textContent = `${formatBytes(model.bytes)} · English · ${model.hardwareTier} · ${model.description}`;
+    $('#sherpa-download').disabled = model.installed || model.downloading;
+    $('#sherpa-download').textContent = model.installed ? 'Installed' : 'Download';
+    $('#sherpa-cancel').classList.toggle('hidden', !model.downloading);
+    $('#sherpa-import').disabled = model.downloading;
+    $('#sherpa-delete').disabled = !model.installed || model.downloading;
+  }
+
+  async function refreshSherpaModels() {
+    const status = $('#sherpa-status');
+    if (!status || !cue.sherpaModels) return;
+    try {
+      const previousSelection = $('#sherpa-model').value || settings.localSherpa?.modelId || 'parakeet-ctc-0.6b';
+      sherpaOverview = await cue.sherpaModels();
+      const runtimeBadge = $('#sherpa-runtime-status');
+      if (runtimeBadge) {
+        runtimeBadge.classList.toggle('ready', sherpaOverview.runtime.available);
+        runtimeBadge.classList.toggle('error', !sherpaOverview.runtime.available);
+        runtimeBadge.textContent = sherpaOverview.runtime.available
+          ? `Ready · v${sherpaOverview.runtime.version} · ${sherpaOverview.runtime.target}`
+          : 'Not prepared';
+        if (sherpaOverview.runtime.message) {
+          runtimeBadge.setAttribute('aria-label', sherpaOverview.runtime.message);
+        }
+      }
+
+      const select = $('#sherpa-model');
+      if (select) {
+        select.innerHTML = '';
+        for (const model of sherpaOverview.models) {
+          const option = document.createElement('option');
+          option.value = model.id;
+          option.textContent = `${model.name} — ${formatBytes(model.bytes)}${model.installed ? ' ✓' : ''}`;
+          select.appendChild(option);
+        }
+        const selectionExists = sherpaOverview.models.some((model) => model.id === previousSelection);
+        select.value = selectionExists ? previousSelection : 'parakeet-ctc-0.6b';
+        if (!settings.localSherpa) settings.localSherpa = {};
+        settings.localSherpa.modelId = select.value;
+      }
+      status.textContent = sherpaOverview.runtime.available
+        ? 'Sherpa-ONNX is ready with local Parakeet models.'
+        : sherpaOverview.runtime.message;
+      renderSherpaModelState();
+    } catch (error) {
+      status.textContent = `Could not load Sherpa model information: ${error.message}`;
+    }
+  }
+
+  $('#sherpa-model').addEventListener('change', () => {
+    if (!settings.localSherpa) settings.localSherpa = {};
+    settings.localSherpa.modelId = $('#sherpa-model').value;
+    renderSherpaModelState();
+  });
+
+  $('#sherpa-download').addEventListener('click', async () => {
+    const model = getSelectedSherpaModel();
+    if (!model) return;
+    model.downloading = true;
+    renderSherpaModelState();
+    $('#sherpa-status').textContent = `Downloading ${model.id}…`;
+    try {
+      await cue.sherpaModelDownload(model.id);
+      $('#sherpa-status').textContent = `${model.id} downloaded and ready.`;
+    } catch (error) {
+      $('#sherpa-status').textContent = `Download failed: ${error.message}`;
+    } finally {
+      await refreshSherpaModels();
+    }
+  });
+
+  $('#sherpa-cancel').addEventListener('click', async () => {
+    const model = getSelectedSherpaModel();
+    if (model) await cue.sherpaModelCancel(model.id);
+  });
+
+  $('#sherpa-import').addEventListener('click', async () => {
+    const model = getSelectedSherpaModel();
+    if (!model) return;
+    $('#sherpa-status').textContent = `Verifying imported ${model.id}…`;
+    try {
+      const result = await cue.sherpaModelImport(model.id);
+      $('#sherpa-status').textContent = result.cancelled ? 'Import cancelled.' : `${model.id} imported and verified.`;
+    } catch (error) {
+      $('#sherpa-status').textContent = `Import failed: ${error.message}`;
+    } finally {
+      await refreshSherpaModels();
+    }
+  });
+
+  $('#sherpa-delete').addEventListener('click', async () => {
+    const model = getSelectedSherpaModel();
+    if (!model) return;
+    const confirmed = await showConfirmDialog({
+      title: 'Delete Model',
+      message: `Delete the ${model.name} (${formatBytes(model.bytes)}) from this computer?`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      danger: true
+    });
+    if (!confirmed) return;
+    try {
+      await cue.sherpaModelDelete(model.id);
+      $('#sherpa-status').textContent = `${model.id} deleted.`;
+    } catch (error) {
+      $('#sherpa-status').textContent = `Delete failed: ${error.message}`;
+    } finally {
+      await refreshSherpaModels();
+    }
+  });
+
+  cue.on('sherpa:download-progress', (progress) => {
+    if (!sherpaOverview) return;
+    const model = sherpaOverview.models.find((candidate) => candidate.id === progress.modelId);
+    if (!model) return;
+    model.downloading = true;
+    if ($('#sherpa-model').value === progress.modelId) {
+      $('#sherpa-progress-wrap').classList.remove('hidden');
+      $('#sherpa-progress').value = progress.percent || 0;
+      $('#sherpa-progress-label').textContent = `${progress.percent || 0}%`;
+      if (progress.receivedBytes && progress.totalBytes) {
+        $('#sherpa-model-detail').textContent = `${formatBytes(progress.receivedBytes)} of ${formatBytes(progress.totalBytes)}`;
+      }
+    }
+  });
+  cue.on('sherpa:models-changed', () => refreshSherpaModels());
+
   async function saveSettings() {
     // Keys
     settings.apiKeys.cerebras = $('#key-cerebras').value.trim();
@@ -3656,6 +3846,15 @@
     settings.localWhisper.modelId = $('#whisper-model').value || settings.localWhisper.modelId || 'base.en';
     settings.localWhisper.language = $('#whisper-language').value || 'auto';
     settings.localWhisper.threads = Math.max(0, Math.min(64, Number.parseInt($('#whisper-threads').value, 10) || 0));
+
+    settings.localEngine = $('#local-engine-seg button.on')?.dataset.localEngine || settings.localEngine || 'whisper';
+    if (!settings.localSherpa) settings.localSherpa = {};
+    const sherpaModelEl = $('#sherpa-model');
+    if (sherpaModelEl) settings.localSherpa.modelId = sherpaModelEl.value || settings.localSherpa.modelId || 'parakeet-ctc-0.6b';
+    const sherpaProvEl = $('#sherpa-provider');
+    if (sherpaProvEl) settings.localSherpa.provider = sherpaProvEl.value || 'cpu';
+    const sherpaThrEl = $('#sherpa-threads');
+    if (sherpaThrEl) settings.localSherpa.threads = Math.max(0, Math.min(64, Number.parseInt(sherpaThrEl.value, 10) || 0));
     // Slides (opt-in, memory-only)
     if (!settings.slides) settings.slides = {};
     const slidesEnabledEl = $('#slides-enabled');

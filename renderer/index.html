@@ -319,7 +319,15 @@
         </div>
         <div class="s-note" id="meeting-audio-note"></div>
 
-        <div class="whisper-card">
+        <div id="local-engine-group">
+          <label class="s-label">Local engine</label>
+          <div class="s-seg" id="local-engine-seg">
+            <button data-local-engine="whisper">whisper.cpp</button>
+            <button data-local-engine="sherpa-onnx">sherpa-onnx (Parakeet)</button>
+          </div>
+        </div>
+
+        <div class="whisper-card" id="whisper-card">
           <div class="whisper-runtime-row">
             <span class="s-label">whisper.cpp runtime</span>
             <span id="whisper-runtime-status" class="whisper-badge">Checking…</span>
@@ -356,6 +364,45 @@
         </div>
 
         <div class="s-status" id="whisper-status"></div>
+
+        <div class="whisper-card hidden" id="sherpa-card">
+          <div class="whisper-runtime-row">
+            <span class="s-label">sherpa-onnx runtime</span>
+            <span id="sherpa-runtime-status" class="whisper-badge">Checking…</span>
+          </div>
+
+          <label class="s-label" for="sherpa-model">Parakeet model</label>
+          <select id="sherpa-model" class="s-select"></select>
+          <div id="sherpa-model-detail" class="s-note"></div>
+
+          <div id="sherpa-progress-wrap" class="whisper-progress-wrap hidden">
+            <progress id="sherpa-progress" max="100" value="0"></progress>
+            <span id="sherpa-progress-label">0%</span>
+          </div>
+
+          <div class="whisper-actions">
+            <button id="sherpa-download" class="s-action">Download</button>
+            <button id="sherpa-cancel" class="s-action hidden">Cancel</button>
+            <button id="sherpa-import" class="s-action">Import…</button>
+            <button id="sherpa-delete" class="s-action danger" disabled>Delete</button>
+          </div>
+
+          <div class="s-field">
+            <span>Hardware acceleration</span>
+            <select id="sherpa-provider" class="s-select compact">
+              <option value="cpu">CPU (AVX2)</option>
+              <option value="directml">DirectML (GPU)</option>
+              <option value="cuda">CUDA (NVIDIA GPU)</option>
+            </select>
+          </div>
+          <div class="s-field">
+            <span>CPU threads</span>
+            <input id="sherpa-threads" type="number" min="0" max="64" step="1" value="0" />
+          </div>
+          <div class="s-note">Parakeet uses CTC / non-autoregressive decoding with native blank tokens, preventing silence hallucinations like "Thank you".</div>
+        </div>
+
+        <div class="s-status hidden" id="sherpa-status"></div>
 
         <label class="s-label">Meeting slides <span class="s-hint">opt-in · auto-captions while listening · memory-only</span></label>
         <div class="s-field"><span>Track slides</span><input id="slides-enabled" type="checkbox" style="width:auto;" /></div>

@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld('cue', {
   whisperModelCancel: (modelId) => ipcRenderer.invoke('whisper:model-cancel', modelId),
   whisperModelDelete: (modelId) => ipcRenderer.invoke('whisper:model-delete', modelId),
   whisperModelImport: (modelId) => ipcRenderer.invoke('whisper:model-import', modelId),
+  sherpaModels: () => ipcRenderer.invoke('sherpa:models'),
+  sherpaModelDownload: (modelId) => ipcRenderer.invoke('sherpa:model-download', modelId),
+  sherpaModelCancel: (modelId) => ipcRenderer.invoke('sherpa:model-cancel', modelId),
+  sherpaModelDelete: (modelId) => ipcRenderer.invoke('sherpa:model-delete', modelId),
+  sherpaModelImport: (modelId) => ipcRenderer.invoke('sherpa:model-import', modelId),
   platformInfo: () => ipcRenderer.invoke('platform:info'),
   ask: (payload) => ipcRenderer.send('ask', payload),
   captureToggle: () => ipcRenderer.invoke('capture:toggle').catch((err) => {
@@ -54,7 +59,7 @@ contextBridge.exposeInMainWorld('cue', {
   transparencySet: (enabled) => ipcRenderer.invoke('transparency:set', enabled),
   transparencyToggle: () => ipcRenderer.invoke('transparency:toggle'),
   on: (channel, cb) => {
-    const allowed = ['capture:state', 'llm:start', 'llm:token', 'llm:done', 'llm:error', 'status', 'transcript', 'transcript:restore', 'stt:interim', 'stt:final', 'stt:status', 'stt:answer-question', 'stt:insert-question', 'history:toggle', 'vad:state', 'applink:consent-request', 'hide:toggle', 'transcription:toggle', 'model:toggle', 'smart:toggle', 'opacity:step', 'whisper:download-progress', 'whisper:models-changed', 'publik:state', 'slides:update', 'nofocus:state', 'transparency:state', 'composer:focus', 'stealth:char', 'stealth:backspace', 'stealth:delete', 'stealth:arrow-left', 'stealth:arrow-right', 'stealth:arrow-up', 'stealth:arrow-down', 'stealth:page-up', 'stealth:page-down', 'stealth:home', 'stealth:end', 'stealth:submit', 'stealth:cancel', 'stealth:paste', 'stealth:select-all', 'stealth:state', 'response:retry', 'prompt:previous', 'response:previous', 'response:next', 'hr:trigger'];
+    const allowed = ['capture:state', 'llm:start', 'llm:token', 'llm:done', 'llm:error', 'status', 'transcript', 'transcript:restore', 'stt:interim', 'stt:final', 'stt:status', 'stt:answer-question', 'stt:insert-question', 'history:toggle', 'vad:state', 'applink:consent-request', 'hide:toggle', 'transcription:toggle', 'model:toggle', 'smart:toggle', 'opacity:step', 'whisper:download-progress', 'whisper:models-changed', 'sherpa:download-progress', 'sherpa:models-changed', 'publik:state', 'slides:update', 'nofocus:state', 'transparency:state', 'composer:focus', 'stealth:char', 'stealth:backspace', 'stealth:delete', 'stealth:arrow-left', 'stealth:arrow-right', 'stealth:arrow-up', 'stealth:arrow-down', 'stealth:page-up', 'stealth:page-down', 'stealth:home', 'stealth:end', 'stealth:submit', 'stealth:cancel', 'stealth:paste', 'stealth:select-all', 'stealth:state', 'response:retry', 'prompt:previous', 'response:previous', 'response:next', 'hr:trigger'];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

@@ -5,12 +5,16 @@ node_modules/
 dist/
 out/
 .cache/
+*.tar.bz2
+*.zip
+parakeet-v0.5.0-bin-win-cuda-x64/
 
 # Native binaries
 native/systemaudio
 
 # Logs
 *.log
+log.txt
 
 # macOS
 .DS_Store
