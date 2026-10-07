@@ -620,8 +620,21 @@
       });
     });
 
+    // 3. Autotype Button
+    const autotypeBtn = document.createElement('button');
+    autotypeBtn.type = 'button';
+    autotypeBtn.className = 'resp-act-btn resp-act-autotype';
+    autotypeBtn.setAttribute('aria-label', 'Autotype response (Alt+A)');
+    autotypeBtn.innerHTML = `<span class="resp-act-icon">${icon('keyboard', { size: 14, stroke: 1.8 })}</span><span class="resp-act-hint">Alt+A</span>`;
+    autotypeBtn.addEventListener('click', () => {
+      const currentIter = (group._iterations && group._iterations[group._currentIterationIndex]) ? group._iterations[group._currentIterationIndex].raw : '';
+      const textToType = currentIter || rawText || (group.querySelector('.ai-text') ? group.querySelector('.ai-text').innerText : '');
+      toggleAutotyper(textToType);
+    });
+
     wrap.appendChild(retryBtn);
     wrap.appendChild(copyBtn);
+    wrap.appendChild(autotypeBtn);
 
     return wrap;
   }
@@ -666,6 +679,8 @@
     aiEl.innerHTML = renderMarkdown(raw);
     if (isError) {
       aiEl.classList.add('error');
+    } else if (raw && typeof cue.autotypeSetText === 'function') {
+      cue.autotypeSetText(raw);
     }
     const group = aiEl.closest('.response-group');
     if (group) {
@@ -766,6 +781,176 @@
   const stealthCaretEl = $('#stealth-caret');
   const stealthIndicator = $('#stealth-indicator');
 
+  // ========== QUIET MODE ==========
+  const quietContainer = $('#quiet-container');
+  const quietInputBox = $('#quiet-input-box');
+  const quietInput = $('#quiet-input');
+  const quietCaretMirror = $('#quiet-caret-mirror');
+  const quietCaretText = $('#quiet-caret-text');
+  const quietOutputBox = $('#quiet-output-box');
+  const quietOutputText = $('#quiet-output-text');
+
+  let isQuietMode = false;
+  let preQuietOpacity = null;
+  let quietCurrentPrompt = '';
+  let quietCurrentOutput = '';
+  let quietStealthCaretPos = 0;
+  let isQuietSelectAll = false;
+
+  function syncQuietInput() {
+    if (!quietInput) return;
+    quietInput.style.height = 'auto';
+    const nextH = Math.max(18, Math.min(quietInput.scrollHeight, 160));
+    quietInput.style.height = nextH + 'px';
+    syncQuietCaret();
+  }
+
+  function syncQuietCaret() {
+    if (!quietCaretText || !quietInput) return;
+    const pos = Math.max(0, Math.min(quietInput.value.length, quietStealthCaretPos));
+    quietCaretText.textContent = quietInput.value.slice(0, pos);
+    if (quietCaretMirror) {
+      quietCaretMirror.scrollTop = quietInput.scrollTop;
+    }
+  }
+
+  function clearQuietOutput() {
+    quietCurrentOutput = '';
+    if (quietOutputText) quietOutputText.innerHTML = '';
+    if (quietOutputBox) quietOutputBox.classList.add('hidden');
+    if (quietInputBox) quietInputBox.classList.remove('hidden');
+    if (quietInput) {
+      quietInput.value = '';
+      quietStealthCaretPos = 0;
+      isQuietSelectAll = false;
+      syncQuietInput();
+    }
+  }
+
+  function sendQuiet(text) {
+    const query = (text != null ? text : (quietInput ? quietInput.value : '')).trim();
+    if (!query) return;
+    quietCurrentPrompt = query;
+    if (quietInput) {
+      quietInput.value = '';
+      quietStealthCaretPos = 0;
+      isQuietSelectAll = false;
+      syncQuietInput();
+    }
+    if (quietInputBox) quietInputBox.classList.add('hidden');
+    if (quietOutputBox) quietOutputBox.classList.remove('hidden');
+    if (quietOutputText) quietOutputText.innerHTML = '<span class="quiet-loading">…</span>';
+    quietCurrentOutput = '';
+    runMode('quiet', query);
+  }
+
+  function toggleQuietMode(force) {
+    const next = force != null ? force : !isQuietMode;
+    if (next === isQuietMode) return;
+    isQuietMode = next;
+    document.body.classList.toggle('quiet-mode', isQuietMode);
+    if (quietContainer) {
+      quietContainer.classList.toggle('hidden', !isQuietMode);
+    }
+    if (isQuietMode) {
+      preQuietOpacity = currentOpacityValue != null ? currentOpacityValue : (settings && settings.opacity != null ? settings.opacity : 1);
+      applyOpacity(0.05, false);
+      clearQuietOutput();
+      showToast('Quiet mode ON · Alt+C to type', 2000);
+    } else {
+      if (preQuietOpacity !== null) {
+        applyOpacity(preQuietOpacity, true);
+        preQuietOpacity = null;
+      }
+      showToast('Quiet mode OFF', 2000);
+    }
+  }
+
+  let quietBoxWidth = 360;
+  function resizeQuietBox(delta) {
+    if (!delta) return;
+    const step = 50;
+    const minW = 200;
+    const maxW = 720;
+    const prevW = quietBoxWidth;
+    quietBoxWidth = Math.max(minW, Math.min(maxW, quietBoxWidth + (delta > 0 ? step : -step)));
+    document.documentElement.style.setProperty('--quiet-w', `${quietBoxWidth}px`);
+    if (isQuietMode) {
+      const action = quietBoxWidth > prevW ? 'Wider' : quietBoxWidth < prevW ? 'Narrower' : (delta > 0 ? 'Max width' : 'Min width');
+      showToast(`Quiet mode: ${quietBoxWidth}px (${action})`, 1000);
+    }
+  }
+
+  cue.on('quiet:resize', (data) => {
+    const delta = (data && typeof data.delta === 'number') ? data.delta : (data === -1 ? -1 : 1);
+    resizeQuietBox(delta);
+  });
+
+  cue.on('quiet:toggle', () => toggleQuietMode());
+
+  if (quietInput) {
+    quietInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendQuiet();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        clearQuietOutput();
+        return;
+      }
+      if (e.altKey && (e.key === 'q' || e.key === 'Q')) {
+        e.preventDefault();
+        toggleQuietMode();
+        return;
+      }
+      if (e.altKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        toggleAutotyper();
+        return;
+      }
+      if (e.altKey && (e.key === '+' || e.key === '=' || e.key === 'Add') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+        e.preventDefault();
+        resizeQuietBox(1);
+        return;
+      }
+      if (e.altKey && (e.key === '-' || e.key === '_' || e.key === 'Subtract') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+        e.preventDefault();
+        resizeQuietBox(-1);
+        return;
+      }
+      if (((e.altKey && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph')))) || (e.ctrlKey && !e.altKey && !e.shiftKey)) && (e.key === 'o' || e.key === 'O') && !e.metaKey) {
+        e.preventDefault();
+        changeOpacityBy(-5);
+        return;
+      }
+      if (((e.altKey && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph')))) || (e.ctrlKey && !e.altKey && !e.shiftKey)) && (e.key === 'p' || e.key === 'P') && !e.metaKey) {
+        e.preventDefault();
+        changeOpacityBy(5);
+        return;
+      }
+      if (e.altKey && (e.key === 'x' || e.key === 'X')) {
+        e.preventDefault();
+        toggleAltX();
+        return;
+      }
+    });
+
+    quietInput.addEventListener('input', () => {
+      quietStealthCaretPos = quietInput.selectionStart || quietInput.value.length;
+      syncQuietInput();
+    });
+  }
+
+  if (quietInputBox) {
+    quietInputBox.addEventListener('click', () => {
+      if (quietInput && document.activeElement !== quietInput) {
+        quietInput.focus();
+      }
+    });
+  }
+
   // ========== NO-FOCUS (STEALTH) MODE ==========
   let isNoFocusMode = true;
   let temporaryFocusActive = false;
@@ -795,7 +980,7 @@
   function isInsideInputArea(target) {
     if (!target) return false;
     const el = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
-    return Boolean(el && typeof el.closest === 'function' && el.closest('#input-area'));
+    return Boolean(el && typeof el.closest === 'function' && (el.closest('#input-area') || el.closest('#quiet-container')));
   }
 
   function activateStealthTyping() {
@@ -1278,15 +1463,55 @@
     });
   }
 
+  // Autotyper toggle function
+  async function toggleAutotyper(targetText) {
+    let textToUse = targetText;
+    if (!textToUse && isQuietMode) {
+      textToUse = quietCurrentOutput;
+    }
+    if (!textToUse) {
+      const group = getActiveResponseGroup();
+      if (group) {
+        textToUse = (group._iterations && group._iterations[group._currentIterationIndex])
+          ? group._iterations[group._currentIterationIndex].raw
+          : (group.querySelector('.ai-text') ? group.querySelector('.ai-text').dataset.raw || group.querySelector('.ai-text').innerText : '');
+      }
+    }
+    if (typeof cue.autotypeToggle === 'function') {
+      const status = await cue.autotypeToggle(textToUse);
+      if (status === 'typing') {
+        showToast('⚡ Autotyping started... (Alt+A to pause)', 2500);
+      } else if (status === 'paused') {
+        showToast('⏸️ Autotyping paused (Alt+A to resume)', 2500);
+      } else if (status === 'idle') {
+        if (!textToUse) {
+          showToast('No prompt output to autotype', 2000);
+        }
+      }
+    }
+  }
+
+  cue.on('autotype:state', (s) => {
+    if (!s) return;
+    if (s.status === 'idle' && s.total > 0 && s.index >= s.total) {
+      showToast('✓ Autotyping complete', 2200);
+    }
+  });
+
   // Global IPC events for STT actions from stealth hook (Alt+A / Alt+I)
   cue.on('stt:answer-question', () => {
+    if (isQuietMode) {
+      toggleAutotyper();
+      return;
+    }
     if (stagedInterviewerQuestion) {
       answerInterviewerQuestion();
-    } else if (input.value.trim()) {
-      send();
+    } else {
+      toggleAutotyper();
     }
   });
   cue.on('stt:insert-question', () => {
+    if (isQuietMode) return;
     if (stagedInterviewerQuestion) {
       insertInterviewerQuestion();
     }
@@ -1508,13 +1733,16 @@
   }
   $('#send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => {
-    // Alt+A: Answer staged interviewer question
+    // Alt+A: Answer staged interviewer question OR toggle autotyper
     if (e.altKey && (e.key === 'a' || e.key === 'A') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       if (stagedInterviewerQuestion) {
         e.preventDefault();
         answerInterviewerQuestion();
         return;
       }
+      e.preventDefault();
+      toggleAutotyper();
+      return;
     }
     // Alt+U: Insert staged interviewer question into input box at caret
     if (e.altKey && (e.key === 'u' || e.key === 'U') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
@@ -1524,10 +1752,11 @@
         return;
       }
     }
-    // Alt+Q: Run recap
+    // Alt+Q: Run recap / toggle quiet mode
     if (e.altKey && (e.key === 'q' || e.key === 'Q') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
-      runMode('recap', '');
+      toggleQuietMode();
+      // runMode('recap', '');
       return;
     }
     // Alt+G: Run HR mode
@@ -1569,16 +1798,24 @@
       retryResponse(group);
       return;
     }
-    // Alt+O: Reduce opacity
-    if (e.altKey && (e.key === 'o' || e.key === 'O') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+    // Alt+O / Ctrl+O: Reduce opacity
+    if ((e.altKey && (e.key === 'o' || e.key === 'O') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) ||
+        (e.ctrlKey && (e.key === 'o' || e.key === 'O') && !e.altKey && !e.shiftKey && !e.metaKey)) {
       e.preventDefault();
       changeOpacityBy(-5);
       return;
     }
-    // Alt+P: Increase opacity
-    if (e.altKey && (e.key === 'p' || e.key === 'P') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+    // Alt+P / Ctrl+P: Increase opacity
+    if ((e.altKey && (e.key === 'p' || e.key === 'P') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) ||
+        (e.ctrlKey && (e.key === 'p' || e.key === 'P') && !e.altKey && !e.shiftKey && !e.metaKey)) {
       e.preventDefault();
       changeOpacityBy(5);
+      return;
+    }
+    // Alt+X: Completely hide or restore Cue
+    if (e.altKey && (e.key === 'x' || e.key === 'X')) {
+      e.preventDefault();
+      toggleAltX();
       return;
     }
     // Alt+I / J / K / L: Move window Up / Left / Down / Right
@@ -1670,36 +1907,66 @@
   
   // FIX #13: Global keyboard shortcut for force-answer (Ctrl+Shift+A / Cmd+Shift+A), STT Answer (Alt+A), STT Insert (Alt+I), and Tab to insert
   document.addEventListener('keydown', (e) => {
-    // Alt+A: Answer staged interviewer question
+    // Alt + + / =: Widen quiet box
+    if (e.altKey && (e.key === '+' || e.key === '=' || e.key === 'Add') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      resizeQuietBox(1);
+      return;
+    }
+    // Alt + - / _: Narrow quiet box
+    if (e.altKey && (e.key === '-' || e.key === '_' || e.key === 'Subtract') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      resizeQuietBox(-1);
+      return;
+    }
+    // Alt+X: Completely hide or restore Cue
+    if (e.altKey && (e.key === 'x' || e.key === 'X') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      toggleAltX();
+      return;
+    }
+    // Alt+A: Answer staged interviewer question OR toggle autotyper
     if (e.altKey && (e.key === 'a' || e.key === 'A') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      if (isQuietMode) {
+        e.preventDefault();
+        toggleAutotyper();
+        return;
+      }
       if (stagedInterviewerQuestion) {
         e.preventDefault();
         answerInterviewerQuestion();
         return;
       }
+      e.preventDefault();
+      toggleAutotyper();
+      return;
     }
     // Alt+U: Insert staged interviewer question into input box
     if (e.altKey && (e.key === 'u' || e.key === 'U') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      if (isQuietMode) return;
       if (stagedInterviewerQuestion) {
         e.preventDefault();
         insertInterviewerQuestion();
         return;
       }
     }
-    // Alt+Q: Run recap
+    // Alt+Q: Run recap / toggle quiet mode
     if (e.altKey && (e.key === 'q' || e.key === 'Q') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
-      runMode('recap', '');
+      toggleQuietMode();
+      // runMode('recap', '');
       return;
     }
     // Alt+G: Run HR mode
     if (e.altKey && (e.key === 'g' || e.key === 'G') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      if (isQuietMode) return;
       e.preventDefault();
       triggerHrMode();
       return;
     }
     // Ctrl+H (Cmd+H): Run LeetCode mode
     if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H') && !e.altKey && !e.shiftKey) {
+      if (isQuietMode) return;
       e.preventDefault();
       runMode('leetcode', '');
       return;
@@ -1707,11 +1974,24 @@
     // Alt+W: Bring back previous prompt in input box
     if (e.altKey && (e.key === 'w' || e.key === 'W') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
+      if (isQuietMode) {
+        if (quietCurrentPrompt) {
+          clearQuietOutput();
+          quietInput.value = quietCurrentPrompt;
+          quietStealthCaretPos = quietCurrentPrompt.length;
+          syncQuietInput();
+          showToast('Previous prompt restored', 1200);
+        } else {
+          showToast('No previous prompt', 1500);
+        }
+        return;
+      }
       restorePreviousPrompt();
       return;
     }
     // Alt+E: Go to previous answer
     if (e.altKey && (e.key === 'e' || e.key === 'E') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      if (isQuietMode) return;
       e.preventDefault();
       goToPreviousAnswer();
       return;
@@ -1719,6 +1999,18 @@
     // Alt+R: Retry prompt
     if (e.altKey && (e.key === 'r' || e.key === 'R') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
+      if (isQuietMode) {
+        if (busy) {
+          showToast('Please wait for current response to finish', 2000);
+          return;
+        }
+        if (quietCurrentPrompt) {
+          sendQuiet(quietCurrentPrompt);
+        } else {
+          showToast('No prompt to retry', 1500);
+        }
+        return;
+      }
       const group = getActiveResponseGroup();
       if (!group) {
         showToast('No prompt to retry', 1500);
@@ -1731,14 +2023,16 @@
       retryResponse(group);
       return;
     }
-    // Alt+O: Reduce opacity
-    if (e.altKey && (e.key === 'o' || e.key === 'O') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+    // Alt+O / Ctrl+O: Reduce opacity
+    if ((e.altKey && (e.key === 'o' || e.key === 'O') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) ||
+        (e.ctrlKey && (e.key === 'o' || e.key === 'O') && !e.altKey && !e.shiftKey && !e.metaKey)) {
       e.preventDefault();
       changeOpacityBy(-5);
       return;
     }
-    // Alt+P: Increase opacity
-    if (e.altKey && (e.key === 'p' || e.key === 'P') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+    // Alt+P / Ctrl+P: Increase opacity
+    if ((e.altKey && (e.key === 'p' || e.key === 'P') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) ||
+        (e.ctrlKey && (e.key === 'p' || e.key === 'P') && !e.altKey && !e.shiftKey && !e.metaKey)) {
       e.preventDefault();
       changeOpacityBy(5);
       return;
@@ -1755,12 +2049,14 @@
     }
     // Alt+B: Explain terms from last 4 messages (previous4)
     if (e.altKey && (e.key === 'b' || e.key === 'B') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      if (isQuietMode) return;
       e.preventDefault();
       runMode('previous4', '');
       return;
     }
     // Alt+N: Toggle transcription history sidebar
     if (e.altKey && (e.key === 'n' || e.key === 'N') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      if (isQuietMode) return;
       e.preventDefault();
       toggleSidebar();
       return;
@@ -1773,6 +2069,7 @@
     }
     // Alt+T: Go to next answer
     if (e.altKey && (e.key === 't' || e.key === 'T') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      if (isQuietMode) return;
       e.preventDefault();
       goToNextAnswer();
       return;
@@ -1969,6 +2266,10 @@
   }, true);
 
   const OPACITY_MIN = 0.0;
+  let currentOpacityValue = 1.0;
+  let isAltXHidden = false;
+  let preAltXOpacity = null;
+
   function clampOpacity(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 1;
@@ -1978,19 +2279,34 @@
   function persistOpacitySoon() {
     clearTimeout(persistOpacitySoon.timer);
     persistOpacitySoon.timer = setTimeout(() => {
-      if (!settings) return;
-      cue.settingsSet({ opacity: settings.opacity }).then((next) => { if (next) settings = next; }).catch(() => {});
+      if (!settings || isQuietMode || isAltXHidden) return;
+      cue.settingsSet({ opacity: currentOpacityValue }).then((next) => {
+        if (next) {
+          const target = currentOpacityValue;
+          settings = next;
+          settings.opacity = target;
+        }
+      }).catch(() => {});
     }, 400);
   }
   function changeOpacityBy(deltaPercent) {
-    const currentPercent = opacityToPercent(settings && settings.opacity != null ? settings.opacity : 1);
+    if (isAltXHidden && deltaPercent > 0) {
+      // If hidden by Alt+X and increasing opacity (Alt+P / Ctrl+P), increase normally from 0 (+5% at a time)
+      isAltXHidden = false;
+      preAltXOpacity = null;
+    }
+    const currentPercent = opacityToPercent(currentOpacityValue);
     const nextPercent = Math.min(100, Math.max(0, currentPercent + deltaPercent));
-    applyOpacity(nextPercent / 100, true);
+    applyOpacity(nextPercent / 100, !isQuietMode);
   }
   function applyOpacity(value, persist) {
     const opacity = clampOpacity(value);
+    currentOpacityValue = opacity;
+    if (opacity > 0) {
+      isAltXHidden = false;
+    }
     const percent = opacityToPercent(opacity);
-    if (settings) settings.opacity = opacity;
+    if (!isQuietMode && !isAltXHidden && settings) settings.opacity = opacity;
     document.documentElement.style.setProperty('--cue-opacity', String(opacity));
     const tb = $('#tb-opacity-slider');
     const tbVal = $('#tb-opacity-value');
@@ -2000,8 +2316,40 @@
     if (tbVal) tbVal.textContent = percent + '%';
     if (s) s.value = String(percent);
     if (sVal) sVal.textContent = percent + '%';
-    if (persist) persistOpacitySoon();
+    if (persist && !isQuietMode && !isAltXHidden) persistOpacitySoon();
   }
+
+  function toggleAltX(force) {
+    if (force == null) {
+      if (isAltXHidden || currentOpacityValue === 0) {
+        force = false;
+      } else {
+        force = true;
+      }
+    }
+    const nextHidden = force;
+    if (nextHidden) {
+      if (currentOpacityValue > 0) {
+        preAltXOpacity = currentOpacityValue;
+      } else if (preAltXOpacity == null || preAltXOpacity <= 0) {
+        preAltXOpacity = isQuietMode ? 0.05 : (settings && settings.opacity > 0 ? settings.opacity : 0.8);
+      }
+      isAltXHidden = true;
+      applyOpacity(0.0, false);
+      showToast('Cue hidden (Alt+X to show)', 1200);
+    } else {
+      isAltXHidden = false;
+      let restore = preAltXOpacity;
+      if (restore == null || restore <= 0) {
+        restore = isQuietMode ? 0.05 : (settings && settings.opacity > 0 ? settings.opacity : 0.8);
+      }
+      preAltXOpacity = null;
+      applyOpacity(restore, !isQuietMode);
+      showToast(`Cue visible (${opacityToPercent(restore)}%)`, 1200);
+    }
+  }
+
+  cue.on('alt-x:toggle', () => toggleAltX());
   function toggleOpacityPopover(force) {
     const pop = $('#opacity-popover');
     const btn = $('#opacity-btn');
@@ -2033,6 +2381,18 @@
   });
 
   cue.on('response:retry', () => {
+    if (isQuietMode) {
+      if (busy) {
+        showToast('Please wait for current response to finish', 2000);
+        return;
+      }
+      if (quietCurrentPrompt) {
+        sendQuiet(quietCurrentPrompt);
+      } else {
+        showToast('No prompt to retry', 1500);
+      }
+      return;
+    }
     const group = getActiveResponseGroup();
     if (!group) {
       showToast('No prompt to retry', 1500);
@@ -2046,14 +2406,28 @@
   });
 
   cue.on('prompt:previous', () => {
+    if (isQuietMode) {
+      if (quietCurrentPrompt) {
+        clearQuietOutput();
+        quietInput.value = quietCurrentPrompt;
+        quietStealthCaretPos = quietCurrentPrompt.length;
+        syncQuietInput();
+        showToast('Previous prompt restored', 1200);
+      } else {
+        showToast('No previous prompt', 1500);
+      }
+      return;
+    }
     restorePreviousPrompt();
   });
 
   cue.on('response:previous', () => {
+    if (isQuietMode) return;
     goToPreviousAnswer();
   });
 
   cue.on('response:next', () => {
+    if (isQuietMode) return;
     goToNextAnswer();
   });
 
@@ -2385,6 +2759,7 @@
   }
 
   function toggleSidebar() {
+    if (isQuietMode) return;
     if (sidebarOpen) {
       hideSidebar();
     } else {
@@ -2520,11 +2895,22 @@
   });
 
   cue.on('hr:trigger', () => {
+    if (isQuietMode) return;
     triggerHrMode();
   });
 
   cue.on('composer:focus', ({ temporary } = {}) => {
     temporaryFocusActive = Boolean(temporary);
+    if (isQuietMode) {
+      if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        clearQuietOutput();
+      }
+      if (quietInput) {
+        quietInput.focus();
+        quietInput.select();
+      }
+      return;
+    }
     const wrap = $('#panel-wrap');
     if (wrap && wrap.classList.contains('collapsed')) {
       toggleHide();
@@ -2565,6 +2951,13 @@
   cue.on('stealth:state', ({ capturing }) => {
     const nextState = Boolean(capturing);
     isStealthTypingActive = nextState;
+    if (isQuietMode) {
+      if (quietInputBox) quietInputBox.classList.toggle('stealth-active', isStealthTypingActive);
+      if (isStealthTypingActive && quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        clearQuietOutput();
+      }
+      return;
+    }
     if (!isStealthTypingActive) {
       isStealthSelectAll = false;
     }
@@ -2598,6 +2991,22 @@
 
   cue.on('stealth:char', ({ char }) => {
     if (!char) return;
+    if (isQuietMode) {
+      if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        clearQuietOutput();
+      }
+      if (isQuietSelectAll) {
+        quietInput.value = char;
+        isQuietSelectAll = false;
+        quietStealthCaretPos = char.length;
+      } else {
+        const pos = Math.max(0, Math.min(quietInput.value.length, quietStealthCaretPos));
+        quietInput.value = quietInput.value.slice(0, pos) + char + quietInput.value.slice(pos);
+        quietStealthCaretPos = pos + char.length;
+      }
+      syncQuietInput();
+      return;
+    }
     if (char === '\t' && stagedInterviewerQuestion) {
       insertInterviewerQuestion();
       return;
@@ -2620,6 +3029,22 @@
   });
 
   cue.on('stealth:backspace', () => {
+    if (isQuietMode) {
+      if (isQuietSelectAll) {
+        quietInput.value = '';
+        isQuietSelectAll = false;
+        quietStealthCaretPos = 0;
+        syncQuietInput();
+        return;
+      }
+      if (quietStealthCaretPos > 0) {
+        const pos = quietStealthCaretPos;
+        quietInput.value = quietInput.value.slice(0, pos - 1) + quietInput.value.slice(pos);
+        quietStealthCaretPos = pos - 1;
+        syncQuietInput();
+      }
+      return;
+    }
     if (isStealthSelectAll) {
       input.value = '';
       isStealthSelectAll = false;
@@ -2639,6 +3064,21 @@
   });
 
   cue.on('stealth:delete', () => {
+    if (isQuietMode) {
+      if (isQuietSelectAll) {
+        quietInput.value = '';
+        isQuietSelectAll = false;
+        quietStealthCaretPos = 0;
+        syncQuietInput();
+        return;
+      }
+      if (quietStealthCaretPos < quietInput.value.length) {
+        const pos = quietStealthCaretPos;
+        quietInput.value = quietInput.value.slice(0, pos) + quietInput.value.slice(pos + 1);
+        syncQuietInput();
+      }
+      return;
+    }
     if (isStealthSelectAll) {
       input.value = '';
       isStealthSelectAll = false;
@@ -2704,6 +3144,14 @@
   }
 
   cue.on('stealth:arrow-left', () => {
+    if (isQuietMode) {
+      isQuietSelectAll = false;
+      if (quietStealthCaretPos > 0) {
+        quietStealthCaretPos--;
+        syncQuietCaret();
+      }
+      return;
+    }
     if (isStealthTypingActive) {
       isStealthSelectAll = false;
       const pos = getStealthCaretPos();
@@ -2715,6 +3163,14 @@
   });
 
   cue.on('stealth:arrow-right', () => {
+    if (isQuietMode) {
+      isQuietSelectAll = false;
+      if (quietStealthCaretPos < quietInput.value.length) {
+        quietStealthCaretPos++;
+        syncQuietCaret();
+      }
+      return;
+    }
     if (isStealthTypingActive) {
       isStealthSelectAll = false;
       const pos = getStealthCaretPos();
@@ -2749,7 +3205,15 @@
       isStealthSelectAll = false;
       moveStealthCaretVertical(-1);
     } else if (isTransparencyMode) {
-      doArrowScroll(-1);
+      if (isQuietMode && quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        quietOutputBox.scrollBy({ top: -60, behavior: 'smooth' });
+      } else {
+        doArrowScroll(-1);
+      }
+    } else if (isQuietMode) {
+      if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        quietOutputBox.scrollBy({ top: -60, behavior: 'smooth' });
+      }
     }
   });
 
@@ -2758,11 +3222,25 @@
       isStealthSelectAll = false;
       moveStealthCaretVertical(1);
     } else if (isTransparencyMode) {
-      doArrowScroll(1);
+      if (isQuietMode && quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        quietOutputBox.scrollBy({ top: 60, behavior: 'smooth' });
+      } else {
+        doArrowScroll(1);
+      }
+    } else if (isQuietMode) {
+      if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        quietOutputBox.scrollBy({ top: 60, behavior: 'smooth' });
+      }
     }
   });
 
   cue.on('stealth:page-up', () => {
+    if (isQuietMode) {
+      if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        quietOutputBox.scrollBy({ top: -200, behavior: 'smooth' });
+      }
+      return;
+    }
     if (isStealthTypingActive) {
       isStealthSelectAll = false;
       setStealthCaretPos(0);
@@ -2775,6 +3253,12 @@
   });
 
   cue.on('stealth:page-down', () => {
+    if (isQuietMode) {
+      if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        quietOutputBox.scrollBy({ top: 200, behavior: 'smooth' });
+      }
+      return;
+    }
     if (isStealthTypingActive) {
       isStealthSelectAll = false;
       setStealthCaretPos(input.value.length);
@@ -2787,6 +3271,12 @@
   });
 
   cue.on('stealth:home', () => {
+    if (isQuietMode) {
+      isQuietSelectAll = false;
+      quietStealthCaretPos = 0;
+      syncQuietCaret();
+      return;
+    }
     if (isStealthTypingActive) {
       isStealthSelectAll = false;
       setStealthCaretPos(0);
@@ -2795,6 +3285,12 @@
   });
 
   cue.on('stealth:end', () => {
+    if (isQuietMode) {
+      isQuietSelectAll = false;
+      quietStealthCaretPos = quietInput.value.length;
+      syncQuietCaret();
+      return;
+    }
     if (isStealthTypingActive) {
       isStealthSelectAll = false;
       setStealthCaretPos(input.value.length);
@@ -2803,6 +3299,13 @@
   });
 
   cue.on('stealth:submit', () => {
+    if (isQuietMode) {
+      isStealthTypingActive = false;
+      if (quietInputBox) quietInputBox.classList.remove('stealth-active');
+      isQuietSelectAll = false;
+      sendQuiet();
+      return;
+    }
     isStealthTypingActive = false;
     composer.classList.remove('stealth-active');
     if (stealthIndicator) {
@@ -2821,6 +3324,15 @@
   });
 
   cue.on('stealth:cancel', () => {
+    if (isQuietMode) {
+      isStealthTypingActive = false;
+      isQuietSelectAll = false;
+      if (quietInputBox) quietInputBox.classList.remove('stealth-active');
+      if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        clearQuietOutput();
+      }
+      return;
+    }
     if (isStealthTypingActive) {
       isStealthTypingActive = false;
       isStealthSelectAll = false;
@@ -2847,6 +3359,22 @@
 
   cue.on('stealth:paste', ({ text }) => {
     if (!text) return;
+    if (isQuietMode) {
+      if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        clearQuietOutput();
+      }
+      if (isQuietSelectAll) {
+        quietInput.value = text;
+        isQuietSelectAll = false;
+        quietStealthCaretPos = text.length;
+      } else {
+        const pos = Math.max(0, Math.min(quietInput.value.length, quietStealthCaretPos));
+        quietInput.value = quietInput.value.slice(0, pos) + text + quietInput.value.slice(pos);
+        quietStealthCaretPos = pos + text.length;
+      }
+      syncQuietInput();
+      return;
+    }
     if (isStealthSelectAll) {
       input.value = text;
       isStealthSelectAll = false;
@@ -2865,6 +3393,10 @@
   });
 
   cue.on('stealth:select-all', () => {
+    if (isQuietMode) {
+      isQuietSelectAll = true;
+      return;
+    }
     if (input.value.length > 0) {
       isStealthSelectAll = true;
       syncCaretMirror();
@@ -2961,6 +3493,14 @@
     showToast(`Slide ${count} captured · ${title}`, 3000);
   });
   cue.on('llm:start', ({ userBubble, small, category, mode, text }) => {
+    if (isQuietMode) {
+      setBusy(true);
+      quietCurrentOutput = '';
+      if (quietInputBox) quietInputBox.classList.add('hidden');
+      if (quietOutputBox) quietOutputBox.classList.remove('hidden');
+      if (quietOutputText) quietOutputText.innerHTML = '<span class="quiet-loading">…</span>';
+      return;
+    }
     let group;
     if (retryingGroup && retryingGroup.isConnected) {
       group = retryingGroup;
@@ -3047,9 +3587,27 @@
     });
     setBusy(true);
   });
-  cue.on('llm:token', ({ text }) => appendToken(text));
-  cue.on('llm:done', () => { finalizeAi(false); setBusy(false); });
+  cue.on('llm:token', ({ text }) => {
+    if (isQuietMode) {
+      quietCurrentOutput += text;
+      if (quietOutputText) quietOutputText.innerHTML = renderMarkdown(quietCurrentOutput);
+      if (typeof cue.autotypeSetText === 'function') {
+        cue.autotypeSetText(quietCurrentOutput);
+      }
+      return;
+    }
+    appendToken(text);
+  });
+  cue.on('llm:done', () => {
+    finalizeAi(false);
+    setBusy(false);
+  });
   cue.on('llm:error', ({ message, action }) => {
+    if (isQuietMode) {
+      if (quietOutputText) quietOutputText.innerHTML = '<span class="quiet-error">' + esc(message) + '</span>';
+      setBusy(false);
+      return;
+    }
     if (!aiEl) startAi(true);
     aiEl.dataset.raw = message; finalizeAi(true); setBusy(false);
     // publik errors carry one action: the renderer's markdown emits no anchors,
@@ -3060,6 +3618,7 @@
   cue.on('transcript', ({ channel, text }) => {
     if (!text || text.trim().length < 2 || /^[?!.,;:\-…]+$/.test(text.trim())) return;
     appendTranscriptHistoryTurn(channel, text, false);
+    if (isQuietMode) return;
     // Interviewer speech streams to Interviewer Pill (never dumps into input box!)
     if (channel === 'them') {
       cancelPillSoftClear();
@@ -3913,9 +4472,23 @@
 
   // ---- global keys -------------------------------------------------------
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (isQuietMode && quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+        e.preventDefault();
+        clearQuietOutput();
+        return;
+      }
+    }
     if (e.key === 'Escape' && !scrim.classList.contains('hidden')) void closeSettings();
     if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); openSettings(); }
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && document.activeElement !== input && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (isQuietMode) {
+        if (quietOutputBox && !quietOutputBox.classList.contains('hidden')) {
+          e.preventDefault();
+          quietOutputBox.scrollBy({ top: e.key === 'ArrowUp' ? -60 : 60, behavior: 'smooth' });
+        }
+        return;
+      }
       if (messages) {
         e.preventDefault();
         doArrowScroll(e.key === 'ArrowUp' ? -1 : 1);
@@ -3948,7 +4521,7 @@
     // The window trails the cursor while dragging; going click-through then would drop the release.
     if (draggingWindow) return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim, .custom-select-menu'));
+    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim, .custom-select-menu, #quiet-container'));
     setIgnore(!overUI);
   });
   setIgnore(true); // start fully click-through; hovering the panel re-enables it
@@ -3971,6 +4544,22 @@
     toolbar.classList.remove('dragging');
     cue.windowDragEnd();
   });
+
+  if (quietContainer) {
+    quietContainer.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('textarea, a, button')) return;
+      e.preventDefault();
+      quietContainer.setPointerCapture(e.pointerId);
+      draggingWindow = true;
+      setIgnore(false);
+      cue.windowDragStart();
+    });
+    quietContainer.addEventListener('lostpointercapture', () => {
+      if (!draggingWindow) return;
+      draggingWindow = false;
+      cue.windowDragEnd();
+    });
+  }
 
   // ---- assistant access request ------------------------------------------
   // Shown here rather than as a native dialog because cue hides its dock icon:

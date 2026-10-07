@@ -166,8 +166,8 @@ function buildJDBlock(jd, limit = 600) {
  * the detected interview category. Returns null for leetcode mode.
  */
 function buildInterviewContext(settings, mode, transcript) {
-  // Coding problems never need personal context
-  if (mode === 'leetcode') return null;
+  // Coding problems and quiet mode never need personal context
+  if (mode === 'leetcode' || mode === 'quiet') return null;
 
   const category = detectCategory(transcript || []);
 

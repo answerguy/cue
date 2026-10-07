@@ -1586,3 +1586,188 @@ body.transparency-mode .stealth-pill-dot {
 .cs-title { font-size: 15px; font-weight: 620; color: var(--tx-1); line-height: 1.35; }
 .cs-body { margin-top: 10px; color: var(--tx-mut); font-size: 12.5px; line-height: 1.5; white-space: pre-line; }
 .cs-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+
+/* ============================ Quiet Mode ============================ */
+body.quiet-mode #toolbar,
+body.quiet-mode #live-dot,
+body.quiet-mode #stt-status,
+body.quiet-mode #mic-perm-banner,
+body.quiet-mode #titlebar,
+body.quiet-mode #panel-columns,
+body.quiet-mode #transcript-sidebar,
+body.quiet-mode #interviewer-pill,
+body.quiet-mode #action-row,
+body.quiet-mode #live-interim {
+  display: none !important;
+}
+
+body.quiet-mode #app {
+  padding-top: 8px !important;
+}
+
+body.quiet-mode #panel-wrap {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+}
+
+body.quiet-mode #panel {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  animation: none !important;
+}
+
+.quiet-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 4px;
+  background: transparent;
+}
+
+.quiet-container.hidden {
+  display: none !important;
+}
+
+.quiet-box {
+  width: var(--quiet-w, 360px);
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: rgba(15, 20, 30, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 8px 12px;
+  position: relative;
+  transition: width 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quiet-box.stealth-active {
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.22);
+}
+
+.quiet-input-box {
+  cursor: text;
+}
+
+.quiet-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f1f5f9;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 18px;
+  min-height: 18px;
+  resize: none;
+  overflow-y: auto;
+  max-height: 160px;
+  padding: 0;
+  margin: 0;
+  display: block;
+  box-sizing: border-box;
+}
+
+.quiet-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.quiet-caret-mirror {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  pointer-events: none;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 18px;
+  color: transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: none;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.quiet-input:focus ~ .quiet-caret-mirror {
+  display: none;
+}
+
+#quiet-caret-text {
+  visibility: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.quiet-caret {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background-color: #38bdf8;
+  vertical-align: -2px;
+  animation: blink 1s step-end infinite;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+  border-radius: 1px;
+}
+
+.quiet-output-box {
+  width: var(--quiet-w, 360px);
+  max-width: 90vw;
+  max-height: 60vh;
+  overflow-y: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #f8fafc;
+  transition: width 0.15s ease;
+}
+
+.quiet-output-text {
+  word-break: break-word;
+}
+
+.quiet-output-text pre {
+  margin: 4px 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.quiet-output-text code {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  color: #38bdf8;
+}
+
+.quiet-output-text pre code {
+  color: inherit;
+}
+

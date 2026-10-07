@@ -123,6 +123,20 @@
           </div>
 
         </div><!-- /panel-columns -->
+
+        <!-- Quiet mode container: simple transparent input box, replaced by output prompt -->
+        <div id="quiet-container" class="quiet-container hidden">
+          <div id="quiet-input-box" class="quiet-box quiet-input-box">
+            <textarea id="quiet-input" class="quiet-input" rows="1" placeholder="Type question (Enter sends · Alt+C to type)..." spellcheck="false"></textarea>
+            <div id="quiet-caret-mirror" class="quiet-caret-mirror" aria-hidden="true">
+              <span id="quiet-caret-text"></span>
+              <span class="quiet-caret"></span>
+            </div>
+          </div>
+          <div id="quiet-output-box" class="quiet-box quiet-output-box hidden">
+            <div id="quiet-output-text" class="quiet-output-text"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Transcript history sidebar — slides out from behind the panel's right edge -->

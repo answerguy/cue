@@ -33,6 +33,7 @@ test('index.html displays Alt+Q hint for recap, Alt+U for insert, Alt+H for hide
 
 test('renderer.js clamps opacity between 0.0 and 1.0 (0% to 100%)', () => {
   assert.match(jsSrc, /const OPACITY_MIN = 0\.0;/);
+  assert.match(jsSrc, /let currentOpacityValue = 1\.0;/);
   assert.match(jsSrc, /function changeOpacityBy\(deltaPercent\)/);
   assert.match(jsSrc, /Math\.min\(100,\s*Math\.max\(0,\s*currentPercent \+ deltaPercent\)\)/);
   assert.match(jsSrc, /cue\.on\('opacity:step',\s*\(\{\s*delta\s*\}\)\s*=>/);
@@ -120,3 +121,27 @@ test('stealth-input.cs defines and masks Alt+U, Alt+R, Alt+O, Alt+P, and Alt+(I,
   // Swallowed / masked check
   assert.match(csSrc, /_altSwallowed = true; \/\/ Mark Alt completely swallowed!/);
 });
+
+test('Alt+X completely hides cue and restores previous opacity with proper state management on Ctrl+O/P', () => {
+  // renderer.js state management
+  assert.match(jsSrc, /let isAltXHidden = false;/);
+  assert.match(jsSrc, /let preAltXOpacity = null;/);
+  assert.match(jsSrc, /function toggleAltX/);
+  assert.match(jsSrc, /cue\.on\('alt-x:toggle'/);
+  assert.match(jsSrc, /if \(isAltXHidden && deltaPercent > 0\)[\s\S]*?isAltXHidden = false;/);
+
+  // preload.js allows alt-x:toggle
+  assert.match(preloadSrc, /'alt-x:toggle'/);
+
+  // main.js wires shortcut and stealth hook
+  assert.match(mainSrc, /globalShortcut\.register\('Alt\+X'/);
+  assert.match(mainSrc, /onAltXToggle:\s*\(\)\s*=>\s*send\('alt-x:toggle'\)/);
+
+  // stealth-hook-manager dispatches alt_x_toggle
+  assert.match(stealthHookSrc, /case 'alt_x_toggle':[\s\S]*?onAltXToggle\(\);/);
+
+  // stealth-input.cs defines 0x58 and emits alt_x_toggle
+  assert.match(csSrc, /bool isX = \(vk == 0x58 \|\| vk == 0x78\);/);
+  assert.match(csSrc, /\\"event\\":\\"alt_x_toggle\\"/);
+});
+

@@ -267,6 +267,29 @@ const MODES = {
       const stories = ctx.hrStories ? 'Candidate\'s prepared HR stories and Q&A context:\n' + ctx.hrStories + '\n\n' : '';
       return stories + 'Answer this HR interview question:\n\n"' + (q || '(no question provided)') + '"\n\nGive the exact spoken answer the candidate should say out loud.';
     }
+  },
+
+  // ── Quiet: minimalist, no-fluff answers or pure code ──────────────────────
+  quiet: {
+    needsScreen: false,
+    userBubble: null,
+    small: true,
+    resumeMode: 'say',
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
+        'You are cue operating in Quiet Mode.\n\n' +
+        'CRITICAL INSTRUCTIONS:\n' +
+        '1. If asked for code, programming, or an algorithmic problem: Provide ONLY the clean, working code with NO comments. ' +
+        'DO NOT include any explanations, walkthroughs, time complexity, space complexity, analysis, or conversational filler. ' +
+        'Output ONLY the code block itself.\n' +
+        '2. If asked a general question or conceptual topic: Provide ONLY a direct, extremely concise answer (1–3 sentences maximum). ' +
+        'No preambles, no greetings, no conversational filler, no sign-offs.',
+        contextBlock
+      ), aiRules, 'quiet');
+    },
+    build(ctx) {
+      return ctx.userText || '';
+    }
   }
 };
 

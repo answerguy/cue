@@ -32,6 +32,8 @@ function createStealthHookManager(options = {}) {
     onModelToggle = () => {},
     onSmartToggle = () => {},
     onOpacityStep = () => {},
+    onQuietResize = () => {},
+    onAltXToggle = () => {},
     onWindowMove = () => {},
     log = console.log
   } = options;
@@ -212,6 +214,14 @@ function createStealthHookManager(options = {}) {
           onOpacityStep(msg.delta);
         }
         break;
+      case 'quiet_resize':
+        if (typeof msg.delta === 'number') {
+          onQuietResize(msg.delta);
+        }
+        break;
+      case 'alt_x_toggle':
+        onAltXToggle();
+        break;
       case 'window_move':
         if (typeof msg.direction === 'string') {
           onWindowMove(msg.direction);
@@ -303,6 +313,24 @@ function createStealthHookManager(options = {}) {
     return true;
   }
 
+  function typeCodePoint(cp) {
+    if (!isAvailable()) return false;
+    sendCommand(`TYPE_CODEPOINT ${cp}`);
+    return true;
+  }
+
+  function typeBackspace() {
+    if (!isAvailable()) return false;
+    sendCommand('TYPE_BACKSPACE');
+    return true;
+  }
+
+  function typeKey(vk) {
+    if (!isAvailable()) return false;
+    sendCommand(`TYPE_VK ${vk}`);
+    return true;
+  }
+
   return {
     isAvailable,
     start,
@@ -310,6 +338,9 @@ function createStealthHookManager(options = {}) {
     toggle,
     setTransparency,
     isCapturing,
+    typeCodePoint,
+    typeBackspace,
+    typeKey,
     dispose
   };
 }

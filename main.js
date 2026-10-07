@@ -55,9 +55,34 @@ const { locateSherpaRuntime } = require('./src/sherpa-runtime');
 const { LocalSherpaTranscriber } = require('./src/local-sherpa-transcriber');
 
 const { createStealthHookManager } = require('./src/stealth-hook-manager');
+const { createAutotyper } = require('./src/autotyper');
 
 let win = null;
 let stealthHookManager = null;
+let lastOutputText = '';
+
+const autotyper = createAutotyper({
+  injector: {
+    typeCodePoint: (cp) => {
+      if (stealthHookManager && stealthHookManager.isAvailable()) {
+        stealthHookManager.typeCodePoint(cp);
+      }
+    },
+    typeBackspace: () => {
+      if (stealthHookManager && stealthHookManager.isAvailable()) {
+        stealthHookManager.typeBackspace();
+      }
+    },
+    typeKey: (vk) => {
+      if (stealthHookManager && stealthHookManager.isAvailable()) {
+        stealthHookManager.typeKey(vk);
+      }
+    }
+  },
+  onStateChange: (state) => {
+    send('autotype:state', state);
+  }
+});
 
 let lastShortcutActionTime = 0;
 let lastShortcutAction = '';
@@ -68,7 +93,9 @@ function triggerShortcutAction(action) {
   }
   lastShortcutAction = action;
   lastShortcutActionTime = now;
-  if (action === 'recap' || action === 'previous4') {
+  if (action === 'recap') {
+    send('quiet:toggle');
+  } else if (action === 'previous4') {
     runFeature(action, '');
   } else if (action === 'retry') {
     send('response:retry');
@@ -128,6 +155,8 @@ function initStealthHook() {
     onModelToggle: () => send('model:toggle'),
     onSmartToggle: () => send('smart:toggle'),
     onOpacityStep: (delta) => send('opacity:step', { delta }),
+    onQuietResize: (delta) => send('quiet:resize', { delta }),
+    onAltXToggle: () => send('alt-x:toggle'),
     onWindowMove: (direction) => moveWindow(direction),
     onShortcut: (action) => triggerShortcutAction(action),
     log: (msg) => console.log(msg)
@@ -140,7 +169,7 @@ function initStealthHook() {
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false, model: false, smart: false, recap: false, retry: false, previousPrompt: false, prevAnswer: false, nextAnswer: false, opacityDown: false, opacityUp: false, moveUp: false, moveLeft: false, moveDown: false, moveRight: false };
+const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false, model: false, smart: false, recap: false, retry: false, previousPrompt: false, prevAnswer: false, nextAnswer: false, opacityDown: false, opacityUp: false, moveUp: false, moveLeft: false, moveDown: false, moveRight: false, altX: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
@@ -987,6 +1016,9 @@ async function runFeature(mode, userText) {
       : (mode === 'ask' || mode === 'hr' ? (userText || 'HR Question') : mode === 'answerThis' ? `"${(userText || '').slice(0, 60)}${userText && userText.length > 60 ? '…' : ''}"` : null);
     const category = mode !== 'leetcode' ? (mode === 'hr' ? 'HR' : detectCategory(transcript)) : null;
     send('llm:start', { userBubble, small: !!def.small, category, mode, text: userText || '' });
+    if (autotyper && typeof autotyper.stop === 'function') {
+      autotyper.stop();
+    }
 
     if (!llm.ready) {
       const message = llm.configurationError || ('Complete the ' + settings.provider + ' provider settings. Model: ' + (llm.model || 'unset') + '.');
@@ -1045,8 +1077,8 @@ async function runFeature(mode, userText) {
     const settingsForPrompt = store.getSettings();
     let contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
     // Summaries of the last few meetings, so "what did we agree last time?"
-    // has something to draw on. Never the current meeting, never leetcode.
-    const memoryBlock = mode !== 'leetcode' && meetingMemory ? meetingMemory.memoryBlock() : null;
+    // has something to draw on. Never the current meeting, never leetcode, never quiet.
+    const memoryBlock = mode !== 'leetcode' && mode !== 'quiet' && meetingMemory ? meetingMemory.memoryBlock() : null;
     if (memoryBlock) contextBlock = contextBlock ? contextBlock + '\n\n' + memoryBlock : memoryBlock;
     const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
     const built = def.build({ transcript, userText: userText || '', hrStories: settingsForPrompt.hrStories || settingsForPrompt.hrQa || '' });
@@ -1062,13 +1094,14 @@ async function runFeature(mode, userText) {
       };
       rearm();
     });
+    let runTokens = '';
     try {
       await Promise.race([
         llm.stream({
           system,
           turns: [{ role: 'user', text: built }],
           imageDataUrl,
-          onToken: (t) => { if (streamSettled) return; rearm(); send('llm:token', { text: t }); },
+          onToken: (t) => { if (streamSettled) return; rearm(); runTokens += t; send('llm:token', { text: t }); },
           onResponse: settings.provider === publik.PUBLIK_PROVIDER ? (res) => publikNoteHeaders(res && res.headers) : undefined
         }),
         stalled
@@ -1076,6 +1109,12 @@ async function runFeature(mode, userText) {
     } finally {
       streamSettled = true;
       clearTimeout(watchdog);
+    }
+    if (runTokens) {
+      lastOutputText = runTokens;
+      if (autotyper && typeof autotyper.setText === 'function') {
+        autotyper.setText(runTokens);
+      }
     }
     send('llm:done', {});
     // Streams settle after their headers, so the charge is reconciled from
@@ -1093,6 +1132,20 @@ async function runFeature(mode, userText) {
 }
 
 // -------- IPC --------
+ipcMain.handle('autotype:toggle', (_e, text) => {
+  const textToType = text || lastOutputText;
+  return autotyper.toggle(textToType);
+});
+ipcMain.handle('autotype:status', () => autotyper.getCurrentProgress());
+ipcMain.on('autotype:set-text', (_e, text) => {
+  if (typeof text === 'string') {
+    lastOutputText = text;
+    if (autotyper && typeof autotyper.setText === 'function') {
+      autotyper.setText(text);
+    }
+  }
+});
+
 // Redact on the way out, strip on the way in: the publik key never enters the
 // renderer, and the renderer's whole-object Save can never clobber it.
 ipcMain.handle('settings:get', () => store.redactForRenderer(store.getSettings()));
@@ -1572,9 +1625,15 @@ function registerShortcuts() {
   shortcutState.opacityDown = globalShortcut.register('Alt+O', () => {
     send('opacity:step', { delta: -5 });
   });
+  try {
+    globalShortcut.register('CommandOrControl+O', () => send('opacity:step', { delta: -5 }));
+  } catch (_) {}
   shortcutState.opacityUp = globalShortcut.register('Alt+P', () => {
     send('opacity:step', { delta: 5 });
   });
+  try {
+    globalShortcut.register('CommandOrControl+P', () => send('opacity:step', { delta: 5 }));
+  } catch (_) {}
   shortcutState.moveUp = globalShortcut.register('Alt+I', () => {
     moveWindow('up');
   });
@@ -1590,8 +1649,24 @@ function registerShortcuts() {
   globalShortcut.register('Alt+U', () => {
     send('stt:insert-question');
   });
+  globalShortcut.register('Alt+A', () => {
+    send('stt:answer-question');
+  });
   shortcutState.hr = globalShortcut.register('Alt+G', () => {
     triggerShortcutAction('hr');
+  });
+  ['Alt+=', 'Alt+Plus', 'Alt+Shift+=', 'Alt+numadd'].forEach(k => {
+    try {
+      globalShortcut.register(k, () => send('quiet:resize', { delta: 1 }));
+    } catch (_) {}
+  });
+  ['Alt+-', 'Alt+Minus', 'Alt+numsub'].forEach(k => {
+    try {
+      globalShortcut.register(k, () => send('quiet:resize', { delta: -1 }));
+    } catch (_) {}
+  });
+  shortcutState.altX = globalShortcut.register('Alt+X', () => {
+    send('alt-x:toggle');
   });
   for (const [name, wasRegistered] of Object.entries(shortcutState)) {
     if (!wasRegistered) {

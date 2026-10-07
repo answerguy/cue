@@ -382,6 +382,125 @@ namespace CueStealthInput
         [DllImport("user32.dll")]
         private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
 
+        private const uint INPUT_KEYBOARD = 1;
+        private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+        private const uint KEYEVENTF_KEYUP = 0x0002;
+        private const uint KEYEVENTF_UNICODE = 0x0004;
+        private const uint KEYEVENTF_SCANCODE = 0x0008;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MOUSEINPUT
+        {
+            public int dx;
+            public int dy;
+            public uint mouseData;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct KEYBDINPUT
+        {
+            public ushort wVk;
+            public ushort wScan;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct HARDWAREINPUT
+        {
+            public uint uMsg;
+            public ushort wParamL;
+            public ushort wParamH;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        private struct INPUTUNION
+        {
+            [FieldOffset(0)]
+            public MOUSEINPUT mi;
+            [FieldOffset(0)]
+            public KEYBDINPUT ki;
+            [FieldOffset(0)]
+            public HARDWAREINPUT hi;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct INPUT
+        {
+            public uint type;
+            public INPUTUNION u;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+        private static void SendUnicodeChar(char c)
+        {
+            if (c == '\r') return;
+            if (c == '\n')
+            {
+                SendVk(VK_RETURN);
+                return;
+            }
+            if (c == '\t')
+            {
+                SendVk(VK_TAB);
+                return;
+            }
+            INPUT[] inputs = new INPUT[2];
+            inputs[0].type = INPUT_KEYBOARD;
+            inputs[0].u.ki.wVk = 0;
+            inputs[0].u.ki.wScan = (ushort)c;
+            inputs[0].u.ki.dwFlags = KEYEVENTF_UNICODE;
+            inputs[0].u.ki.dwExtraInfo = CUE_MAGIC;
+
+            inputs[1].type = INPUT_KEYBOARD;
+            inputs[1].u.ki.wVk = 0;
+            inputs[1].u.ki.wScan = (ushort)c;
+            inputs[1].u.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+            inputs[1].u.ki.dwExtraInfo = CUE_MAGIC;
+
+            SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        private static void SendCodePoint(int cp)
+        {
+            if (cp <= 0xFFFF)
+            {
+                SendUnicodeChar((char)cp);
+            }
+            else
+            {
+                string s = char.ConvertFromUtf32(cp);
+                for (int i = 0; i < s.Length; i++)
+                {
+                    SendUnicodeChar(s[i]);
+                }
+            }
+        }
+
+        private static void SendVk(int vk)
+        {
+            INPUT[] inputs = new INPUT[2];
+            inputs[0].type = INPUT_KEYBOARD;
+            inputs[0].u.ki.wVk = (ushort)vk;
+            inputs[0].u.ki.wScan = 0;
+            inputs[0].u.ki.dwFlags = 0;
+            inputs[0].u.ki.dwExtraInfo = CUE_MAGIC;
+
+            inputs[1].type = INPUT_KEYBOARD;
+            inputs[1].u.ki.wVk = (ushort)vk;
+            inputs[1].u.ki.wScan = 0;
+            inputs[1].u.ki.dwFlags = KEYEVENTF_KEYUP;
+            inputs[1].u.ki.dwExtraInfo = CUE_MAGIC;
+
+            SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
         static void Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
@@ -452,6 +571,34 @@ namespace CueStealthInput
                             _transparencyMode = enable;
                             Console.WriteLine("{\"event\":\"transparency_state\",\"enabled\":" + (_transparencyMode ? "true" : "false") + "}");
                             Console.Out.Flush();
+                        }
+                        else if (line.StartsWith("TYPE_CODEPOINT", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string[] parts = line.Split(' ');
+                            if (parts.Length > 1)
+                            {
+                                int cp;
+                                if (int.TryParse(parts[1], out cp))
+                                {
+                                    SendCodePoint(cp);
+                                }
+                            }
+                        }
+                        else if (line.StartsWith("TYPE_VK", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string[] parts = line.Split(' ');
+                            if (parts.Length > 1)
+                            {
+                                int vk;
+                                if (int.TryParse(parts[1], out vk))
+                                {
+                                    SendVk(vk);
+                                }
+                            }
+                        }
+                        else if (line.Equals("TYPE_BACKSPACE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            SendVk(VK_BACK);
                         }
                         else if (line.Equals("QUIT", StringComparison.OrdinalIgnoreCase) ||
                                  line.Equals("EXIT", StringComparison.OrdinalIgnoreCase))
@@ -531,7 +678,7 @@ namespace CueStealthInput
                 debounceMs = 40;
                 allowAutoRepeat = true;
             }
-            else if (normalVk == 0x4F || normalVk == 0x50) // O, P (opacity)
+            else if (normalVk == 0x4F || normalVk == 0x50 || normalVk == 0xBB || normalVk == 0xBD) // O, P (opacity), + / - (quiet resize)
             {
                 debounceMs = 75;
                 allowAutoRepeat = true;
@@ -668,6 +815,21 @@ namespace CueStealthInput
                     Console.Out.Flush();
                     return true;
 
+                case 0xBB: // '+' / '=' key (widen quiet box)
+                    Console.WriteLine("{\"event\":\"quiet_resize\",\"delta\":1}");
+                    Console.Out.Flush();
+                    return true;
+
+                case 0xBD: // '-' / '_' key (narrow quiet box)
+                    Console.WriteLine("{\"event\":\"quiet_resize\",\"delta\":-1}");
+                    Console.Out.Flush();
+                    return true;
+
+                case 0x58: // 'X' key (Alt+X completely hide/unhide cue)
+                    Console.WriteLine("{\"event\":\"alt_x_toggle\"}");
+                    Console.Out.Flush();
+                    return true;
+
                 default:
                     return false;
             }
@@ -788,7 +950,10 @@ namespace CueStealthInput
                     bool isM = (vk == 0x4D); // 'M' key
                     bool isS = (vk == 0x53); // 'S' key
                     bool isG = (vk == 0x47 || vk == 0x67); // 'G' key
-                    bool isAltShortcutKey = isC || isV || isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL || isQ || isW || isE || isY || isG;
+                    bool isX = (vk == 0x58 || vk == 0x78); // 'X' key (Alt+X)
+                    bool isPlus = (vk == 0xBB); // '+' / '=' key
+                    bool isMinus = (vk == 0xBD); // '-' / '_' key
+                    bool isAltShortcutKey = isC || isV || isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL || isQ || isW || isE || isY || isG || isX || isPlus || isMinus;
 
                     // A. In focus/stealth mode (_capturing == true), consume Shift and Ctrl keypresses completely!
                     if (_capturing && IsShiftKey(vk))
