@@ -36,8 +36,39 @@ function hasPortableConfig() {
   return Boolean(findExternalConfig());
 }
 
+function isSafeToPurgeDir(dirPath) {
+  if (!dirPath || typeof dirPath !== 'string') return false;
+  const resolved = path.resolve(dirPath);
+  if (fs.existsSync(path.join(resolved, '.git')) || fs.existsSync(path.join(resolved, 'package.json'))) {
+    return false;
+  }
+  const root = path.parse(resolved).root;
+  if (resolved === root) return false;
+  return true;
+}
+
+function removeResidualShortcuts() {
+  if (process.platform !== 'win32') return;
+  try {
+    const locations = [
+      path.join(os.homedir(), 'Desktop', 'Cue.lnk'),
+      path.join(process.env.PUBLIC || 'C:\\Users\\Public', 'Desktop', 'Cue.lnk'),
+      path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Cue.lnk'),
+      path.join(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Cue.lnk')
+    ];
+    for (const loc of locations) {
+      if (fs.existsSync(loc)) {
+        try { fs.rmSync(loc, { force: true }); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
+// Clean any shortcuts on startup via Node fs
+removeResidualShortcuts();
+
 let tempUserData = null;
-if (hasPortableConfig()) {
+if (hasPortableConfig() || app.isPackaged || Boolean(process.env.PORTABLE_EXECUTABLE_DIR)) {
   try {
     tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-session-'));
     app.setPath('userData', tempUserData);
@@ -47,6 +78,7 @@ if (hasPortableConfig()) {
 }
 
 function purgeAppData() {
+  // 1. Clean temporary isolated user data
   if (tempUserData) {
     try {
       if (fs.existsSync(tempUserData)) {
@@ -55,27 +87,66 @@ function purgeAppData() {
     } catch (_) {}
     tempUserData = null;
   }
-  if (hasPortableConfig()) {
-    try {
-      if (process.platform === 'win32' && process.env.APPDATA) {
+
+  // 2. Delete external config file ("not even the config file")
+  try {
+    const externalConfig = findExternalConfig();
+    if (externalConfig && fs.existsSync(externalConfig)) {
+      const cfgDir = path.dirname(externalConfig);
+      if (!fs.existsSync(path.join(cfgDir, '.git')) || path.basename(externalConfig) === 'config.json') {
+        fs.rmSync(externalConfig, { force: true });
+      }
+    }
+    const appDir = getPortableAppDir();
+    if (isSafeToPurgeDir(appDir)) {
+      const cfgCandidate = path.join(appDir, 'config.json');
+      if (fs.existsSync(cfgCandidate)) fs.rmSync(cfgCandidate, { force: true });
+      const portCandidate = path.join(appDir, 'portable-config.json');
+      if (fs.existsSync(portCandidate)) fs.rmSync(portCandidate, { force: true });
+    }
+  } catch (_) {}
+
+  // 3. Remove residual shortcuts
+  removeResidualShortcuts();
+
+  // 4. Remove standard OS app data directories
+  try {
+    if (process.platform === 'win32') {
+      if (process.env.APPDATA) {
         const winAppData = path.join(process.env.APPDATA, 'cue');
         if (fs.existsSync(winAppData)) {
           fs.rmSync(winAppData, { recursive: true, force: true });
         }
-      } else if (process.platform === 'darwin' && process.env.HOME) {
-        const macAppData = path.join(process.env.HOME, 'Library', 'Application Support', 'cue');
-        if (fs.existsSync(macAppData)) {
-          fs.rmSync(macAppData, { recursive: true, force: true });
-        }
-      } else if (process.platform === 'linux' && process.env.HOME) {
-        const linuxConfig = path.join(process.env.HOME, '.config', 'cue');
-        if (fs.existsSync(linuxConfig)) {
-          fs.rmSync(linuxConfig, { recursive: true, force: true });
+      }
+      if (process.env.LOCALAPPDATA) {
+        const winLocalData = path.join(process.env.LOCALAPPDATA, 'cue');
+        if (fs.existsSync(winLocalData)) {
+          fs.rmSync(winLocalData, { recursive: true, force: true });
         }
       }
-    } catch (_) {}
-  }
+    } else if (process.platform === 'darwin' && process.env.HOME) {
+      const macAppData = path.join(process.env.HOME, 'Library', 'Application Support', 'cue');
+      if (fs.existsSync(macAppData)) {
+        fs.rmSync(macAppData, { recursive: true, force: true });
+      }
+      const macCache = path.join(process.env.HOME, 'Library', 'Caches', 'cue');
+      if (fs.existsSync(macCache)) {
+        fs.rmSync(macCache, { recursive: true, force: true });
+      }
+    } else if (process.platform === 'linux' && process.env.HOME) {
+      const linuxConfig = path.join(process.env.HOME, '.config', 'cue');
+      if (fs.existsSync(linuxConfig)) {
+        fs.rmSync(linuxConfig, { recursive: true, force: true });
+      }
+      const linuxCache = path.join(process.env.HOME, '.cache', 'cue');
+      if (fs.existsSync(linuxCache)) {
+        fs.rmSync(linuxCache, { recursive: true, force: true });
+      }
+    }
+  } catch (_) {}
 }
+
+
 
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
@@ -2005,3 +2076,12 @@ app.on('window-all-closed', (e) => {
   if (permWin) { e.preventDefault(); return; }
   app.quit();
 });
+process.on('SIGINT', () => {
+  purgeAppData();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  purgeAppData();
+  process.exit(0);
+});
+

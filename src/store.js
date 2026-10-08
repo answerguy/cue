@@ -199,6 +199,7 @@ const RENDERER_READ_ONLY = ['publik'];
 
 let data = null;
 let lastError = null;
+let isPortableSession = false;
 
 function deepMerge(base, over) {
   const out = Array.isArray(base) ? base.slice() : { ...base };
@@ -231,6 +232,7 @@ function load() {
   if (data) return data;
   const portableCfg = loadPortableConfig();
   if (portableCfg) {
+    isPortableSession = true;
     syncCustomBaseUrl(portableCfg);
     data = deepMerge(DEFAULTS, portableCfg);
     syncCustomBaseUrl(data);
@@ -256,7 +258,7 @@ function load() {
 // swallows a failure: lastSaveError() lets a caller (e.g. the settings:set
 // IPC handler) surface it instead of pretending the save succeeded.
 function save() {
-  if (loadPortableConfig()) {
+  if (isPortableSession || loadPortableConfig()) {
     lastError = null;
     return true; // Keep in memory, do not write to AppData or disk
   }
@@ -278,7 +280,7 @@ function save() {
 // pasted a key keeps exactly what they had.
 function applyPublikDefault(build) {
   load();
-  if (loadPortableConfig()) return false;
+  if (isPortableSession || loadPortableConfig()) return false;
   if (!build || !build.available || data.publik.defaultApplied) return false;
   const current = data.provider;
   const hasOwnKey = !!(data.apiKeys && data.apiKeys[current]);
@@ -364,5 +366,5 @@ module.exports = {
   },
   getPortableConfigPath,
   loadPortableConfig,
-  isPortableConfigActive: () => Boolean(loadPortableConfig())
+  isPortableConfigActive: () => isPortableSession || Boolean(loadPortableConfig())
 };
