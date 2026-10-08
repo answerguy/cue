@@ -853,15 +853,20 @@
       quietContainer.classList.toggle('hidden', !isQuietMode);
     }
     if (isQuietMode) {
-      preQuietOpacity = currentOpacityValue != null ? currentOpacityValue : (settings && settings.opacity != null ? settings.opacity : 1);
+      if (preQuietOpacity == null) {
+        preQuietOpacity = (settings && settings.opacity != null)
+          ? settings.opacity
+          : (currentOpacityValue != null ? currentOpacityValue : 1);
+      }
       applyOpacity(0.05, false);
       clearQuietOutput();
       showToast('Quiet mode ON · Alt+C to type', 2000);
     } else {
-      if (preQuietOpacity !== null) {
-        applyOpacity(preQuietOpacity, true);
-        preQuietOpacity = null;
-      }
+      const restoreOpacity = preQuietOpacity != null
+        ? preQuietOpacity
+        : ((settings && settings.opacity != null) ? settings.opacity : 1);
+      preQuietOpacity = null;
+      applyOpacity(restoreOpacity, true);
       showToast('Quiet mode OFF', 2000);
     }
   }
@@ -2371,8 +2376,28 @@
   ['tb-opacity-slider', 's-opacity-slider'].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener('input', () => applyOpacity(Number(el.value) / 100, true));
-    el.addEventListener('change', () => applyOpacity(Number(el.value) / 100, true));
+    el.addEventListener('input', () => {
+      const val = Number(el.value) / 100;
+      if (isQuietMode) {
+        preQuietOpacity = clampOpacity(val);
+        const sVal = $('#s-opacity-value');
+        if (sVal) sVal.textContent = opacityToPercent(val) + '%';
+        if (settings) settings.opacity = clampOpacity(val);
+      } else {
+        applyOpacity(val, true);
+      }
+    });
+    el.addEventListener('change', () => {
+      const val = Number(el.value) / 100;
+      if (isQuietMode) {
+        preQuietOpacity = clampOpacity(val);
+        const sVal = $('#s-opacity-value');
+        if (sVal) sVal.textContent = opacityToPercent(val) + '%';
+        if (settings) settings.opacity = clampOpacity(val);
+      } else {
+        applyOpacity(val, true);
+      }
+    });
   });
   cue.on('opacity:step', ({ delta }) => {
     if (typeof delta === 'number') {
@@ -3782,6 +3807,35 @@
     renderPublikBlock();
   }
 
+  function updateSttProviderUI() {
+    const stt = settings.sttProvider || 'auto';
+    const isLocalStt = stt === 'local';
+    const isDeepgram = stt === 'deepgram' || stt === 'auto';
+    const isCustom = stt === 'custom';
+
+    const localEngineGroup = $('#local-engine-group');
+    if (localEngineGroup) localEngineGroup.classList.toggle('hidden', !isLocalStt);
+    const localEngine = settings.localEngine || 'whisper';
+    document.querySelectorAll('#local-engine-seg button').forEach((button) => {
+      button.classList.toggle('on', button.dataset.localEngine === localEngine);
+    });
+    const isWhisperActive = isLocalStt && localEngine === 'whisper';
+    const isSherpaActive = isLocalStt && localEngine === 'sherpa-onnx';
+    const whisperCard = $('#whisper-card');
+    const whisperStatus = $('#whisper-status');
+    if (whisperCard) whisperCard.classList.toggle('hidden', !isWhisperActive);
+    if (whisperStatus) whisperStatus.classList.toggle('hidden', !isWhisperActive);
+    const sherpaCard = $('#sherpa-card');
+    const sherpaStatus = $('#sherpa-status');
+    if (sherpaCard) sherpaCard.classList.toggle('hidden', !isSherpaActive);
+    if (sherpaStatus) sherpaStatus.classList.toggle('hidden', !isSherpaActive);
+
+    const deepgramGroup = $('#deepgram-stt-group');
+    if (deepgramGroup) deepgramGroup.classList.toggle('hidden', !isDeepgram);
+    const customGroup = $('#custom-stt-group');
+    if (customGroup) customGroup.classList.toggle('hidden', !isCustom);
+  }
+
   // ---- publik API (packaged-build default) --------------------------------
   function publikActionButton(action) {
     if (!action || !action.kind) return null;
@@ -3882,7 +3936,18 @@
     $('#base-url').value = settings.baseUrl || '';
     updateCustomProviderFields();
     $('#key-gemini').value = settings.apiKeys.gemini || '';
-    $('#key-deepgram').value = settings.apiKeys.deepgram || '';
+    const deepgramKey = settings.apiKeys.deepgram || '';
+    $('#key-deepgram').value = deepgramKey;
+    const keyDeepgramAudio = $('#key-deepgram-audio');
+    if (keyDeepgramAudio) keyDeepgramAudio.value = deepgramKey;
+
+    const customSttBaseUrl = $('#custom-stt-base-url');
+    if (customSttBaseUrl) customSttBaseUrl.value = settings.baseUrl || (settings.models && settings.models.custom && settings.models.custom.baseUrl) || '';
+    const customSttKey = $('#custom-stt-key');
+    if (customSttKey) customSttKey.value = settings.apiKeys.custom || '';
+    const customSttModel = $('#custom-stt-model');
+    if (customSttModel) customSttModel.value = settings.sttModel || 'whisper-1';
+
     $('#key-ollama').value = settings.apiKeys.ollama || '';
     $('#key-minimax').value = settings.apiKeys.minimax || '';
     $('#key-deepseek').value = settings.apiKeys.deepseek || '';
@@ -3913,23 +3978,7 @@
     document.querySelectorAll('#stt-provider-seg button').forEach((button) => {
       button.classList.toggle('on', button.dataset.sttProvider === (settings.sttProvider || 'auto'));
     });
-    const isLocalStt = (settings.sttProvider || 'auto') === 'local';
-    const localEngineGroup = $('#local-engine-group');
-    if (localEngineGroup) localEngineGroup.classList.toggle('hidden', !isLocalStt);
-    const localEngine = settings.localEngine || 'whisper';
-    document.querySelectorAll('#local-engine-seg button').forEach((button) => {
-      button.classList.toggle('on', button.dataset.localEngine === localEngine);
-    });
-    const isWhisperActive = isLocalStt && localEngine === 'whisper';
-    const isSherpaActive = isLocalStt && localEngine === 'sherpa-onnx';
-    const whisperCard = $('#whisper-card');
-    const whisperStatus = $('#whisper-status');
-    if (whisperCard) whisperCard.classList.toggle('hidden', !isWhisperActive);
-    if (whisperStatus) whisperStatus.classList.toggle('hidden', !isWhisperActive);
-    const sherpaCard = $('#sherpa-card');
-    const sherpaStatus = $('#sherpa-status');
-    if (sherpaCard) sherpaCard.classList.toggle('hidden', !isSherpaActive);
-    if (sherpaStatus) sherpaStatus.classList.toggle('hidden', !isSherpaActive);
+    updateSttProviderUI();
 
     const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
     $('#whisper-language').value = localWhisper.language || 'auto';
@@ -3953,7 +4002,17 @@
     const hrQaEl = $('#hr-qa');
     if (hrQaEl) hrQaEl.value = settings.hrStories || settings.hrQa || '';
     // Appearance tab
-    applyOpacity(settings.opacity, false);
+    if (!isQuietMode) {
+      applyOpacity(settings.opacity, false);
+    } else {
+      const s = $('#s-opacity-slider');
+      const sVal = $('#s-opacity-value');
+      const percent = opacityToPercent(settings && settings.opacity != null ? settings.opacity : 1);
+      if (s) s.value = String(percent);
+      if (sVal) sVal.textContent = percent + '%';
+    }
+    const quietModeEl = $('#s-quiet-mode');
+    if (quietModeEl) quietModeEl.checked = !!settings.quietMode;
   }
 
   // Whoever cue has been told it may answer questions for. Empty is the normal
@@ -4002,8 +4061,8 @@
     // 'auto' walks the same fallback chain src/stt.js builds; an explicit choice
     // is reported as-is so the status line matches what will actually be used.
     const selectedSttProvider = settings.sttProvider || 'auto';
-    const automaticStt = k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : 'none');
-    let stt = selectedSttProvider === 'auto' ? automaticStt : selectedSttProvider;
+    const automaticStt = k.deepgram ? 'Deepgram' : (k.openai ? 'OpenAI Realtime' : (k.groq ? 'Groq Whisper' : (k.gemini ? 'Gemini' : 'none')));
+    let stt = selectedSttProvider === 'auto' ? automaticStt : (selectedSttProvider === 'deepgram' ? 'Deepgram' : (selectedSttProvider === 'gemini' ? 'Gemini' : selectedSttProvider));
     if (selectedSttProvider === 'local') {
       stt = `local (${settings.localEngine || 'whisper'})`;
     }
@@ -4036,16 +4095,34 @@
     document.querySelectorAll('#stt-provider-seg button').forEach((candidate) => {
       candidate.classList.toggle('on', candidate === button);
     });
-    const isLocal = settings.sttProvider === 'local';
-    $('#local-engine-group')?.classList.toggle('hidden', !isLocal);
-    const isWhisper = isLocal && (settings.localEngine || 'whisper') === 'whisper';
-    const isSherpa = isLocal && settings.localEngine === 'sherpa-onnx';
-    $('#whisper-card')?.classList.toggle('hidden', !isWhisper);
-    $('#whisper-status')?.classList.toggle('hidden', !isWhisper);
-    $('#sherpa-card')?.classList.toggle('hidden', !isSherpa);
-    $('#sherpa-status')?.classList.toggle('hidden', !isSherpa);
+    updateSttProviderUI();
     $('#s-status').textContent = statusText();
   }));
+
+  $('#key-deepgram')?.addEventListener('input', () => {
+    const el = $('#key-deepgram-audio');
+    if (el) el.value = $('#key-deepgram').value;
+  });
+  $('#key-deepgram-audio')?.addEventListener('input', () => {
+    const el = $('#key-deepgram');
+    if (el) el.value = $('#key-deepgram-audio').value;
+  });
+  $('#custom-stt-base-url')?.addEventListener('input', () => {
+    const el = $('#base-url');
+    if (el) el.value = $('#custom-stt-base-url').value;
+  });
+  $('#base-url')?.addEventListener('input', () => {
+    const el = $('#custom-stt-base-url');
+    if (el) el.value = $('#base-url').value;
+  });
+  $('#custom-stt-key')?.addEventListener('input', () => {
+    const el = $('#key-custom');
+    if (el) el.value = $('#custom-stt-key').value;
+  });
+  $('#key-custom')?.addEventListener('input', () => {
+    const el = $('#custom-stt-key');
+    if (el) el.value = $('#key-custom').value;
+  });
 
   document.querySelectorAll('#local-engine-seg button').forEach((button) => button.addEventListener('click', () => {
     settings.localEngine = button.dataset.localEngine;
@@ -4373,7 +4450,7 @@
     settings.apiKeys.custom = $('#key-custom').value.trim();
     settings.baseUrl = $('#base-url').value.trim();
     settings.apiKeys.gemini = $('#key-gemini').value.trim();
-    settings.apiKeys.deepgram = $('#key-deepgram').value.trim();
+    settings.apiKeys.deepgram = ($('#key-deepgram-audio')?.value || $('#key-deepgram')?.value || '').trim();
     settings.apiKeys.ollama = $('#key-ollama').value.trim();
     settings.apiKeys.minimax = $('#key-minimax').value.trim();
     settings.apiKeys.deepseek = $('#key-deepseek').value.trim();
@@ -4401,6 +4478,23 @@
       if (justFilled) settings.provider = justFilled;
     }
     // Transcription
+    const selectedSttBtn = $('#stt-provider-seg button.on');
+    if (selectedSttBtn && selectedSttBtn.dataset.sttProvider) {
+      settings.sttProvider = selectedSttBtn.dataset.sttProvider;
+    }
+    const customSttBase = $('#custom-stt-base-url')?.value.trim();
+    if (customSttBase) {
+      settings.baseUrl = customSttBase;
+      if (settings.models && settings.models.custom) settings.models.custom.baseUrl = customSttBase;
+    }
+    const customSttKey = $('#custom-stt-key')?.value.trim();
+    if (customSttKey) {
+      settings.apiKeys.custom = customSttKey;
+    }
+    const customSttModel = $('#custom-stt-model')?.value.trim();
+    if (customSttModel) {
+      settings.sttModel = customSttModel;
+    }
     if (!settings.localWhisper) settings.localWhisper = {};
     settings.localWhisper.modelId = $('#whisper-model').value || settings.localWhisper.modelId || 'base.en';
     settings.localWhisper.language = $('#whisper-language').value || 'auto';
@@ -4433,7 +4527,12 @@
     }
     // Appearance tab
     const opacitySlider = $('#s-opacity-slider');
-    if (opacitySlider) settings.opacity = clampOpacity(Number(opacitySlider.value) / 100);
+    if (opacitySlider) {
+      settings.opacity = clampOpacity(Number(opacitySlider.value) / 100);
+      if (isQuietMode) preQuietOpacity = settings.opacity;
+    }
+    const quietModeEl = $('#s-quiet-mode');
+    if (quietModeEl) settings.quietMode = !!quietModeEl.checked;
     try {
       settings = await cue.settingsSet(settings);
       $('#s-status').textContent = statusText();
@@ -4843,11 +4942,19 @@
       setNoFocusUI(true);
     }
 
-    applyOpacity(settings.opacity, false);
+    const baseOpacity = (settings && settings.opacity != null) ? settings.opacity : 1;
+    currentOpacityValue = baseOpacity;
+    preQuietOpacity = baseOpacity;
+
+    if (settings && settings.quietMode) {
+      toggleQuietMode(true);
+    } else {
+      applyOpacity(baseOpacity, false);
+      if (!settings.onboarded) showOnboard();
+    }
 
     const st = await cue.captureState();
     $('#live-dot').classList.toggle('off', !st.active);
     setSessionButton(st.active);
-    if (!settings.onboarded) showOnboard();
   })();
 })();

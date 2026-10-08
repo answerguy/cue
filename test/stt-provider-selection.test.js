@@ -112,3 +112,32 @@ test('Gemini STT migrates a retired model saved on disk instead of 404ing foreve
   });
   assert.deepEqual(stt.models, [CURRENT_GEMINI_DEFAULT]);
 });
+
+test('index.html and renderer.js expose and wire Deepgram and Custom STT options and inputs', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
+
+  // stt-provider-seg includes Deepgram button
+  assert.match(html, /data-stt-provider="deepgram"/);
+  assert.match(html, /data-stt-provider="custom"/);
+
+  // Audio tab has dedicated Deepgram key input and Custom STT fields
+  assert.match(html, /id="deepgram-stt-group"/);
+  assert.match(html, /id="key-deepgram-audio"/);
+  assert.match(html, /id="custom-stt-group"/);
+  assert.match(html, /id="custom-stt-base-url"/);
+  assert.match(html, /id="custom-stt-key"/);
+
+  // Keys tab has Deepgram input not hidden behind data-key-for
+  assert.match(html, /id="key-deepgram"/);
+  assert.doesNotMatch(html, /data-key-for="deepgram"/);
+
+  // renderer.js handles sttProvider update and saves deepgram + custom settings
+  assert.match(js, /updateSttProviderUI/);
+  assert.match(js, /key-deepgram-audio/);
+  assert.match(js, /custom-stt-base-url/);
+  assert.match(js, /settings\.sttProvider =/);
+});
+

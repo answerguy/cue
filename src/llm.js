@@ -735,7 +735,8 @@ function createLLM(settings) {
     if (!apiKey) configurationError = `${publik.PROVIDER_LABEL} is not set up on this computer yet.`;
   } else if (provider === CUSTOM_PROVIDER) {
     try {
-      const clientOptions = createCompatibleClientOptions(apiKey, settings.baseUrl);
+      const customBase = settings.baseUrl || (settings.models && settings.models.custom && settings.models.custom.baseUrl);
+      const clientOptions = createCompatibleClientOptions(apiKey, customBase);
       apiKey = clientOptions.apiKey;
       baseURL = clientOptions.baseURL;
     } catch (error) {

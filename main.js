@@ -1,6 +1,82 @@
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog, systemPreferences, clipboard } = require('electron');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
+
+function getPortableAppDir() {
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return process.env.PORTABLE_EXECUTABLE_DIR;
+  if (process.env.PORTABLE_EXECUTABLE_FILE) return path.dirname(process.env.PORTABLE_EXECUTABLE_FILE);
+  if (process.execPath) return path.dirname(process.execPath);
+  return process.cwd();
+}
+
+function findExternalConfig() {
+  try {
+    if (process.env.CUE_CONFIG_PATH && fs.existsSync(process.env.CUE_CONFIG_PATH)) return process.env.CUE_CONFIG_PATH;
+    if (process.env.CUE_PORTABLE_CONFIG_PATH && fs.existsSync(process.env.CUE_PORTABLE_CONFIG_PATH)) return process.env.CUE_PORTABLE_CONFIG_PATH;
+    const appDir = getPortableAppDir();
+    const searchDirs = [appDir];
+    if (process.cwd() && process.cwd() !== appDir) {
+      searchDirs.push(process.cwd());
+    }
+    const fileNames = ['config.json', 'portable-config.json'];
+    for (const dir of searchDirs) {
+      for (const name of fileNames) {
+        const candidate = path.join(dir, name);
+        if (fs.existsSync(candidate)) return candidate;
+      }
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function hasPortableConfig() {
+  return Boolean(findExternalConfig());
+}
+
+let tempUserData = null;
+if (hasPortableConfig()) {
+  try {
+    tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-session-'));
+    app.setPath('userData', tempUserData);
+  } catch (err) {
+    console.warn('[cue] could not create isolated session directory:', err);
+  }
+}
+
+function purgeAppData() {
+  if (tempUserData) {
+    try {
+      if (fs.existsSync(tempUserData)) {
+        fs.rmSync(tempUserData, { recursive: true, force: true });
+      }
+    } catch (_) {}
+    tempUserData = null;
+  }
+  if (hasPortableConfig()) {
+    try {
+      if (process.platform === 'win32' && process.env.APPDATA) {
+        const winAppData = path.join(process.env.APPDATA, 'cue');
+        if (fs.existsSync(winAppData)) {
+          fs.rmSync(winAppData, { recursive: true, force: true });
+        }
+      } else if (process.platform === 'darwin' && process.env.HOME) {
+        const macAppData = path.join(process.env.HOME, 'Library', 'Application Support', 'cue');
+        if (fs.existsSync(macAppData)) {
+          fs.rmSync(macAppData, { recursive: true, force: true });
+        }
+      } else if (process.platform === 'linux' && process.env.HOME) {
+        const linuxConfig = path.join(process.env.HOME, '.config', 'cue');
+        if (fs.existsSync(linuxConfig)) {
+          fs.rmSync(linuxConfig, { recursive: true, force: true });
+        }
+      }
+    } catch (_) {}
+  }
+}
+
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT, looksLikeHallucination } = require('./src/stt');
@@ -1916,6 +1992,13 @@ app.on('will-quit', () => {
     whisperModelManager.cancelDownload(whisperModelManager.activeDownload.modelId);
   }
   if (localWhisperTranscriber) localWhisperTranscriber.forceStop().catch(() => {});
+  purgeAppData();
+});
+app.on('quit', () => {
+  purgeAppData();
+});
+process.on('exit', () => {
+  purgeAppData();
 });
 app.on('window-all-closed', (e) => {
   // Don't quit while the permissions window is open — the user may be in System Settings

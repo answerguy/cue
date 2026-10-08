@@ -1,27 +1,15 @@
-name: Build and Release
+name: Build and Release Portable
 
 on:
   push:
-    tags:
-      - 'v*' # Automatically trigger when you push a new version tag (e.g., v0.2.0)
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
-
-    env:
-      # A runner with no certificate can only produce an ad-hoc macOS build, and
-      # macOS refuses those after a download. Publishing one would overwrite a
-      # signed release asset with an unopenable one, so the mac upload below is
-      # gated on this. Set CSC_LINK and the APPLE_* secrets to turn it on.
-      MAC_SIGNING_CONFIGURED: ${{ secrets.CSC_LINK != '' }}
+  release-portable:
+    name: Build & Release Portable Windows
+    runs-on: windows-latest
 
     steps:
       - name: Check out Git repository
@@ -57,41 +45,51 @@ jobs:
           '
           node -e 'const c = require("./src/publik-build.json"); if (!c.appToken) process.exit(1); console.log("publik app token embedded for", c.appSlug)'
 
-      - name: Build macOS
-        if: matrix.os == 'macos-latest'
-        run: npm run dist:mac:x64 && npm run dist:mac:arm64
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # electron-builder.cjs signs and notarizes only when MAC_SIGN=1; without
-          # these it still builds ad-hoc, so the job keeps working as a build check.
-          MAC_SIGN: ${{ secrets.CSC_LINK != '' && '1' || '' }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Build Windows
-        if: matrix.os == 'windows-latest'
+      - name: Build Portable Windows Executable
         run: npm run dist:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Linux x64 and arm64
-        if: matrix.os == 'ubuntu-latest'
-        run: npm run dist:linux && npm run dist:linux:arm64
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify Portable Executable
+        shell: bash
+        run: |
+          if [ ! -f "dist/cue-win-x64.exe" ]; then
+            echo "Error: dist/cue-win-x64.exe was not created." >&2
+            exit 1
+          fi
+          echo "Portable executable created successfully:"
+          ls -lh dist/cue-win-x64.exe
 
-      - name: Upload to GitHub Release
-        # Skipped on macOS until signing is configured, so an ad-hoc build can
-        # never replace a signed asset already attached to the release.
-        if: matrix.os != 'macos-latest' || env.MAC_SIGNING_CONFIGURED == 'true'
+      - name: Determine Release Tag and Name
+        id: vars
+        shell: bash
+        run: |
+          PKG_VER=$(node -p "require('./package.json').version")
+          SHORT_SHA="${GITHUB_SHA::7}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG_NAME="${{ github.ref_name }}"
+            REL_NAME="Cue Portable ${TAG_NAME}"
+          else
+            TAG_NAME="v${PKG_VER}-${SHORT_SHA}"
+            REL_NAME="Cue Portable v${PKG_VER} (${SHORT_SHA})"
+          fi
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${REL_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cue-win-x64-${{ github.sha }}
+          path: dist/cue-win-x64.exe
+          if-no-files-found: error
+
+      - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.exe
-            dist/*.zip
-            dist/*.AppImage
+          tag_name: ${{ steps.vars.outputs.tag_name }}
+          name: ${{ steps.vars.outputs.release_name }}
+          target_commitish: ${{ github.sha }}
+          files: dist/cue-win-x64.exe
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

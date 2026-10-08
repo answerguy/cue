@@ -137,8 +137,9 @@ function createSTT(settings) {
   // unlike a named provider, an arbitrary custom endpoint isn't known to speak
   // the audio-transcription API at all, so this only fires on an explicit
   // choice, and only once both the URL and the key it needs are actually set.
-  if (selectedProvider === 'custom' && keys.custom && settings.baseUrl) {
-    chain.push({ p: 'custom', fn: (wav) => transcribeOpenAI(keys.custom, wav, settings.sttModel, settings.baseUrl, vocabPrompt) });
+  const customBase = settings.baseUrl || (settings.models && settings.models.custom && settings.models.custom.baseUrl);
+  if (selectedProvider === 'custom' && keys.custom && customBase) {
+    chain.push({ p: 'custom', fn: (wav) => transcribeOpenAI(keys.custom, wav, settings.sttModel, customBase, vocabPrompt) });
   }
   if (keys.openai && chain.length > 1) chain.unshift(chain.splice(chain.findIndex((c) => c.p === 'openai'), 1)[0]);
 

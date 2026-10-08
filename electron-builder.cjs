@@ -60,7 +60,17 @@ module.exports = {
   // An allowlist, so anything new has to be added here or it simply is not in
   // the shipped app — and the only symptom is a require() that throws at
   // launch, in a build that ran fine from source.
-  files: ["main.js", "preload.js", "src/**/*", "renderer/**/*", "vendor/**/*"],
+  files: [
+    "main.js",
+    "preload.js",
+    "src/**/*",
+    "!src/config*.json",
+    "!src/portable-config*.json",
+    "!**/config*.json",
+    "!**/portable-config*.json",
+    "renderer/**/*",
+    "vendor/**/*"
+  ],
   directories: { buildResources: "build-resources" },
   afterPack: "scripts/after-pack.js",
   mac: {
@@ -87,16 +97,11 @@ module.exports = {
     },
   },
   win: {
-    target: [{ target: "nsis", arch: ["x64"] }],
+    target: [{ target: "portable", arch: ["x64"] }],
     artifactName: "${productName}-win-${arch}.${ext}",
   },
-  // A per-user install with a visible directory step: cue is a personal overlay,
-  // not a machine-wide service, so it should never need an elevation prompt.
-  nsis: {
-    oneClick: false,
-    perMachine: false,
-    allowToChangeInstallationDirectory: true,
-    shortcutName: "cue",
+  portable: {
+    artifactName: "${productName}-win-${arch}.${ext}",
   },
   linux: {
     target: [{ target: "AppImage", arch: ["x64", "arm64"] }],

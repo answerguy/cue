@@ -128,6 +128,17 @@ async function copyRuntimeDependencies(sourceDirectory, executableName, destinat
   await fs.promises.copyFile(LICENSE_PATH, path.join(destinationDirectory, 'whisper.cpp.LICENSE'));
   if (process.platform !== 'win32') {
     await fs.promises.chmod(path.join(destinationDirectory, executableName), 0o755);
+  } else {
+    const sys32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
+    for (const dll of ['msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll']) {
+      const srcDll = path.join(sys32, dll);
+      const dstDll = path.join(destinationDirectory, dll);
+      if (fs.existsSync(srcDll) && !fs.existsSync(dstDll)) {
+        try {
+          await fs.promises.copyFile(srcDll, dstDll);
+        } catch (_) {}
+      }
+    }
   }
 }
 

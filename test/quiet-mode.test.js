@@ -125,3 +125,11 @@ test('quiet box resizing with Alt+plus (widen) and Alt+minus (narrow) is wired a
   assert.match(csSrc, /\\"event\\":\\"quiet_resize\\",\\"delta\\":-1/);
 });
 
+test('quiet mode restores opacity from configured settings rather than hardcoded 1.0', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
+  // When quiet mode turns off, it restores to preQuietOpacity or settings.opacity
+  assert.match(js, /const restoreOpacity = preQuietOpacity != null\s*\?\s*preQuietOpacity\s*:\s*\(\(settings && settings\.opacity != null\)\s*\?\s*settings\.opacity\s*:\s*1\);/);
+  // Startup initializes baseOpacity and preQuietOpacity from settings.opacity
+  assert.match(js, /const baseOpacity = \(settings && settings\.opacity != null\) \? settings\.opacity : 1;\s*currentOpacityValue = baseOpacity;\s*preQuietOpacity = baseOpacity;/);
+});
+

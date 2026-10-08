@@ -194,10 +194,12 @@
         <div class="s-field" data-key-for="openai"><span>OpenAI</span><input id="key-openai" type="text" placeholder="sk-..." autocomplete="off" /></div>
         <div class="s-field" data-key-for="anthropic"><span>Anthropic</span><input id="key-anthropic" type="text" placeholder="sk-ant-..." autocomplete="off" /></div>
         <div class="s-field" data-key-for="gemini"><span>Gemini</span><input id="key-gemini" type="text" placeholder="AIza..." autocomplete="off" /></div>
-        <div class="s-field" data-key-for="deepgram"><span>Deepgram</span><input id="key-deepgram" type="text" placeholder="dg-..." autocomplete="off" /></div>
         <div class="s-field" data-key-for="groq"><span>Groq</span><input id="key-groq" type="text" placeholder="gsk_..." autocomplete="off" /></div>
         <div class="s-field" data-key-for="custom"><span>Custom</span><input id="key-custom" type="text" placeholder="optional" autocomplete="off" /></div>
         <div class="s-field" data-key-for="minimax"><span>MiniMax</span><input id="key-minimax" type="text" placeholder="MiniMax API key" autocomplete="off" /></div>
+
+        <label class="s-label">Speech-to-text key <span class="s-hint">used for real-time transcription (Auto or Deepgram)</span></label>
+        <div class="s-field"><span>Deepgram</span><input id="key-deepgram" type="text" placeholder="dg-..." autocomplete="off" /></div>
 
         <div id="minimax-region-settings" class="hidden">
           <label class="s-label">MiniMax region <span class="s-hint">keys are region-bound — a Global key will 401 against China, and vice versa</span></label>
@@ -320,11 +322,39 @@
         <label class="s-label">Speech-to-text provider</label>
         <div class="s-seg s-seg-wrap" id="stt-provider-seg">
           <button data-stt-provider="auto">Auto</button>
+          <button data-stt-provider="deepgram">Deepgram</button>
           <button data-stt-provider="local">Local</button>
           <button data-stt-provider="openai">OpenAI</button>
+          <button data-stt-provider="gemini">Gemini</button>
           <button data-stt-provider="custom">Custom</button>
         </div>
-        <div class="s-note">Local mode keeps microphone and meeting audio on this computer. It never silently falls back to a cloud transcription provider. Custom sends audio to the Base URL and Custom key set on the API Keys tab (requires both).</div>
+        <div class="s-note" id="stt-provider-note">Auto prioritizes Deepgram (lowest latency streaming), then OpenAI / Gemini. Local keeps audio on this computer.</div>
+
+        <!-- Deepgram STT Settings -->
+        <div id="deepgram-stt-group" class="hidden">
+          <div class="s-field">
+            <span>Deepgram key</span>
+            <input id="key-deepgram-audio" type="text" placeholder="dg-..." autocomplete="off" />
+          </div>
+          <div class="s-help">Deepgram Nova-2 streaming WebSocket transcription (lowest latency).</div>
+        </div>
+
+        <!-- Custom STT Settings -->
+        <div id="custom-stt-group" class="hidden">
+          <div class="s-field">
+            <span>Base URL</span>
+            <input id="custom-stt-base-url" type="url" placeholder="http://127.0.0.1:18789/v1" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="s-field">
+            <span>API Key</span>
+            <input id="custom-stt-key" type="text" placeholder="optional" autocomplete="off" />
+          </div>
+          <div class="s-field">
+            <span>Model</span>
+            <input id="custom-stt-model" type="text" placeholder="whisper-1" autocomplete="off" />
+          </div>
+          <div class="s-help">Sends 16kHz audio to {Base URL}/audio/transcriptions (OpenAI-compatible speech-to-text API).</div>
+        </div>
 
         <label class="s-label">Meeting audio <span class="s-hint">transcribe the other side of a call</span></label>
         <div class="s-seg" id="meeting-audio-seg">
@@ -447,6 +477,10 @@
           <input type="range" id="s-opacity-slider" min="0" max="100" step="1" value="100" />
           <span id="s-opacity-value">100%</span>
         </div>
+
+        <label class="s-label" style="margin-top: 14px;">Startup mode</label>
+        <div class="s-field"><span>Start in Quiet Mode</span><input id="s-quiet-mode" type="checkbox" style="width:auto;" /></div>
+        <div class="s-note">Starts directly in minimalist stealth Quiet Mode (Alt+Q) with 5% opacity and minimalist prompt bar.</div>
       </div>
 
       <!-- Tab: HR Mode -->

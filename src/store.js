@@ -5,8 +5,58 @@
 // unit tested without Electron; this file owns the schema, defaults and
 // public surface (getSettings/setSettings/etc.) as before.
 const { app } = require('electron');
+const fs = require('fs');
+const path = require('path');
 const { createFileStore } = require('./settings-store-core');
 const { normalizeBaseUrl } = require('./openai-compatible');
+
+function getPortableAppDir() {
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return process.env.PORTABLE_EXECUTABLE_DIR;
+  if (process.env.PORTABLE_EXECUTABLE_FILE) return path.dirname(process.env.PORTABLE_EXECUTABLE_FILE);
+  if (process.execPath) return path.dirname(process.execPath);
+  return process.cwd();
+}
+
+function getPortableConfigPath() {
+  if (process.env.CUE_CONFIG_PATH && fs.existsSync(process.env.CUE_CONFIG_PATH)) {
+    return process.env.CUE_CONFIG_PATH;
+  }
+  if (process.env.CUE_PORTABLE_CONFIG_PATH && fs.existsSync(process.env.CUE_PORTABLE_CONFIG_PATH)) {
+    return process.env.CUE_PORTABLE_CONFIG_PATH;
+  }
+  // When running under plain Node (such as unit test runner) without an explicit config path or flag,
+  // do not automatically bind to an external config file so unit tests remain isolated.
+  if (!process.versions?.electron && !process.env.CUE_PORTABLE_CONFIG) {
+    return null;
+  }
+  const appDir = getPortableAppDir();
+  const searchDirs = [appDir];
+  if (process.cwd() && process.cwd() !== appDir) {
+    searchDirs.push(process.cwd());
+  }
+  const fileNames = ['config.json', 'portable-config.json'];
+  for (const dir of searchDirs) {
+    for (const name of fileNames) {
+      const candidate = path.join(dir, name);
+      try {
+        if (fs.existsSync(candidate)) return candidate;
+      } catch (_) {}
+    }
+  }
+  return null;
+}
+
+function loadPortableConfig() {
+  const p = getPortableConfigPath();
+  if (!p) return null;
+  try {
+    const raw = fs.readFileSync(p, 'utf8');
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('[cue] failed to parse external config:', err && err.message);
+    return null;
+  }
+}
 
 const fileStore = createFileStore(() => app.getPath('userData'), 'cue-data.json');
 
@@ -17,6 +67,7 @@ const MAX_AI_RULES_CHARS = 2000;
 const DEFAULTS = {
   provider: 'openai',
   sttProvider: 'auto',
+  sttModel: 'whisper-1',
   localWhisper: {
     modelId: 'base.en',
     language: 'auto',
@@ -88,6 +139,8 @@ const DEFAULTS = {
   aiRules: '',
   // Overlay opacity (1 = fully opaque). Clamped so the window never vanishes.
   opacity: 1,
+  // Start in quiet mode (Alt+Q minimalist stealth mode)
+  quietMode: false,
   // Slides: opt-in auto slide tracking (memory-only, forwarded, never written to disk).
   slides: {
     enabled: false,
@@ -118,7 +171,7 @@ const DEFAULTS = {
     // gemini-2.0-flash (the original default here) was retired by Google on
     // 2026-03-03 and 404s on every request. smart is the newest Pro release.
     gemini: { fast: 'gemini-3.8-flash', smart: 'gemini-3.1-pro-preview' },
-    custom: { fast: '', smart: '' },
+    custom: { baseUrl: '', fast: '', smart: '' },
     ollama: { fast: 'llama3.2', smart: 'llama3.3' },
     groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },
     minimax: { fast: 'MiniMax-M2.7', smart: 'MiniMax-M3' },
@@ -163,10 +216,32 @@ function deepMerge(base, over) {
   return out;
 }
 
+function syncCustomBaseUrl(target) {
+  if (!target) return;
+  const customBase = target.baseUrl || target.models?.custom?.baseUrl || target.custom?.baseUrl;
+  if (customBase) {
+    target.baseUrl = customBase;
+    if (target.models?.custom) {
+      target.models.custom.baseUrl = customBase;
+    }
+  }
+}
+
 function load() {
   if (data) return data;
+  const portableCfg = loadPortableConfig();
+  if (portableCfg) {
+    syncCustomBaseUrl(portableCfg);
+    data = deepMerge(DEFAULTS, portableCfg);
+    syncCustomBaseUrl(data);
+    if (!Array.isArray(data.modelToggle) || data.modelToggle.length < 4) {
+      data.modelToggle = ['gemini', 'groq', 'custom', 'ollama'];
+    }
+    return data;
+  }
   const loaded = fileStore.load();
   data = deepMerge(DEFAULTS, loaded ? loaded.data : {});
+  syncCustomBaseUrl(data);
   if (!Array.isArray(data.modelToggle) || data.modelToggle.length < 4) {
     data.modelToggle = ['gemini', 'groq', 'custom', 'ollama'];
   } else if (data.modelToggle[0] === 'gemini' && data.modelToggle[1] === 'custom' && data.modelToggle[2] === 'groq' && data.modelToggle[3] === 'ollama') {
@@ -181,6 +256,10 @@ function load() {
 // swallows a failure: lastSaveError() lets a caller (e.g. the settings:set
 // IPC handler) surface it instead of pretending the save succeeded.
 function save() {
+  if (loadPortableConfig()) {
+    lastError = null;
+    return true; // Keep in memory, do not write to AppData or disk
+  }
   try {
     fileStore.persist(data);
     lastError = null;
@@ -199,6 +278,7 @@ function save() {
 // pasted a key keeps exactly what they had.
 function applyPublikDefault(build) {
   load();
+  if (loadPortableConfig()) return false;
   if (!build || !build.available || data.publik.defaultApplied) return false;
   const current = data.provider;
   const hasOwnKey = !!(data.apiKeys && data.apiKeys[current]);
@@ -249,11 +329,13 @@ module.exports = {
   },
   setSettings(patch) {
     load();
+    if (patch) syncCustomBaseUrl(patch);
     const nextSettings = deepMerge(data, patch || {});
     if (patch && Array.isArray(patch.modelToggle)) {
       nextSettings.modelToggle = patch.modelToggle.slice(0, 4);
     }
     nextSettings.baseUrl = normalizeBaseUrl(nextSettings.baseUrl);
+    syncCustomBaseUrl(nextSettings);
     nextSettings.opacity = clampOpacity(nextSettings.opacity);
     data = nextSettings;
     save();
@@ -279,5 +361,8 @@ module.exports = {
     delete next[callerId];
     data.applinkSlidesConsent = next;
     save();
-  }
+  },
+  getPortableConfigPath,
+  loadPortableConfig,
+  isPortableConfigActive: () => Boolean(loadPortableConfig())
 };

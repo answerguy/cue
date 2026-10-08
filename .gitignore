@@ -23,8 +23,14 @@ log.txt
 # User data / secrets — NEVER commit these
 # Contains API keys and personal interview prep.
 cue-data.json
+config.json
+src/config.json
+portable-config.json
+src/portable-config.json
 *.env
 .env*
+*recovery-codes*
+github-recovery-codes.txt
 
 # Test artefacts
 test-stt-connection.js
@@ -36,3 +42,7 @@ fake/
 
 # Electron dist cache
 node_modules/electron/dist/electron.exe.bak
+
+# Personal scripts
+install.ps1
+scripts/install.ps1
