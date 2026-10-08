@@ -11,8 +11,6 @@
 name: publik patch agent
 
 on:
-  repository_dispatch:
-    types: [publik-patch-agent]
   workflow_dispatch:
     inputs:
       break_id:

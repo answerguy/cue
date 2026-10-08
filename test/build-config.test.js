@@ -84,17 +84,13 @@ test('the committed src/publik-build.json carries an EMPTY app token and the pro
   assert.ok(Number.isInteger(cfg.disclosureVersion) && cfg.disclosureVersion >= 1);
 });
 
-test('release.yml embeds PUBLIK_APP_TOKEN (failing closed) before every dist step; ci.yml never needs it', () => {
+test('release.yml focuses solely on portable Windows release without requiring PUBLIK_APP_TOKEN', () => {
   const release = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'release.yml'), 'utf8');
-  const embedAt = release.indexOf('name: Embed publik app token');
-  assert.ok(embedAt > 0, 'release.yml has the embed step');
-  assert.match(release, /PUBLIK_APP_TOKEN: \$\{\{ secrets\.PUBLIK_APP_TOKEN \}\}/);
-  assert.match(release, /test -n "\$PUBLIK_APP_TOKEN" \|\| \{[^}]*exit 1/);
-  for (const m of release.matchAll(/run: npm run dist/g)) {
-    assert.ok(m.index > embedAt, 'the embed step precedes every npm run dist');
-  }
+  assert.doesNotMatch(release, /PUBLIK_APP_TOKEN/, 'release.yml does not require PUBLIK_APP_TOKEN');
+  assert.match(release, /npm run dist:win/, 'release.yml runs npm run dist:win');
+  assert.match(release, /dist\/cue-win-x64\.exe/, 'release.yml targets only the portable exe');
   const ci = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
-  assert.doesNotMatch(ci, /PUBLIK_APP_TOKEN/, 'PR builds from forks must not need a secret');
+  assert.doesNotMatch(ci, /PUBLIK_APP_TOKEN/, 'ci.yml does not need a secret');
 });
 
 test('the publik files ship: they live under src/, which the files allowlist packages', () => {
