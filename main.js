@@ -1,7 +1,16 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog, systemPreferences, clipboard } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+
+ipcMain.on('sync:get-quiet-mode', (event) => {
+  try {
+    event.returnValue = Boolean(store.getSettings()?.quietMode);
+  } catch (_) {
+    event.returnValue = false;
+  }
+});
 
 function getPortableAppDir() {
   if (process.env.PORTABLE_EXECUTABLE_DIR) return process.env.PORTABLE_EXECUTABLE_DIR;
@@ -658,6 +667,7 @@ function createWindow() {
   }
 
   const winOptions = {
+    show: false,
     width: W,
     height: H,
     x: startX - SIDE_W,
@@ -727,11 +737,11 @@ function createWindow() {
     moveSaveTimer = setTimeout(saveWindowPosition, 500);
   });
 
-  win.setTitle('Microsoft Edge Update'); // set before load
+  win.setTitle('Edge Updater'); // set before load
 
   win.webContents.on('did-finish-load', () => {
     win.showInactive();
-    win.setTitle('Microsoft Edge Update');
+    win.setTitle('Edge Updater');
     if (isTransparencyMode) {
       win.setIgnoreMouseEvents(true, { forward: false });
     }
@@ -2015,9 +2025,9 @@ function launchApp() {
 
 // -------- lifecycle --------
 app.whenReady().then(async () => {
-  app.setName('MicrosoftEdgeUpdate');
+  app.setName('EdgeUpdater');
   if (isWindows) {
-    process.title = 'MicrosoftEdgeUpdate';
+    process.title = 'EdgeUpdater';
   }
 
   if (isMac) {

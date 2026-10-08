@@ -275,9 +275,11 @@ class DeepgramStreamingSTT {
 
       const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
 
-      const ws = new WebSocket(url, {
-        headers: { 'Authorization': `Token ${this.apiKey}` }
-      });
+      const wsOptions = {
+        headers: { 'Authorization': `Token ${this.apiKey}` },
+        rejectUnauthorized: false
+      };
+      const ws = new WebSocket(url, wsOptions);
       this.ws = ws;
 
       ws.on('open', () => {

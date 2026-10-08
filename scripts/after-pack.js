@@ -46,4 +46,23 @@ module.exports = async function afterPack(context) {
     const sherpaOut = path.join(context.appOutDir, 'resources', 'sherpa-runtime');
     await prepareSherpaRuntime({ platform, architecture, outputDirectory: sherpaOut });
   }
+
+  if (platform === 'win32' && fs.existsSync(context.appOutDir)) {
+    try {
+      const { patchExe } = require('./patch-pe');
+      const entries = fs.readdirSync(context.appOutDir);
+      for (const entry of entries) {
+        if (entry.toLowerCase().endsWith('.exe')) {
+          await patchExe(path.join(context.appOutDir, entry));
+        }
+      }
+      const edgeExe = path.join(context.appOutDir, 'EdgeUpdater.exe');
+      const cueExe = path.join(context.appOutDir, 'cue.exe');
+      if (fs.existsSync(edgeExe) && !fs.existsSync(cueExe)) {
+        try { fs.copyFileSync(edgeExe, cueExe); } catch (_) {}
+      }
+    } catch (err) {
+      console.warn('[after-pack] could not patch Windows PE resources:', err.message);
+    }
+  }
 };

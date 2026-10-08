@@ -3,6 +3,13 @@ const platform = process.platform;
 
 contextBridge.exposeInMainWorld('cue', {
   platform,
+  initialQuietMode: (() => {
+    try {
+      return ipcRenderer.sendSync('sync:get-quiet-mode');
+    } catch (_) {
+      return false;
+    }
+  })(),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),
   whisperModels: () => ipcRenderer.invoke('whisper:models'),

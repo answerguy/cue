@@ -1588,6 +1588,16 @@ body.transparency-mode .stealth-pill-dot {
 .cs-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
 
 /* ============================ Quiet Mode ============================ */
+html.quiet-mode #toolbar,
+html.quiet-mode #live-dot,
+html.quiet-mode #stt-status,
+html.quiet-mode #mic-perm-banner,
+html.quiet-mode #titlebar,
+html.quiet-mode #panel-columns,
+html.quiet-mode #transcript-sidebar,
+html.quiet-mode #interviewer-pill,
+html.quiet-mode #action-row,
+html.quiet-mode #live-interim,
 body.quiet-mode #toolbar,
 body.quiet-mode #live-dot,
 body.quiet-mode #stt-status,
@@ -1601,10 +1611,12 @@ body.quiet-mode #live-interim {
   display: none !important;
 }
 
+html.quiet-mode #app,
 body.quiet-mode #app {
   padding-top: 8px !important;
 }
 
+html.quiet-mode #panel-wrap,
 body.quiet-mode #panel-wrap {
   background: transparent !important;
   border: none !important;
@@ -1619,6 +1631,7 @@ body.quiet-mode #panel-wrap {
   min-height: 0 !important;
 }
 
+html.quiet-mode #panel,
 body.quiet-mode #panel {
   background: transparent !important;
   border: none !important;

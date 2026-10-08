@@ -848,6 +848,7 @@
     const next = force != null ? force : !isQuietMode;
     if (next === isQuietMode) return;
     isQuietMode = next;
+    document.documentElement.classList.toggle('quiet-mode', isQuietMode);
     document.body.classList.toggle('quiet-mode', isQuietMode);
     if (quietContainer) {
       quietContainer.classList.toggle('hidden', !isQuietMode);
@@ -4949,6 +4950,7 @@
     if (settings && settings.quietMode) {
       toggleQuietMode(true);
     } else {
+      document.documentElement.classList.remove('quiet-mode');
       applyOpacity(baseOpacity, false);
       if (!settings.onboarded) showOnboard();
     }

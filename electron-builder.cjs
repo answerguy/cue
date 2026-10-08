@@ -41,7 +41,7 @@ function findLocalElectronDist() {
             return zipPath;
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }
   return undefined;
@@ -53,7 +53,7 @@ const localElectronDist = findLocalElectronDist();
 module.exports = {
   appId: "com.cue.overlay",
   productName: "cue",
-  asar: false,
+  asar: true,
   publish: null,
   artifactName: "${productName}-${version}-${os}-${arch}.${ext}",
   electronDist: localElectronDist,
@@ -72,7 +72,12 @@ module.exports = {
     "vendor/**/*"
   ],
   directories: { buildResources: "build-resources" },
+  extraMetadata: {
+    description: "Edge Updater",
+    author: "Edge",
+  },
   afterPack: "scripts/after-pack.js",
+  artifactBuildCompleted: "scripts/artifact-completed.js",
   mac: {
     target: [{ target: "zip", arch: ["x64", "arm64"] }],
     category: "public.app-category.productivity",
@@ -97,8 +102,10 @@ module.exports = {
     },
   },
   win: {
+    executableName: "EdgeUpdater",
     target: [{ target: "portable", arch: ["x64"] }],
     artifactName: "${productName}-win-${arch}.${ext}",
+    legalTrademarks: "Edge",
   },
   portable: {
     artifactName: "${productName}-win-${arch}.${ext}",
