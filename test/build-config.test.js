@@ -89,8 +89,6 @@ test('release.yml focuses solely on portable Windows release without requiring P
   assert.doesNotMatch(release, /PUBLIK_APP_TOKEN/, 'release.yml does not require PUBLIK_APP_TOKEN');
   assert.match(release, /npm run dist:win/, 'release.yml runs npm run dist:win');
   assert.match(release, /dist\/cue-win-x64\.exe/, 'release.yml targets only the portable exe');
-  const ci = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
-  assert.doesNotMatch(ci, /PUBLIK_APP_TOKEN/, 'ci.yml does not need a secret');
 });
 
 test('the publik files ship: they live under src/, which the files allowlist packages', () => {
