@@ -141,6 +141,8 @@ const DEFAULTS = {
   opacity: 1,
   // Start in quiet mode (Alt+Q minimalist stealth mode)
   quietMode: false,
+  // Onboarding tutorial completed
+  onboarded: true,
   // Slides: opt-in auto slide tracking (memory-only, forwarded, never written to disk).
   slides: {
     enabled: false,

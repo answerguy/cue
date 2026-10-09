@@ -4952,7 +4952,6 @@
     } else {
       document.documentElement.classList.remove('quiet-mode');
       applyOpacity(baseOpacity, false);
-      if (!settings.onboarded) showOnboard();
     }
 
     const st = await cue.captureState();
