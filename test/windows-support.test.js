@@ -32,3 +32,31 @@ test('enables asar for fast portable launch while unpacking native stealth binar
   assert.ok(Array.isArray(builder.asarUnpack) && builder.asarUnpack.includes('src/native/**/*'));
 });
 
+test('after-pack copies src/portable-config.json to appOutDir if present', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const afterPack = require('../scripts/after-pack');
+  const tempOutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-afterpack-test-'));
+  const srcConfig = path.join(__dirname, '..', 'src', 'portable-config.json');
+  const createdMock = !fs.existsSync(srcConfig);
+  if (createdMock) {
+    fs.writeFileSync(srcConfig, JSON.stringify({ provider: 'test' }));
+  }
+  try {
+    await afterPack({
+      packager: { platform: { nodeName: 'win32' } },
+      arch: 'x64',
+      appOutDir: tempOutDir
+    });
+    const copiedConfig = path.join(tempOutDir, 'portable-config.json');
+    assert.ok(fs.existsSync(copiedConfig));
+  } finally {
+    if (createdMock) {
+      try { fs.rmSync(srcConfig, { force: true }); } catch (_) {}
+    }
+    try { fs.rmSync(tempOutDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+
