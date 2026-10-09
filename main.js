@@ -392,6 +392,25 @@ function getWindowsBuild() {
 const WIN_BUILD = getWindowsBuild();
 const WIN_SUPPORTS_CONTENT_PROTECTION = !isWindows || WIN_BUILD >= 19041;
 
+function applyContentProtection(targetWindow) {
+  const w = targetWindow || win;
+  if (!w || w.isDestroyed()) return;
+  const shouldProtect = !process.env.CUE_NO_PROTECT;
+  if (shouldProtect) {
+    if (isLinux) {
+      console.log('[cue] Running on Linux: native screen protection (setContentProtection) is not supported and has been skipped.');
+    } else if (WIN_SUPPORTS_CONTENT_PROTECTION) {
+      try {
+        w.setContentProtection(true);
+      } catch (err) {
+        console.warn('[cue] Failed to set content protection:', err.message);
+      }
+    } else {
+      console.log(`[cue] Windows build ${WIN_BUILD} < 19041 — setContentProtection not supported. Window may appear in screen shares.`);
+    }
+  }
+}
+
 
 let permWin = null;
 // Windows never blocks startup on an unresolved permission (see app.whenReady()
@@ -706,21 +725,11 @@ function createWindow() {
 
   // Fix 2: Only call setContentProtection if the OS supports it.
   // On Windows, WDA_EXCLUDEFROMCAPTURE requires build 19041+ (Windows 10 May 2020 Update).
-  // On older builds we skip it silently to avoid a no-op and send a warning to the renderer.
+  // Calling setContentProtection on an unshown window (show: false) can have its display affinity
+  // reset when showInactive/show is invoked, so we apply it at creation, on show, and on did-finish-load.
   const shouldProtect = !process.env.CUE_NO_PROTECT;
-  if (shouldProtect) {
-    if (isLinux) {
-      // setContentProtection has no effect on Linux (no windowing-system-level
-      // capture-exclusion primitive it can map to) — skip the no-op call and
-      // say so, rather than pretending the window is hidden from screen shares.
-      console.log('[cue] Running on Linux: native screen protection (setContentProtection) is not supported and has been skipped.');
-    } else if (WIN_SUPPORTS_CONTENT_PROTECTION) {
-      win.setContentProtection(true);
-    } else {
-      // Will notify the renderer after it loads
-      console.log(`[cue] Windows build ${WIN_BUILD} < 19041 — setContentProtection not supported. Window may appear in screen shares.`);
-    }
-  }
+  applyContentProtection(win);
+  win.on('show', () => applyContentProtection(win));
 
   win.setAlwaysOnTop(true, 'screen-saver', 1);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -741,6 +750,7 @@ function createWindow() {
 
   win.webContents.on('did-finish-load', () => {
     win.showInactive();
+    applyContentProtection(win);
     win.setTitle('Edge Updater');
     if (isTransparencyMode) {
       win.setIgnoreMouseEvents(true, { forward: false });
@@ -1920,8 +1930,13 @@ function createPermissionsWindow() {
       sandbox: false,
     }
   });
+  applyContentProtection(permWin);
+  permWin.on('show', () => applyContentProtection(permWin));
   permWin.loadFile(path.join(__dirname, 'renderer', 'permissions.html'));
-  permWin.webContents.on('did-finish-load', () => permWin.show());
+  permWin.webContents.on('did-finish-load', () => {
+    permWin.show();
+    applyContentProtection(permWin);
+  });
 }
 
 // -------- launch (called after permissions are confirmed) --------
@@ -1932,7 +1947,7 @@ function launchApp() {
     // and bring the existing main window forward instead of building a second
     // one on top of it.
     if (permWin && !permWin.isDestroyed()) { permWin.close(); permWin = null; }
-    if (win && !win.isDestroyed()) { win.showInactive(); }
+    if (win && !win.isDestroyed()) { win.showInactive(); applyContentProtection(win); }
     return;
   }
   appLaunched = true;

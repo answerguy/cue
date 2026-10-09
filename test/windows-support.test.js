@@ -59,4 +59,14 @@ test('after-pack copies src/portable-config.json to appOutDir if present', async
   }
 });
 
+test('ensures content protection is re-applied upon window show and did-finish-load', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(mainSrc, /function applyContentProtection\(/);
+  assert.match(mainSrc, /applyContentProtection\(win\)/);
+  assert.match(mainSrc, /win\.on\('show',\s*\(\)\s*=>\s*applyContentProtection\(win\)\)/);
+  assert.match(mainSrc, /win\.showInactive\(\);\s*applyContentProtection\(win\);/);
+});
+
 
