@@ -67,3 +67,11 @@ test('native stealth-input outputs shifted characters like exclamation mark', as
   assert.equal(parsed.test, true);
   assert.equal(parsed.char, '!');
 });
+
+test('stealth-hook-manager resolves app.asar.unpacked when running from asar', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'stealth-hook-manager.js'), 'utf8');
+  assert.match(src, /app\.asar\.unpacked/);
+});
+

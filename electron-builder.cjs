@@ -54,6 +54,9 @@ module.exports = {
   appId: "com.cue.overlay",
   productName: "cue",
   asar: true,
+  asarUnpack: [
+    "src/native/**/*"
+  ],
   publish: null,
   artifactName: "${productName}-${version}-${os}-${arch}.${ext}",
   electronDist: localElectronDist,

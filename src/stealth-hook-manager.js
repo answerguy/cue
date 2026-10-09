@@ -43,7 +43,16 @@ function createStealthHookManager(options = {}) {
   let ready = false;
   let lineBuffer = '';
 
-  const exePath = path.join(__dirname, 'native', 'stealth-input.exe');
+  function resolveExePath() {
+    const defaultPath = path.join(__dirname, 'native', 'stealth-input.exe');
+    if (defaultPath.includes('app.asar')) {
+      const unpacked = defaultPath.replace('app.asar', 'app.asar.unpacked');
+      if (fs.existsSync(unpacked)) return unpacked;
+    }
+    return defaultPath;
+  }
+
+  const exePath = resolveExePath();
 
   function isAvailable() {
     return process.platform === 'win32' && fs.existsSync(exePath);

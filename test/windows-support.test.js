@@ -26,3 +26,9 @@ test('ships every runtime directory in packaged builds', () => {
   assert.ok(builder.files.includes('src/**/*'));
   assert.ok(builder.files.includes('renderer/**/*'));
 });
+
+test('enables asar for fast portable launch while unpacking native stealth binary', () => {
+  assert.equal(builder.asar, true);
+  assert.ok(Array.isArray(builder.asarUnpack) && builder.asarUnpack.includes('src/native/**/*'));
+});
+
