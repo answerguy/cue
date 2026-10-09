@@ -89,3 +89,19 @@ test('store maintains ephemeral in-memory state when portable config is loaded, 
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
   }
 });
+
+test('main.js preserves whisper-models and sherpa-models directories during purgeAppData', () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(mainSrc, /function purgeDirectoryExceptModels\(/);
+  assert.match(mainSrc, /whisper-models/);
+  assert.match(mainSrc, /sherpa-models/);
+  assert.match(mainSrc, /getPersistentModelsPath\(\)/);
+});
+
+test('main.js only deletes config file when running in portable mode', () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(mainSrc, /function isPortableMode\(\)/);
+  assert.match(mainSrc, /if\s*\(isPortableMode\(\)\)\s*\{/);
+});
+
+

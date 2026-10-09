@@ -41,6 +41,14 @@ function findExternalConfig() {
   }
 }
 
+function isPortableMode() {
+  return Boolean(
+    process.env.PORTABLE_EXECUTABLE_DIR ||
+    process.env.PORTABLE_EXECUTABLE_FILE ||
+    process.env.CUE_PORTABLE_MODE === '1'
+  );
+}
+
 function hasPortableConfig() {
   return Boolean(findExternalConfig());
 }
@@ -86,67 +94,104 @@ if (hasPortableConfig() || app.isPackaged || Boolean(process.env.PORTABLE_EXECUT
   }
 }
 
+function getPersistentModelsPath() {
+  if (process.platform === 'win32' && process.env.APPDATA) {
+    return path.join(process.env.APPDATA, 'cue');
+  }
+  if (process.platform === 'darwin' && process.env.HOME) {
+    return path.join(process.env.HOME, 'Library', 'Application Support', 'cue');
+  }
+  if (process.env.HOME) {
+    return path.join(process.env.HOME, '.config', 'cue');
+  }
+  try {
+    return path.join(app.getPath('appData'), 'cue');
+  } catch (_) {
+    return app.getPath('userData');
+  }
+}
+
+function purgeDirectoryExceptModels(dirPath) {
+  if (!dirPath || !fs.existsSync(dirPath)) return;
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === 'whisper-models' || entry.name === 'sherpa-models') {
+        continue; // Persist models in appdata
+      }
+      const fullPath = path.join(dirPath, entry.name);
+      try {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
 function purgeAppData() {
-  // 1. Clean temporary isolated user data
+  // 1. Clean temporary isolated user data (preserving any model directories)
   if (tempUserData) {
     try {
       if (fs.existsSync(tempUserData)) {
+        const persistentDir = getPersistentModelsPath();
+        for (const dirName of ['whisper-models', 'sherpa-models']) {
+          const srcDir = path.join(tempUserData, dirName);
+          const destDir = path.join(persistentDir, dirName);
+          if (fs.existsSync(srcDir)) {
+            try {
+              fs.cpSync(srcDir, destDir, { recursive: true, force: true });
+            } catch (_) {}
+          }
+        }
         fs.rmSync(tempUserData, { recursive: true, force: true });
       }
     } catch (_) {}
     tempUserData = null;
   }
 
-  // 2. Delete external config file ("not even the config file")
+  // 2. Delete external config file only when running in portable mode
   try {
-    const externalConfig = findExternalConfig();
-    if (externalConfig && fs.existsSync(externalConfig)) {
-      const cfgDir = path.dirname(externalConfig);
-      if (!fs.existsSync(path.join(cfgDir, '.git')) || path.basename(externalConfig) === 'config.json') {
-        fs.rmSync(externalConfig, { force: true });
+    if (isPortableMode()) {
+      const externalConfig = findExternalConfig();
+      if (externalConfig && fs.existsSync(externalConfig)) {
+        const cfgDir = path.dirname(externalConfig);
+        if (!fs.existsSync(path.join(cfgDir, '.git')) || path.basename(externalConfig) === 'config.json') {
+          fs.rmSync(externalConfig, { force: true });
+        }
       }
-    }
-    const appDir = getPortableAppDir();
-    if (isSafeToPurgeDir(appDir)) {
-      const cfgCandidate = path.join(appDir, 'config.json');
-      if (fs.existsSync(cfgCandidate)) fs.rmSync(cfgCandidate, { force: true });
-      const portCandidate = path.join(appDir, 'portable-config.json');
-      if (fs.existsSync(portCandidate)) fs.rmSync(portCandidate, { force: true });
+      const appDir = getPortableAppDir();
+      if (isSafeToPurgeDir(appDir)) {
+        const cfgCandidate = path.join(appDir, 'config.json');
+        if (fs.existsSync(cfgCandidate)) fs.rmSync(cfgCandidate, { force: true });
+        const portCandidate = path.join(appDir, 'portable-config.json');
+        if (fs.existsSync(portCandidate)) fs.rmSync(portCandidate, { force: true });
+      }
     }
   } catch (_) {}
 
   // 3. Remove residual shortcuts
   removeResidualShortcuts();
 
-  // 4. Remove standard OS app data directories
+  // 4. Remove standard OS app data directories (preserving downloaded models in appdata)
   try {
     if (process.platform === 'win32') {
       if (process.env.APPDATA) {
         const winAppData = path.join(process.env.APPDATA, 'cue');
-        if (fs.existsSync(winAppData)) {
-          fs.rmSync(winAppData, { recursive: true, force: true });
-        }
+        purgeDirectoryExceptModels(winAppData);
       }
       if (process.env.LOCALAPPDATA) {
         const winLocalData = path.join(process.env.LOCALAPPDATA, 'cue');
-        if (fs.existsSync(winLocalData)) {
-          fs.rmSync(winLocalData, { recursive: true, force: true });
-        }
+        purgeDirectoryExceptModels(winLocalData);
       }
     } else if (process.platform === 'darwin' && process.env.HOME) {
       const macAppData = path.join(process.env.HOME, 'Library', 'Application Support', 'cue');
-      if (fs.existsSync(macAppData)) {
-        fs.rmSync(macAppData, { recursive: true, force: true });
-      }
+      purgeDirectoryExceptModels(macAppData);
       const macCache = path.join(process.env.HOME, 'Library', 'Caches', 'cue');
       if (fs.existsSync(macCache)) {
         fs.rmSync(macCache, { recursive: true, force: true });
       }
     } else if (process.platform === 'linux' && process.env.HOME) {
       const linuxConfig = path.join(process.env.HOME, '.config', 'cue');
-      if (fs.existsSync(linuxConfig)) {
-        fs.rmSync(linuxConfig, { recursive: true, force: true });
-      }
+      purgeDirectoryExceptModels(linuxConfig);
       const linuxCache = path.join(process.env.HOME, '.cache', 'cue');
       if (fs.existsSync(linuxCache)) {
         fs.rmSync(linuxCache, { recursive: true, force: true });
@@ -1963,8 +2008,9 @@ function launchApp() {
 
   initStealthHook();
 
-  whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
-  sherpaModelManager = new SherpaModelManager({ userDataPath: app.getPath('userData') });
+  const persistentModelsPath = getPersistentModelsPath();
+  whisperModelManager = new WhisperModelManager({ userDataPath: persistentModelsPath });
+  sherpaModelManager = new SherpaModelManager({ userDataPath: persistentModelsPath });
 
   meetingMemory = createMeetingMemory({
     store: createMeetingStore({ file: path.join(app.getPath('userData'), 'meetings.json'), debounceMs: 1500 }),
