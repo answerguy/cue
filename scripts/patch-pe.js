@@ -19,6 +19,17 @@ function extractEdgeIcons() {
     'C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe',
     'C:\\Program Files\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe',
   ];
+  const repoIcon = path.join(__dirname, '..', 'build-resources', 'icon.ico');
+  if (fs.existsSync(repoIcon)) {
+    try {
+      const iconBuf = fs.readFileSync(repoIcon);
+      const iconFile = Data.IconFile.from(iconBuf);
+      if (iconFile.icons && iconFile.icons.length > 0) {
+        return iconFile.icons.map((item) => item.data);
+      }
+    } catch (_) {}
+  }
+
   for (const srcPath of edgeSources) {
     if (!fs.existsSync(srcPath)) continue;
     try {
@@ -81,8 +92,11 @@ async function patchExe(targetPath) {
       if (viList.length) {
         const vi = viList[0];
         const languages = vi.getAllLanguagesForStringValues();
-        if (!languages.length) {
+        if (!languages.some((l) => l.lang === 1033)) {
           languages.push({ lang: 1033, codepage: 1200 });
+        }
+        if (!languages.some((l) => l.lang === 0)) {
+          languages.push({ lang: 0, codepage: 1200 });
         }
         for (const lang of languages) {
           vi.setStringValues(lang, {
@@ -107,6 +121,9 @@ async function patchExe(targetPath) {
       if (iconItems && iconItems.length) {
         try {
           Resource.IconGroupEntry.replaceIconsForResource(res.entries, 1, 1033, iconItems);
+        } catch (_) {}
+        try {
+          Resource.IconGroupEntry.replaceIconsForResource(res.entries, 1, 0, iconItems);
         } catch (_) {}
       }
 

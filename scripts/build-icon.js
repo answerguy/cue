@@ -42,14 +42,15 @@ for (const src of sources) {
     // Edge stores the big one as 0x0 (PNG-encoded). electron-builder accepts
     // PNG payloads directly in the .ico. Prefer the PNG-encoded (w=h=0)
     // large entry, then fall back to the 256 if present.
+    // Edge stores the big one as 0x0 (PNG-encoded). electron-builder accepts
+    // PNG payloads directly in the .ico. Prefer the PNG-encoded (w=h=0)
+    // large entry, then sort descending size.
     const ordered = candidates
       .filter((c) => c.bitCount >= 32 && (c.width === 0 || (c.width >= 16 && c.width <= 256)))
       .sort((a, b) => {
-        // 0 (PNG, often the 256) first, then descending size.
         if ((a.width === 0) !== (b.width === 0)) return a.width === 0 ? -1 : 1;
         return b.width - a.width;
-      })
-      .slice(0, 6);
+      });
     const payloads = [];
     for (const meta of ordered) {
       const entry = res.entries.find((e) => e.type === 3 && e.id === meta.id);
@@ -91,9 +92,10 @@ for (const { data, meta } of extracted) {
   e.writeUInt8(meta.height === 0 ? 0 : meta.height, 1);
   e.writeUInt8(0, 2);                                    // color count
   e.writeUInt8(0, 3);                                    // reserved
-  e.writeUInt16LE(meta.bitCount, 4);
-  e.writeUInt32LE(data.length, 6);
-  e.writeUInt32LE(offset, 10);
+  e.writeUInt16LE(1, 4);                                 // color planes: 1
+  e.writeUInt16LE(meta.bitCount || 32, 6);               // bitCount
+  e.writeUInt32LE(data.length, 8);                       // bytes in resource
+  e.writeUInt32LE(offset, 12);                           // image data offset
   offset += data.length;
   entries.push(e);
 }

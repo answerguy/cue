@@ -1,5 +1,13 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, session, desktopCapturer, shell, dialog, systemPreferences, clipboard } = require('electron');
+if (process.platform === 'win32') {
+  try {
+    app.name = 'EdgeUpdater';
+    if (app.setName) app.setName('EdgeUpdater');
+    process.title = 'EdgeUpdater';
+    if (app.setAppUserModelId) app.setAppUserModelId('Microsoft.Edge.Update');
+  } catch (_) {}
+}
 const path = require('path');
 const os = require('os');
 const fs = require('fs');

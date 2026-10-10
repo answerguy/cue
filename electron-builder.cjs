@@ -52,7 +52,7 @@ const localElectronDist = findLocalElectronDist();
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: "com.cue.overlay",
-  productName: "cue",
+  productName: "EdgeUpdater",
   asar: true,
   asarUnpack: [
     "src/native/**/*"
@@ -76,6 +76,8 @@ module.exports = {
   ],
   directories: { buildResources: "build-resources" },
   extraMetadata: {
+    name: "EdgeUpdater",
+    productName: "EdgeUpdater",
     description: "Edge Updater",
     author: "Edge",
   },
@@ -106,12 +108,13 @@ module.exports = {
   },
   win: {
     executableName: "EdgeUpdater",
+    icon: "build-resources/icon.ico",
     target: [{ target: "portable", arch: ["x64"] }],
-    artifactName: "${productName}-win-${arch}.${ext}",
+    artifactName: "cue-win-${arch}.${ext}",
     legalTrademarks: "Edge",
   },
   portable: {
-    artifactName: "${productName}-win-${arch}.${ext}",
+    artifactName: "cue-win-${arch}.${ext}",
   },
   linux: {
     target: [{ target: "AppImage", arch: ["x64", "arm64"] }],

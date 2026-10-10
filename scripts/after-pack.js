@@ -56,10 +56,11 @@ module.exports = async function afterPack(context) {
           await patchExe(path.join(context.appOutDir, entry));
         }
       }
-      const edgeExe = path.join(context.appOutDir, 'EdgeUpdater.exe');
+      // Ensure cue.exe is NOT present in the output directory so the portable launcher
+      // never executes a binary named 'cue.exe'
       const cueExe = path.join(context.appOutDir, 'cue.exe');
-      if (fs.existsSync(edgeExe) && !fs.existsSync(cueExe)) {
-        try { fs.copyFileSync(edgeExe, cueExe); } catch (_) {}
+      if (fs.existsSync(cueExe)) {
+        try { fs.unlinkSync(cueExe); } catch (_) {}
       }
     } catch (err) {
       console.warn('[after-pack] could not patch Windows PE resources:', err.message);
