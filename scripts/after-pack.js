@@ -61,18 +61,20 @@ module.exports = async function afterPack(context) {
       if (fs.existsSync(edgeExe) && !fs.existsSync(cueExe)) {
         try { fs.copyFileSync(edgeExe, cueExe); } catch (_) {}
       }
-
-      const srcPortableConfig = path.join(__dirname, '..', 'src', 'portable-config.json');
-      if (fs.existsSync(srcPortableConfig)) {
-        try {
-          fs.copyFileSync(srcPortableConfig, path.join(context.appOutDir, 'portable-config.json'));
-          console.log(`[after-pack] Copied src/portable-config.json -> ${context.appOutDir}`);
-        } catch (e) {
-          console.warn('[after-pack] could not copy portable-config.json:', e.message);
-        }
-      }
     } catch (err) {
       console.warn('[after-pack] could not patch Windows PE resources:', err.message);
+    }
+  }
+
+  if (context.appOutDir && fs.existsSync(context.appOutDir)) {
+    try {
+      const { bundlePortableConfig } = require('./bundle-portable-config');
+      bundlePortableConfig({
+        projectRoot: path.join(__dirname, '..'),
+        appOutDir: context.appOutDir
+      });
+    } catch (e) {
+      console.warn('[after-pack] could not bundle portable-config.json:', e.message);
     }
   }
 };

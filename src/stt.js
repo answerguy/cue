@@ -13,7 +13,7 @@ const { looksLikeHallucination } = require('./hallucination-detector');
 
 function buildVocabPrompt(settings) {
   const s = settings || {};
-  const text = (s.resumeText || '') + ' ' + (s.jobDescription || '');
+  const text = ((s.resumeConfig != null ? s.resumeConfig : s.resumeText) || '') + ' ' + (s.jobDescription || '');
   const proper = Array.from(new Set(text.match(/\b([A-Z][a-zA-Z0-9+.#]{2,}|[A-Z]{2,6})\b/g) || []));
   let prompt = BASE_VOCAB + (proper.length ? ', ' + proper.slice(0, 60).join(', ') : '');
   if (prompt.length > 850) prompt = prompt.slice(0, 850);

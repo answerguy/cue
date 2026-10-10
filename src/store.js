@@ -118,25 +118,9 @@ const DEFAULTS = {
     cardShown: false,         // the first-run card (CONTRACT §12.1) was shown for the current starter grant
     lastError: ''
   },
-  // Tab 2: Profile
-  resumeText: '',
-  jobDescription: '',
-  // Tab 3: Interview Prep
-  starStories: '',       // 3-5 behavioral STAR stories in plain English
-  whyCompany: '',        // Why do you want to work here?
-  whyLeaving: '',        // Why are you leaving your current job?
-  workStyle: '',         // How you work, decision-making style, values
-  // Tab 4: Q&A
-  salaryTarget: '',      // e.g. "$150k-$180k base + equity"
-  questionsToAsk: '',    // Questions to ask the interviewer
-  // HR Mode — prepared common questions, answers & stories
-  hrStories: '',
-  hrQa: '',
-  // Tab 5: Style — custom response rules
-  // The user writes how the AI should write: e.g. "no em-dashes", "use bullet
-  // points", "casual tone". Applied to every LLM mode EXCEPT LeetCode (kept
-  // strict for coding problems).
-  aiRules: '',
+  // Resume & HR text dumps
+  hrConfig: '',
+  resumeConfig: '',
   // Overlay opacity (1 = fully opaque). Clamped so the window never vanishes.
   opacity: 1,
   // Start in quiet mode (Alt+Q minimalist stealth mode)

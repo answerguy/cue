@@ -54,11 +54,8 @@ test('portable-config.example.json exists, is valid JSON, and defines all schema
   assert.ok('anthropic' in content.models);
   assert.ok('openai' in content.models);
   assert.ok('gemini' in content.models);
-  assert.ok('hrStories' in content);
-  assert.ok('hrQa' in content);
-  assert.ok('resumeText' in content);
-  assert.ok('jobDescription' in content);
-  assert.ok('aiRules' in content);
+  assert.ok('hrConfig' in content);
+  assert.ok('resumeConfig' in content);
   assert.equal(content.quietMode, true);
 });
 
@@ -72,10 +69,8 @@ test('store uses portable-config as the sole source of truth when present', () =
       openai: 'sk-proj-test-deploy-key',
       deepgram: 'dg-test-deploy-key'
     },
-    hrStories: 'My prepared behavioral stories for associates',
-    hrQa: 'Prepared HR questions and answers',
-    resumeText: 'Full candidate experience details',
-    aiRules: 'Always format in concise bullets'
+    hrConfig: 'My prepared behavioral stories for associates',
+    resumeConfig: 'Full candidate experience details'
   };
 
   const { store, dir, cleanup } = openStoreWithConfig({ configData: customConfig });
@@ -87,10 +82,8 @@ test('store uses portable-config as the sole source of truth when present', () =
     assert.equal(settings.apiKeys.anthropic, 'sk-ant-test-deploy-key');
     assert.equal(settings.apiKeys.openai, 'sk-proj-test-deploy-key');
     assert.equal(settings.apiKeys.deepgram, 'dg-test-deploy-key');
-    assert.equal(settings.hrStories, 'My prepared behavioral stories for associates');
-    assert.equal(settings.hrQa, 'Prepared HR questions and answers');
-    assert.equal(settings.resumeText, 'Full candidate experience details');
-    assert.equal(settings.aiRules, 'Always format in concise bullets');
+    assert.equal(settings.hrConfig, 'My prepared behavioral stories for associates');
+    assert.equal(settings.resumeConfig, 'Full candidate experience details');
 
     // Verify it did NOT create or persist cue-data.json in userData
     const appDataFile = path.join(dir, 'cue-data.json');

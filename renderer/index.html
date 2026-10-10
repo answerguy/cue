@@ -74,6 +74,10 @@
                 <span class="act-top"><span class="ic"></span><span>Prev 4</span></span>
                 <span class="shortcut-hint" id="prev4-shortcut-hint">Alt+B</span>
               </button>
+              <button class="act" data-mode="resume" aria-label="Answer questions about your resume, projects &amp; background (Alt+F)">
+                <span class="act-top"><span class="ic"></span><span>Resume</span></span>
+                <span class="shortcut-hint" id="resume-shortcut-hint">Alt+F</span>
+              </button>
               <button class="act" data-mode="hr" aria-label="Answer HR question (Alt+G)">
                 <span class="act-top"><span class="ic"></span><span>HR</span></span>
                 <span class="shortcut-hint" id="hr-shortcut-hint">Alt+G</span>
@@ -168,6 +172,7 @@
       <div class="s-tabs">
         <button class="s-tab on" data-tab="keys">🔑 API Keys</button>
         <button class="s-tab" data-tab="transcription">🔉 Audio</button>
+        <button class="s-tab" data-tab="resume">📄 Resume</button>
         <button class="s-tab" data-tab="hr">👔 HR Mode</button>
         <button class="s-tab" data-tab="style">✨ Style</button>
         <button class="s-tab" data-tab="appearance">🌗 Appearance</button>
@@ -482,6 +487,24 @@
         <label class="s-label" style="margin-top: 14px;">Startup mode</label>
         <div class="s-field"><span>Start in Quiet Mode</span><input id="s-quiet-mode" type="checkbox" style="width:auto;" /></div>
         <div class="s-note">Starts directly in minimalist stealth Quiet Mode (Alt+Q) with 5% opacity and minimalist prompt bar.</div>
+      </div>
+
+      <!-- Tab: Resume Mode -->
+      <div class="s-body s-tab-pane hidden" data-pane="resume">
+        <label class="s-label" for="resume-text">Resume &amp; Project Experience <span class="s-hint">paste your resume, projects &amp; detailed working</span></label>
+        <textarea id="resume-text" rows="12" spellcheck="false" placeholder="Paste a text dump of your resume, past projects, detailed working, tech stack, architectures, etc. here.
+
+Example:
+John Doe - Senior Software Engineer
+Tech Stack: TypeScript, Node.js, Go, Kubernetes, PostgreSQL, AWS
+
+Projects &amp; Experience:
+• Payment Platform Migration: Led architecture and migration of payment processing pipeline from monolithic MySQL to event-driven microservices on AWS (ECS, SQS, Aurora). Achieved 99.99% uptime and reduced latency by 45%.
+• Real-Time Analytics Engine: Designed a distributed telemetry pipeline processing 50k events/sec using Go and Kafka...
+"></textarea>
+        <div class="s-hint-block">
+          When Resume mode is triggered (by prefixing or suffixing your message with <strong>/resume</strong> or <strong>/r</strong>, or pressing <span class="keycap">Alt</span><span class="keycap">F</span>), this entire text dump of your resume, projects, and detailed working is sent as context to the AI. The AI anchors its answer in your background, projects, and experience so you can speak confidently and accurately.
+        </div>
       </div>
 
       <!-- Tab: HR Mode -->

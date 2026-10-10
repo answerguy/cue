@@ -171,10 +171,10 @@ function buildInterviewContext(settings, mode, transcript) {
 
   const category = detectCategory(transcript || []);
 
-  const resume    = settings.resumeText || '';
+  const resume    = (settings.resumeConfig != null ? settings.resumeConfig : settings.resumeText) || '';
   const jd        = settings.jobDescription || '';
   const stories   = settings.starStories || '';
-  const hrStories = (settings.hrStories || settings.hrQa || '').trim();
+  const hrStories = ((settings.hrConfig != null ? settings.hrConfig : (settings.hrStories || settings.hrQa)) || '').trim();
   const whyCo     = settings.whyCompany || '';
   const whyLeave  = settings.whyLeaving || '';
   const workStyle = settings.workStyle || '';
@@ -210,6 +210,36 @@ function buildInterviewContext(settings, mode, transcript) {
     }
     if (workStyle) blocks.push('Work Style / Values:\n' + clip(workStyle, 400));
     if (whyCo) blocks.push('Why This Company:\n' + clip(whyCo, 400));
+
+    if (!blocks.length) return null;
+
+    const tailorNote = hasJD
+      ? '\nTailor every answer to highlight fit with the target role above.'
+      : '';
+
+    return blocks.join('\n\n') + tailorNote;
+  }
+
+  // Dedicated handling for Resume mode
+  if (mode === 'resume') {
+    if (hasResume) {
+      blocks.push(
+        '=== Candidate Resume, Projects & Experience Context ===\n' +
+        clip(resume.trim(), 8000) + '\n' +
+        'IMPORTANT: Anchor your answers in the candidate\'s provided resume, projects, and detailed working history above. Be technically accurate, specific, and confident in the first person.'
+      );
+    } else {
+      blocks.push(
+        '(No resume text provided — answer the question convincingly as a senior professional, highlighting relevant projects and architectural experience.)'
+      );
+    }
+    if (hasJD) {
+      blocks.push(buildJDBlock(jd, 500));
+    }
+    if (hasStories) {
+      blocks.push('=== Relevant STAR Stories ===\n' + clip(stories.trim(), 1200));
+    }
+    if (workStyle) blocks.push('Work Style / Values:\n' + clip(workStyle, 400));
 
     if (!blocks.length) return null;
 

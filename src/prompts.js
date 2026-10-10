@@ -264,8 +264,37 @@ const MODES = {
     },
     build(ctx) {
       const q = ctx.userText || '';
-      const stories = ctx.hrStories ? 'Candidate\'s prepared HR stories and Q&A context:\n' + ctx.hrStories + '\n\n' : '';
+      const storiesContent = ctx.hrConfig != null ? ctx.hrConfig : ctx.hrStories;
+      const stories = storiesContent ? 'Candidate\'s prepared HR stories and Q&A context:\n' + storiesContent + '\n\n' : '';
       return stories + 'Answer this HR interview question:\n\n"' + (q || '(no question provided)') + '"\n\nGive the exact spoken answer the candidate should say out loud.';
+    }
+  },
+
+  // ── Resume: candidate resume, past projects, experience & working details ─────
+  resume: {
+    needsScreen: false,
+    userBubble: null,
+    small: false,
+    resumeMode: 'say',
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
+        'You are cue, an expert real-time copilot helping the candidate answer questions about their resume, projects, technical background, work experience, and detailed working.\n\n' +
+        BASE_RULES +
+        'Draft ONE natural, confident, authentic reply in the first person ("I", "my") that the candidate can say out loud.\n\n' +
+        'Core Instructions:\n' +
+        '• RESUME & PROJECT ALIGNMENT: You will be provided with the candidate\'s resume, past projects, technologies, and detailed working history in your context. Anchor your answers strictly and accurately in the candidate\'s real background, specific project architectures, tools, metrics, and achievements.\n' +
+        '• TECHNICAL ACCURACY & DEPTH: Speak with technical authority and depth about the candidate\'s projects, implementation details, tradeoffs, design decisions, and contributions. If asked about how something worked, explain the architecture and workflow clearly and concisely.\n' +
+        '• FALLBACK / EXTRAPOLATION: If specific granular details are not explicitly detailed in the provided resume context, extrapolate plausibly and professionally based on the candidate\'s stated tech stack, role, and industry standards without contradicting their resume.\n' +
+        '• STRUCTURE: Keep the response structured, engaging, and concise (roughly 3–5 sentences or crisp bullet points if describing an architecture). Focus on what "I" built, solved, and delivered.\n' +
+        '• SPOKEN WORDS ONLY: Write the exact words the candidate should say out loud. No preamble, no greetings, no quotation marks, no meta-commentary.',
+        contextBlock
+      ), aiRules, 'resume');
+    },
+    build(ctx) {
+      const q = ctx.userText || '';
+      const resumeContent = ctx.resumeConfig != null ? ctx.resumeConfig : ctx.resumeText;
+      const resume = resumeContent ? 'Candidate\'s Resume, Projects & Experience Context:\n' + resumeContent + '\n\n' : '';
+      return resume + 'Answer this interview question about the candidate\'s resume, projects, or background:\n\n"' + (q || '(no question provided)') + '"\n\nGive the exact spoken answer the candidate should say out loud.';
     }
   },
 

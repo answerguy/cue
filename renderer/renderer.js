@@ -1674,6 +1674,58 @@
     runMode('hr', text);
   }
 
+  function triggerResumeMode() {
+    retryingGroup = null;
+    let text = input.value.trim();
+    deactivateStealthTyping();
+    if (temporaryFocusActive) {
+      input.blur();
+      temporaryFocusActive = false;
+      if (typeof cue.nofocusSet === 'function') cue.nofocusSet(true).catch(() => {});
+    }
+
+    // Strip /resume or /r prefix or suffix if present
+    const resumeStartRegex = /^\/resume\b/i;
+    const resumeEndRegex = /\/resume$/i;
+    const rStartRegex = /^\/r\b/i;
+    const rEndRegex = /\/r$/i;
+    if (resumeStartRegex.test(text)) {
+      text = text.replace(resumeStartRegex, '').trim();
+    } else if (resumeEndRegex.test(text)) {
+      text = text.replace(resumeEndRegex, '').trim();
+    } else if (rStartRegex.test(text)) {
+      text = text.replace(rStartRegex, '').trim();
+    } else if (rEndRegex.test(text)) {
+      text = text.replace(rEndRegex, '').trim();
+    }
+
+    if (!text && stagedInterviewerQuestion) {
+      text = stagedInterviewerQuestion.text || '';
+    }
+
+    if (text) {
+      saveToQuestionHistory(text);
+      if (!promptHistory.length || promptHistory[promptHistory.length - 1] !== text) {
+        promptHistory.push(text);
+      }
+      promptHistoryIndex = -1;
+    }
+
+    input.value = '';
+    inputFromSTT = false;
+    lastSTTValue = '';
+    userSpeechStart = null;
+    composer.classList.remove('stt-filling', 'stt-dimmed', 'stt-ready', 'stt-accumulating');
+    clearTimeout(softClearTimer);
+    clearTimeout(questionFinalizeTimer);
+    clearTimeout(sttFillTimer);
+    dismissInterviewerPill();
+    syncPlaceholder();
+    updateSendButtonState();
+
+    runMode('resume', text);
+  }
+
   function send() {
     retryingGroup = null;
     let text = input.value.trim();
@@ -1695,15 +1747,36 @@
       text = text.replace(hrEndRegex, '').trim();
     }
 
+    let isResumeMode = false;
+    const resumeStartRegex = /^\/resume\b/i;
+    const resumeEndRegex = /\/resume$/i;
+    const rStartRegex = /^\/r\b/i;
+    const rEndRegex = /\/r$/i;
+    if (!isHrMode) {
+      if (resumeStartRegex.test(text)) {
+        isResumeMode = true;
+        text = text.replace(resumeStartRegex, '').trim();
+      } else if (resumeEndRegex.test(text)) {
+        isResumeMode = true;
+        text = text.replace(resumeEndRegex, '').trim();
+      } else if (rStartRegex.test(text)) {
+        isResumeMode = true;
+        text = text.replace(rStartRegex, '').trim();
+      } else if (rEndRegex.test(text)) {
+        isResumeMode = true;
+        text = text.replace(rEndRegex, '').trim();
+      }
+    }
+
     if (!text) {
       if (stagedInterviewerQuestion) {
-        if (isHrMode) {
+        if (isHrMode || isResumeMode) {
           text = stagedInterviewerQuestion.text || '';
         } else {
           answerInterviewerQuestion();
           return;
         }
-      } else if (!isHrMode) {
+      } else if (!isHrMode && !isResumeMode) {
         runMode('assist', '');
         return;
       }
@@ -1733,6 +1806,8 @@
     
     if (isHrMode) {
       runMode('hr', text);
+    } else if (isResumeMode) {
+      runMode('resume', text);
     } else {
       runMode(wasFromSTT ? 'answerThis' : 'ask', text);
     }
@@ -1769,6 +1844,12 @@
     if (e.altKey && (e.key === 'g' || e.key === 'G') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       triggerHrMode();
+      return;
+    }
+    // Alt+F: Run Resume mode
+    if (e.altKey && (e.key === 'f' || e.key === 'F') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      triggerResumeMode();
       return;
     }
     // Ctrl+H (Cmd+H): Run LeetCode mode
@@ -1968,6 +2049,13 @@
       if (isQuietMode) return;
       e.preventDefault();
       triggerHrMode();
+      return;
+    }
+    // Alt+F: Run Resume mode
+    if (e.altKey && (e.key === 'f' || e.key === 'F') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      if (isQuietMode) return;
+      e.preventDefault();
+      triggerResumeMode();
       return;
     }
     // Ctrl+H (Cmd+H): Run LeetCode mode
@@ -2923,6 +3011,11 @@
   cue.on('hr:trigger', () => {
     if (isQuietMode) return;
     triggerHrMode();
+  });
+
+  cue.on('resume:trigger', () => {
+    if (isQuietMode) return;
+    triggerResumeMode();
   });
 
   cue.on('composer:focus', ({ temporary } = {}) => {
@@ -4001,7 +4094,10 @@
     updateAiRulesCounter();
     // HR tab
     const hrQaEl = $('#hr-qa');
-    if (hrQaEl) hrQaEl.value = settings.hrStories || settings.hrQa || '';
+    if (hrQaEl) hrQaEl.value = settings.hrConfig || settings.hrStories || settings.hrQa || '';
+    // Resume tab
+    const resumeEl = $('#resume-text');
+    if (resumeEl) resumeEl.value = settings.resumeConfig || settings.resumeText || '';
     // Appearance tab
     if (!isQuietMode) {
       applyOpacity(settings.opacity, false);
@@ -4523,8 +4619,15 @@
     // HR tab
     const hrQaEl = $('#hr-qa');
     if (hrQaEl) {
+      settings.hrConfig = hrQaEl.value.trim();
       settings.hrStories = hrQaEl.value.trim();
       settings.hrQa = settings.hrStories;
+    }
+    // Resume tab
+    const resumeEl = $('#resume-text');
+    if (resumeEl) {
+      settings.resumeConfig = resumeEl.value.trim();
+      settings.resumeText = resumeEl.value.trim();
     }
     // Appearance tab
     const opacitySlider = $('#s-opacity-slider');
@@ -4886,6 +4989,9 @@
     const hrBtn = document.querySelector('.act[data-mode="hr"]');
     const hrHintEl = document.getElementById('hr-shortcut-hint');
     if (hrHintEl) hrHintEl.textContent = isWindows ? 'Alt+G' : '⌥G';
+    const resumeBtn = document.querySelector('.act[data-mode="resume"]');
+    const resumeHintEl = document.getElementById('resume-shortcut-hint');
+    if (resumeHintEl) resumeHintEl.textContent = isWindows ? 'Alt+F' : '⌥F';
     const leetcodeBtn = document.querySelector('.act[data-mode="leetcode"]');
     const leetcodeHintEl = document.getElementById('leetcode-shortcut-hint');
     if (leetcodeHintEl) leetcodeHintEl.textContent = isWindows ? 'Ctrl+H' : '⌘H';
@@ -4906,6 +5012,9 @@
     if (prev4Btn) prev4Btn.setAttribute('aria-label', isWindows
       ? 'Explain terms from the last 4 messages with priority on newest (Alt+B)'
       : 'Explain terms from the last 4 messages with priority on newest (⌥B)');
+    if (resumeBtn) resumeBtn.setAttribute('aria-label', isWindows
+      ? 'Answer questions about your resume, projects & background (Alt+F)'
+      : 'Answer questions about your resume, projects & background (⌥F)');
     if (hrBtn) hrBtn.setAttribute('aria-label', isWindows
       ? 'Answer HR question with prepared stories (Alt+G)'
       : 'Answer HR question with prepared stories (⌥G)');

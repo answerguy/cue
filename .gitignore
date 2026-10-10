@@ -27,6 +27,8 @@ config.json
 src/config.json
 portable-config.json
 src/portable-config.json
+resume.txt
+hr.txt
 *.env
 .env*
 *recovery-codes*
