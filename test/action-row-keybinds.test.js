@@ -62,4 +62,9 @@ test('keybind hints have high opacity and use button text white color for readab
   assert.match(cssSrc, /\.resp-act-hint\s*\{[\s\S]*?color:\s*var\(--tx-2\);/);
 });
 
+test('action-row uses a two-row grid layout to prevent button overflow', () => {
+  assert.match(cssSrc, /#action-row\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/);
+});
+
+
 

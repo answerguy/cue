@@ -25,7 +25,8 @@ const DEFAULTS = {
   opacityDown: 'Alt+O',
   opacityUp: 'Alt+P',
   hr: 'Alt+G',
-  resume: 'Alt+F'
+  resume: 'Alt+F',
+  liveHelp: 'Alt+D'
 };
 
 // Every action that maps to a shortcut. Values = defaults; can be overridden via settings.

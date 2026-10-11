@@ -98,7 +98,7 @@ html, body {
   opacity: var(--cue-opacity, 1);
 }
 #app.opacity-open { padding-top: 82px; }
-#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim, .custom-select-menu { pointer-events: auto; }
+#toolbar, #panel-wrap, #transcript-sidebar, #live-help-sidebar, #settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim, .custom-select-menu { pointer-events: auto; }
 /* #app is a flex column: without this the toolbar is a shrinkable flex item, so
    a tall panel (long transcript, long response) squeezes the Stop/Hide/Quit
    controls down to nothing and leaves no way to stop listening. */
@@ -334,12 +334,10 @@ button:focus { outline: none; }
 
 /* ============================ Action row ============================ */
 #action-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 5px;
-  margin-top: 6px;
-  white-space: nowrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
 }
 .act {
   display: inline-flex;
@@ -352,11 +350,13 @@ button:focus { outline: none; }
   cursor: default;
   color: var(--tx-2);
   font-family: var(--font);
-  padding: 4px 8px;
+  padding: 5px 6px;
   border-radius: 8px;
   transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
   white-space: nowrap;
-  flex-shrink: 0;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   text-align: center;
 }
 .act-top {
@@ -364,9 +364,15 @@ button:focus { outline: none; }
   align-items: center;
   justify-content: center;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
+  max-width: 100%;
+}
+.act-top > span:not(.ic) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .act .ic { display: inline-flex; color: var(--ic); flex-shrink: 0; }
 .act .shortcut-hint {
@@ -389,6 +395,15 @@ button:focus { outline: none; }
 .act:hover .shortcut-hint { color: #fff; opacity: 1; }
 .act:active { transform: translateY(0.5px); }
 .act:disabled { opacity: 0.5; cursor: default; }
+.act.act-active {
+  border-color: rgba(34, 197, 94, 0.6);
+  background: rgba(34, 197, 94, 0.15);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.25);
+}
+.act.act-active .ic {
+  color: #22c55e;
+}
 .sep { display: none; }
 .shortcut-hint { font-size: 10px; font-weight: 500; color: var(--tx-2); margin-left: 3px; white-space: nowrap; flex-shrink: 0; opacity: 1; }
 
@@ -1330,6 +1345,216 @@ body.transparency-mode .stealth-pill-dot {
   color: #fca5a5;
 }
 
+/* ============================ Live Help Sidebar (Left of Cue) ============================ */
+.live-help-sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(100% + 12px);
+  width: 300px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+
+  /* Glass styling matching transcript sidebar and main panel */
+  background: var(--panel-bg);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid var(--bd-hair);
+  border-radius: var(--r-panel);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
+  padding: 16px;
+
+  z-index: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(24px);
+  transition: transform 160ms cubic-bezier(0.4,0,1,1), opacity 140ms ease, visibility 0s linear 160ms;
+}
+
+.live-help-sidebar.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition: transform 220ms cubic-bezier(0.22,1,0.36,1), opacity 180ms ease, visibility 0s;
+}
+
+.lh-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.lh-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lh-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+  animation: pulse 2s infinite;
+  flex-shrink: 0;
+}
+
+.lh-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tx-2);
+  white-space: nowrap;
+}
+
+.lh-model-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.lh-close-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--tx-mut);
+  font-size: 12px;
+  cursor: default;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+
+.lh-close-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lh-list {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.lh-placeholder {
+  font-size: 11.5px;
+  color: var(--tx-mut);
+  font-style: italic;
+  padding: 14px 4px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.lh-turn {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--tx-1);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-user-select: text;
+  user-select: text;
+  transition: background 120ms ease, border-color 120ms ease;
+  position: relative;
+  animation: fadeUp 180ms ease both;
+}
+
+.lh-turn:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.lh-turn.lh-streaming {
+  border-color: rgba(34, 197, 94, 0.35);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.1);
+}
+
+.lh-turn-time {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--tx-mut);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lh-copy-btn {
+  font-size: 9px;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--tx-2);
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: default;
+  transition: all 120ms ease;
+}
+
+.lh-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.lh-turn-text {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.lh-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.lh-clear-btn {
+  font-size: 10px;
+  color: var(--tx-mut);
+  background: none;
+  border: none;
+  cursor: default;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.lh-clear-btn:hover {
+  color: var(--tx-2);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lh-status-hint {
+  font-size: 9.5px;
+  color: var(--tx-mut);
+  letter-spacing: 0.02em;
+}
 
 /* ============================ Transcript viewer ============================ */
 .transcript-wrap {
@@ -1595,6 +1820,7 @@ html.quiet-mode #mic-perm-banner,
 html.quiet-mode #titlebar,
 html.quiet-mode #panel-columns,
 html.quiet-mode #transcript-sidebar,
+html.quiet-mode #live-help-sidebar,
 html.quiet-mode #interviewer-pill,
 html.quiet-mode #action-row,
 html.quiet-mode #live-interim,
@@ -1605,6 +1831,7 @@ body.quiet-mode #mic-perm-banner,
 body.quiet-mode #titlebar,
 body.quiet-mode #panel-columns,
 body.quiet-mode #transcript-sidebar,
+body.quiet-mode #live-help-sidebar,
 body.quiet-mode #interviewer-pill,
 body.quiet-mode #action-row,
 body.quiet-mode #live-interim {

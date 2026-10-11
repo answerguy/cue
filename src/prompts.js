@@ -319,6 +319,26 @@ const MODES = {
     build(ctx) {
       return ctx.userText || '';
     }
+  },
+
+  // ── Live Help: live assistant mode ──────────────────────────────────────
+  live_help: {
+    needsScreen: true,
+    userBubble: null,
+    small: false,
+    resumeMode: 'live_help',
+    buildSystem(contextBlock, aiRules) {
+      return applyRules(buildSystem(
+        'You are cue, an invisible real-time copilot providing live help during an interview or meeting. ' +
+        BASE_RULES +
+        'Deliver direct, concise, high-impact suggestions and answers in the first person ("I", "my") with zero preamble.',
+        contextBlock
+      ), aiRules, 'live_help');
+    },
+    build(ctx) {
+      const t = formatTranscript(ctx.transcript, 14);
+      return 'Recent conversation:\n' + (t || '(none)') + (ctx.userText ? '\n\nQuestion: ' + ctx.userText : '\n\nProvide live help right now.');
+    }
   }
 };
 

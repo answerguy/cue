@@ -788,6 +788,12 @@ function createLLM(settings) {
   };
 }
 
+const {
+  GEMINI_LIVE_DEFAULT_FAST,
+  GEMINI_LIVE_DEFAULT_SMART,
+  resolveGeminiLiveModel
+} = require('./gemini-live-help');
+
 module.exports = {
   createLLM,
   formatProviderErrorMessage,
@@ -801,6 +807,9 @@ module.exports = {
   CURRENT_GEMINI_DEFAULT,
   GEMINI_TRANSCRIBE_MODEL,
   GEMINI_TRANSCRIBE_LIVE_MODEL,
+  GEMINI_LIVE_DEFAULT_FAST,
+  GEMINI_LIVE_DEFAULT_SMART,
+  resolveGeminiLiveModel,
   CURRENT_ANTHROPIC_DEFAULT_FAST,
   CURRENT_ANTHROPIC_DEFAULT_SMART,
   PUBLIK_PROVIDER,

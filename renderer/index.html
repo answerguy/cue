@@ -82,6 +82,10 @@
                 <span class="act-top"><span class="ic"></span><span>HR</span></span>
                 <span class="shortcut-hint" id="hr-shortcut-hint">Alt+G</span>
               </button>
+              <button class="act" data-mode="live_help" id="live-help-btn" aria-label="Toggle Gemini Live Help (Alt+D)">
+                <span class="act-top"><span class="ic"></span><span>Live Help</span></span>
+                <span class="shortcut-hint" id="live-help-shortcut-hint">Alt+D</span>
+              </button>
               <button class="act" data-mode="leetcode" aria-label="Solve LeetCode problem from screen (Ctrl+H)">
                 <span class="act-top"><span class="ic"></span><span>LeetCode</span></span>
                 <span class="shortcut-hint" id="leetcode-shortcut-hint">Ctrl+H</span>
@@ -141,6 +145,25 @@
           <div id="quiet-output-box" class="quiet-box quiet-output-box hidden">
             <div id="quiet-output-text" class="quiet-output-text"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Live Help copilot sidebar — slides out from behind the panel's left edge -->
+      <div id="live-help-sidebar" class="live-help-sidebar">
+        <div class="lh-header">
+          <div class="lh-title-wrap">
+            <span class="lh-dot"></span>
+            <span class="lh-title">Live Copilot</span>
+            <span class="lh-model-badge" id="lh-model-badge">Gemini 3.8 Live</span>
+          </div>
+          <button class="lh-close-btn" id="close-live-help-btn" aria-label="Close Live Help">✕</button>
+        </div>
+        <div id="lh-list" class="lh-list">
+          <div class="lh-placeholder" id="lh-placeholder">Real-time candidate suggestions and coaching will appear here as Gemini Live listens.</div>
+        </div>
+        <div class="lh-footer">
+          <button class="lh-clear-btn" id="clear-live-help-btn" aria-label="Clear live help history">Clear Output</button>
+          <span class="lh-status-hint" id="lh-status-hint">Alt+D to toggle</span>
         </div>
       </div>
 
@@ -254,6 +277,10 @@
         <label class="s-label">Models <span class="s-hint">fast = Smart off · smart = Smart on</span></label>
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
+
+        <label class="s-label">Gemini Live Help (Alt+D) <span class="s-hint">two models · fast (default Gemini 3.8 Live) and smart (default Gemini 3.8 Live Extended Thinking)</span></label>
+        <div class="s-field"><span>Fast live</span><input id="gemini-live-model-fast" type="text" placeholder="gemini-3.8-live" autocomplete="off" /></div>
+        <div class="s-field"><span>Smart live</span><input id="gemini-live-model-smart" type="text" placeholder="gemini-3.8-live-extended-thinking" autocomplete="off" /></div>
 
         <label class="s-label">Model toggle (Alt+M) <span class="s-hint">cycle through four models</span></label>
         <div class="s-field">

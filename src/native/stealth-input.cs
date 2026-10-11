@@ -820,6 +820,11 @@ namespace CueStealthInput
                     Console.Out.Flush();
                     return true;
 
+                case 0x44: // 'D' key (Live Help toggle)
+                    Console.WriteLine("{\"event\":\"shortcut\",\"action\":\"live_help\"}");
+                    Console.Out.Flush();
+                    return true;
+
                 case 0xBB: // '+' / '=' key (widen quiet box)
                     Console.WriteLine("{\"event\":\"quiet_resize\",\"delta\":1}");
                     Console.Out.Flush();
@@ -956,10 +961,11 @@ namespace CueStealthInput
                     bool isS = (vk == 0x53); // 'S' key
                     bool isG = (vk == 0x47 || vk == 0x67); // 'G' key
                     bool isF = (vk == 0x46 || vk == 0x66); // 'F' key (Resume mode)
+                    bool isD = (vk == 0x44 || vk == 0x64); // 'D' key (Live Help)
                     bool isX = (vk == 0x58 || vk == 0x78); // 'X' key (Alt+X)
                     bool isPlus = (vk == 0xBB); // '+' / '=' key
                     bool isMinus = (vk == 0xBD); // '-' / '_' key
-                    bool isAltShortcutKey = isC || isV || isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL || isQ || isW || isE || isY || isG || isF || isX || isPlus || isMinus;
+                    bool isAltShortcutKey = isC || isV || isA || isU || isB || isN || isH || isT || isM || isS || isR || isO || isP || isI || isJ || isK || isL || isQ || isW || isE || isY || isG || isF || isD || isX || isPlus || isMinus;
 
                     // A. In focus/stealth mode (_capturing == true), consume Shift and Ctrl keypresses completely!
                     if (_capturing && IsShiftKey(vk))

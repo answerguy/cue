@@ -340,6 +340,10 @@
   if (prev4IC) prev4IC.innerHTML = icon('message-square-text', { size: 16 });
   const hrActIC = document.querySelector('.act[data-mode="hr"] .ic');
   if (hrActIC) hrActIC.innerHTML = icon('message-circle', { size: 16 });
+  const resumeActIC = document.querySelector('.act[data-mode="resume"] .ic');
+  if (resumeActIC) resumeActIC.innerHTML = icon('file-text', { size: 16 });
+  const liveHelpIC = document.querySelector('.act[data-mode="live_help"] .ic');
+  if (liveHelpIC) liveHelpIC.innerHTML = icon('radio', { size: 16 });
   const leetcodeIC = document.querySelector('.act[data-mode="leetcode"] .ic');
   if (leetcodeIC) leetcodeIC.innerHTML = icon('code', { size: 16 });
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
@@ -759,6 +763,10 @@
 
   // ---- actions -----------------------------------------------------------
   function runMode(mode, text) {
+    if (mode === 'live_help') {
+      toggleLiveHelp();
+      return;
+    }
     if (busy) return;
     setBusy(true);
     cue.ask({ mode, text: text || '' });
@@ -766,6 +774,10 @@
 
   document.querySelectorAll('.act').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.mode === 'live_help') {
+        toggleLiveHelp();
+        return;
+      }
       retryingGroup = null;
       runMode(btn.dataset.mode, '');
     });
@@ -1726,6 +1738,158 @@
     runMode('resume', text);
   }
 
+  let isLiveHelpActive = false;
+  async function toggleLiveHelp() {
+    if (typeof cue.liveHelpToggle === 'function') {
+      return await cue.liveHelpToggle();
+    }
+  }
+
+  cue.on('live-help:trigger', () => {
+    toggleLiveHelp();
+  });
+
+  const liveHelpSidebar = document.getElementById('live-help-sidebar');
+  const lhList = document.getElementById('lh-list');
+  const lhModelBadge = document.getElementById('lh-model-badge');
+  const closeLiveHelpBtn = document.getElementById('close-live-help-btn');
+  const clearLiveHelpBtn = document.getElementById('clear-live-help-btn');
+
+  let currentLhTurnEl = null;
+  let currentLhTextEl = null;
+
+  function showLiveHelpSidebar() {
+    if (liveHelpSidebar) liveHelpSidebar.classList.add('open');
+  }
+
+  function hideLiveHelpSidebar() {
+    if (liveHelpSidebar) liveHelpSidebar.classList.remove('open');
+  }
+
+  if (closeLiveHelpBtn) {
+    closeLiveHelpBtn.addEventListener('click', hideLiveHelpSidebar);
+  }
+
+  if (clearLiveHelpBtn) {
+    clearLiveHelpBtn.addEventListener('click', () => {
+      if (lhList) {
+        lhList.innerHTML = '<div class="lh-placeholder" id="lh-placeholder">Real-time candidate suggestions and coaching will appear here as Gemini Live listens.</div>';
+      }
+      currentLhTurnEl = null;
+      currentLhTextEl = null;
+    });
+  }
+
+  function startLiveHelpTurn(tierLabel) {
+    showLiveHelpSidebar();
+    if (!lhList) return;
+    const ph = document.getElementById('lh-placeholder');
+    if (ph) ph.remove();
+
+    if (currentLhTurnEl) {
+      currentLhTurnEl.classList.remove('lh-streaming');
+    }
+
+    const turn = document.createElement('div');
+    turn.className = 'lh-turn lh-streaming';
+
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const header = document.createElement('div');
+    header.className = 'lh-turn-time';
+    header.innerHTML = `<span>${tierLabel || 'Live Copilot'} · ${timeStr}</span><button class="lh-copy-btn" aria-label="Copy advice">Copy</button>`;
+
+    const textEl = document.createElement('div');
+    textEl.className = 'lh-turn-text';
+
+    turn.appendChild(header);
+    turn.appendChild(textEl);
+
+    const copyBtn = header.querySelector('.lh-copy-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const txt = textEl.textContent || '';
+        if (txt) {
+          navigator.clipboard.writeText(txt).then(() => {
+            showToast('Copied to clipboard', 1200);
+          }).catch(() => {});
+        }
+      });
+    }
+
+    lhList.appendChild(turn);
+    currentLhTurnEl = turn;
+    currentLhTextEl = textEl;
+    lhList.scrollTop = lhList.scrollHeight;
+  }
+
+  cue.on('live-help:turn-start', (s) => {
+    startLiveHelpTurn(s && s.tierLabel ? s.tierLabel : (s && s.tier === 'smart' ? 'Extended Thinking' : 'Fast Live'));
+  });
+
+  cue.on('live-help:token', (s) => {
+    if (!s || !s.token) return;
+    showLiveHelpSidebar();
+    if (!currentLhTextEl) {
+      startLiveHelpTurn('Live Copilot');
+    }
+    currentLhTextEl.textContent += s.token;
+    if (lhList) lhList.scrollTop = lhList.scrollHeight;
+  });
+
+  cue.on('live-help:done', (s) => {
+    if (currentLhTurnEl) {
+      currentLhTurnEl.classList.remove('lh-streaming');
+    }
+    if (s && s.text && currentLhTextEl) {
+      currentLhTextEl.textContent = s.text;
+    }
+    currentLhTurnEl = null;
+    currentLhTextEl = null;
+    if (lhList) lhList.scrollTop = lhList.scrollHeight;
+  });
+
+  cue.on('live-help:state', (s) => {
+    if (!s) return;
+    isLiveHelpActive = Boolean(s.active);
+    const btn = document.querySelector('.act[data-mode="live_help"]');
+    if (btn) btn.classList.toggle('act-active', isLiveHelpActive);
+
+    if (lhModelBadge && s.tier) {
+      lhModelBadge.textContent = s.tier === 'smart' ? 'Extended Thinking' : 'Fast Live';
+    }
+
+    if (s.error) {
+      showToast(`❌ Live Help error: ${s.error}`, 3000);
+      return;
+    }
+
+    if (isLiveHelpActive) {
+      const tierLabel = s.tier === 'smart' ? 'Gemini 3.8 Live Extended Thinking' : 'Gemini 3.8 Live';
+      showToast(`⚡ Live Help connected (${tierLabel}) · Alt+D to toggle`, 2500);
+      showLiveHelpSidebar();
+    } else {
+      showToast('Live Help disconnected', 2000);
+      hideLiveHelpSidebar();
+    }
+  });
+
+  cue.on('live-help:status', (s) => {
+    if (!s) return;
+    if (s.status === 'connecting') {
+      showToast('Connecting to Gemini Live API...', 1500);
+    }
+    if (lhModelBadge && s.tier) {
+      lhModelBadge.textContent = s.tier === 'smart' ? 'Extended Thinking' : 'Fast Live';
+    }
+  });
+
+  cue.on('live-help:error', (s) => {
+    if (s && s.message) {
+      showToast(`Live Help error: ${s.message}`, 3000);
+    }
+  });
+
   function send() {
     retryingGroup = null;
     let text = input.value.trim();
@@ -1850,6 +2014,12 @@
     if (e.altKey && (e.key === 'f' || e.key === 'F') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
       e.preventDefault();
       triggerResumeMode();
+      return;
+    }
+    // Alt+D: Toggle Live Help
+    if (e.altKey && (e.key === 'd' || e.key === 'D') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      toggleLiveHelp();
       return;
     }
     // Ctrl+H (Cmd+H): Run LeetCode mode
@@ -2056,6 +2226,12 @@
       if (isQuietMode) return;
       e.preventDefault();
       triggerResumeMode();
+      return;
+    }
+    // Alt+D: Toggle Live Help
+    if (e.altKey && (e.key === 'd' || e.key === 'D') && (!e.ctrlKey || (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph'))) && !e.metaKey) {
+      e.preventDefault();
+      toggleLiveHelp();
       return;
     }
     // Ctrl+H (Cmd+H): Run LeetCode mode
@@ -4050,6 +4226,18 @@
     $('#azure-endpoint').value = settings.azureEndpoint || '';
     const m = settings.models[settings.provider] || { fast: '', smart: '' };
     $('#model-fast').value = m.fast; $('#model-smart').value = m.smart;
+    const liveFastEl = $('#gemini-live-model-fast');
+    if (liveFastEl) {
+      liveFastEl.value = (settings.liveHelp && settings.liveHelp.models && settings.liveHelp.models.fast) ||
+                         (settings.models && settings.models.geminiLive && settings.models.geminiLive.fast) ||
+                         'gemini-3.8-live';
+    }
+    const liveSmartEl = $('#gemini-live-model-smart');
+    if (liveSmartEl) {
+      liveSmartEl.value = (settings.liveHelp && settings.liveHelp.models && settings.liveHelp.models.smart) ||
+                          (settings.models && settings.models.geminiLive && settings.models.geminiLive.smart) ||
+                          'gemini-3.8-live-extended-thinking';
+    }
     const modelToggle = Array.isArray(settings.modelToggle) && settings.modelToggle.length >= 4
       ? settings.modelToggle
       : ['gemini', 'groq', 'custom', 'ollama'];
@@ -4556,6 +4744,13 @@
     if (!settings.models[settings.provider]) settings.models[settings.provider] = {};
     settings.models[settings.provider].fast = $('#model-fast').value.trim();
     settings.models[settings.provider].smart = $('#model-smart').value.trim();
+    const liveFastVal = $('#gemini-live-model-fast')?.value.trim() || 'gemini-3.8-live';
+    const liveSmartVal = $('#gemini-live-model-smart')?.value.trim() || 'gemini-3.8-live-extended-thinking';
+    if (!settings.models.geminiLive) settings.models.geminiLive = {};
+    settings.models.geminiLive.fast = liveFastVal;
+    settings.models.geminiLive.smart = liveSmartVal;
+    if (!settings.liveHelp) settings.liveHelp = {};
+    settings.liveHelp.models = { fast: liveFastVal, smart: liveSmartVal };
     if (!Array.isArray(settings.modelToggle) || settings.modelToggle.length < 4) {
       settings.modelToggle = ['gemini', 'groq', 'custom', 'ollama'];
     }
@@ -4724,7 +4919,7 @@
     // The window trails the cursor while dragging; going click-through then would drop the release.
     if (draggingWindow) return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim, .custom-select-menu, #quiet-container'));
+    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #live-help-sidebar, #settings-scrim, #onboard-scrim, #consent-scrim, #confirm-scrim, .custom-select-menu, #quiet-container'));
     setIgnore(!overUI);
   });
   setIgnore(true); // start fully click-through; hovering the panel re-enables it
@@ -4992,6 +5187,9 @@
     const resumeBtn = document.querySelector('.act[data-mode="resume"]');
     const resumeHintEl = document.getElementById('resume-shortcut-hint');
     if (resumeHintEl) resumeHintEl.textContent = isWindows ? 'Alt+F' : '⌥F';
+    const liveHelpBtn = document.querySelector('.act[data-mode="live_help"]');
+    const liveHelpHintEl = document.getElementById('live-help-shortcut-hint');
+    if (liveHelpHintEl) liveHelpHintEl.textContent = isWindows ? 'Alt+D' : '⌥D';
     const leetcodeBtn = document.querySelector('.act[data-mode="leetcode"]');
     const leetcodeHintEl = document.getElementById('leetcode-shortcut-hint');
     if (leetcodeHintEl) leetcodeHintEl.textContent = isWindows ? 'Ctrl+H' : '⌘H';
@@ -5015,6 +5213,9 @@
     if (resumeBtn) resumeBtn.setAttribute('aria-label', isWindows
       ? 'Answer questions about your resume, projects & background (Alt+F)'
       : 'Answer questions about your resume, projects & background (⌥F)');
+    if (liveHelpBtn) liveHelpBtn.setAttribute('aria-label', isWindows
+      ? 'Toggle Gemini Live Help (Alt+D)'
+      : 'Toggle Gemini Live Help (⌥D)');
     if (hrBtn) hrBtn.setAttribute('aria-label', isWindows
       ? 'Answer HR question with prepared stories (Alt+G)'
       : 'Answer HR question with prepared stories (⌥G)');

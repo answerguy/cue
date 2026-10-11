@@ -42,6 +42,10 @@
       "fast": "gemini-3.5-flash-lite",
       "smart": "gemini-3.8-flash"
     },
+    "geminiLive": {
+      "fast": "gemini-3.8-live",
+      "smart": "gemini-3.8-live-extended-thinking"
+    },
     "groq": {
       "fast": "openai/gpt-oss-20b",
       "smart": "openai/gpt-oss-120b"
@@ -92,5 +96,12 @@
     "intervalMs": 3000,
     "threshold": 5,
     "maxSlides": 50
+  },
+  "liveHelp": {
+    "enabled": false,
+    "models": {
+      "fast": "gemini-3.8-live",
+      "smart": "gemini-3.8-live-extended-thinking"
+    }
   }
 }

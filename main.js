@@ -265,10 +265,17 @@ const { LocalSherpaTranscriber } = require('./src/local-sherpa-transcriber');
 
 const { createStealthHookManager } = require('./src/stealth-hook-manager');
 const { createAutotyper } = require('./src/autotyper');
+const {
+  GeminiLiveHelpSession,
+  resolveGeminiLiveModel,
+  buildLiveHelpSystem
+} = require('./src/gemini-live-help');
 
 let win = null;
 let stealthHookManager = null;
 let lastOutputText = '';
+let liveHelpSession = null;
+let isLiveHelpActive = false;
 
 const autotyper = createAutotyper({
   injector: {
@@ -318,9 +325,75 @@ function triggerShortcutAction(action) {
     send('hr:trigger');
   } else if (action === 'resume') {
     send('resume:trigger');
+  } else if (action === 'live_help') {
+    toggleLiveHelp();
   } else {
     runFeature(action, '');
   }
+}
+
+async function toggleLiveHelp(forceState) {
+  const nextState = typeof forceState === 'boolean' ? forceState : !isLiveHelpActive;
+  if (!nextState) {
+    if (liveHelpSession) {
+      liveHelpSession.close();
+      liveHelpSession = null;
+    }
+    isLiveHelpActive = false;
+    send('live-help:state', { active: false });
+    send('status', { message: 'Live Help disconnected' });
+    return false;
+  }
+
+  const settings = store.getSettings();
+  if (!settings.apiKeys || !settings.apiKeys.gemini) {
+    send('live-help:state', { active: false, error: 'Gemini API key is required. Add it in Settings > API Keys.' });
+    send('status', { message: 'Gemini API key required for Live Help' });
+    return false;
+  }
+
+  if (liveHelpSession) {
+    liveHelpSession.close();
+    liveHelpSession = null;
+  }
+
+  const model = resolveGeminiLiveModel(settings);
+  const tier = settings.smart ? 'smart' : 'fast';
+  const systemInstruction = buildLiveHelpSystem(settings);
+
+  let hasStartedTurn = false;
+  liveHelpSession = new GeminiLiveHelpSession({
+    apiKey: settings.apiKeys.gemini,
+    model,
+    systemInstruction,
+    onStatusChange: (status) => {
+      send('live-help:status', { status, model, tier });
+    },
+    onToken: (token) => {
+      if (!hasStartedTurn) {
+        hasStartedTurn = true;
+        const tierLabel = tier === 'smart' ? 'Gemini 3.8 Live Extended Thinking' : 'Gemini 3.8 Live';
+        send('live-help:turn-start', { model, tier, tierLabel });
+      }
+      send('live-help:token', { token });
+    },
+    onTurnComplete: (fullText) => {
+      hasStartedTurn = false;
+      send('live-help:done', { text: fullText });
+    },
+    onError: (err) => {
+      send('live-help:error', { message: (err && err.message) || String(err) });
+    }
+  });
+
+  isLiveHelpActive = true;
+  send('live-help:state', { active: true, model, tier });
+  liveHelpSession.connect().catch((err) => {
+    isLiveHelpActive = false;
+    send('live-help:state', { active: false, error: err.message });
+  });
+
+  return true;
 }
 
 function initStealthHook() {
@@ -380,7 +453,7 @@ function initStealthHook() {
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false, model: false, smart: false, recap: false, retry: false, previousPrompt: false, prevAnswer: false, nextAnswer: false, opacityDown: false, opacityUp: false, moveUp: false, moveLeft: false, moveDown: false, moveRight: false, altX: false };
+const shortcutState = { assist: false, say: false, leetcode: false, hide: false, transcription: false, quit: false, nofocus: false, type: false, transparency: false, previous4: false, history: false, model: false, smart: false, recap: false, retry: false, previousPrompt: false, prevAnswer: false, nextAnswer: false, opacityDown: false, opacityUp: false, moveUp: false, moveLeft: false, moveDown: false, moveRight: false, hr: false, resume: false, liveHelp: false, altX: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
@@ -567,6 +640,9 @@ function publishTranscript(channel, text) {
   pushTranscript(turn);
   send('transcript', turn);
   send('stt:final', { channel, text: turn.text });
+  if (isLiveHelpActive && liveHelpSession && channel === 'them') {
+    liveHelpSession.sendText(`Interviewer: ${turn.text}`);
+  }
 }
 
 async function startLocalWhisper(settings) {
@@ -1108,6 +1184,10 @@ function noteAudioLevel(channel, buf) {
 function routeAudio(channel, pcmBuffer) {
   const buf = Buffer.from(pcmBuffer);
   noteAudioLevel(channel, buf);
+
+  if (isLiveHelpActive && liveHelpSession && channel === 'them') {
+    liveHelpSession.sendAudio(buf);
+  }
 
   if (localWhisperTranscriber) {
     localWhisperTranscriber.push(channel, buf);
@@ -1694,6 +1774,16 @@ ipcMain.handle('slides:clear', () => {
   send('slides:update', { count: 0, last: null });
   return { ok: true };
 });
+ipcMain.handle('live-help:toggle', () => toggleLiveHelp());
+ipcMain.handle('live-help:get', () => ({
+  active: isLiveHelpActive,
+  model: liveHelpSession ? liveHelpSession.model : resolveGeminiLiveModel(store.getSettings())
+}));
+ipcMain.on('live-help:ask', (_e, text) => {
+  if (isLiveHelpActive && liveHelpSession && typeof text === 'string') {
+    liveHelpSession.sendText(text);
+  }
+});
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('you', arrayBuffer); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('them', arrayBuffer); });
@@ -1881,6 +1971,9 @@ function registerShortcuts() {
   });
   shortcutState.resume = globalShortcut.register('Alt+F', () => {
     triggerShortcutAction('resume');
+  });
+  shortcutState.liveHelp = globalShortcut.register('Alt+D', () => {
+    triggerShortcutAction('live_help');
   });
   ['Alt+=', 'Alt+Plus', 'Alt+Shift+=', 'Alt+numadd'].forEach(k => {
     try {

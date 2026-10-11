@@ -151,7 +151,7 @@ test('answers Iris over the link', async (t) => {
 
   let asked = 0;
   const link = new AppLinkServer({
-    appId: 'com.cue.overlay',
+    appId: 'com.cue.overlay.test',
     appSlug: 'cue',
     appName: 'cue',
     appVersion: '0.2.1',
@@ -164,7 +164,7 @@ test('answers Iris over the link', async (t) => {
 
   link.record({ level: 'error', event: 'stt_rejected', code: 'http_403', msg: 'no access to a speech model', frame: 'handleSttError' });
 
-  const found = AppLinkClient.discover(pathOptions).find((entry) => entry.appId === 'com.cue.overlay');
+  const found = AppLinkClient.discover(pathOptions).find((entry) => entry.appId === 'com.cue.overlay.test');
   assert.ok(found, 'cue did not announce itself');
 
   const client = await AppLinkClient.open(found, { client: { id: 'com.publikhq.iris', name: 'Iris' }, scopes: ['read'] });

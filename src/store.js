@@ -157,6 +157,7 @@ const DEFAULTS = {
     // gemini-2.0-flash (the original default here) was retired by Google on
     // 2026-03-03 and 404s on every request. smart is the newest Pro release.
     gemini: { fast: 'gemini-3.8-flash', smart: 'gemini-3.1-pro-preview' },
+    geminiLive: { fast: 'gemini-3.8-live', smart: 'gemini-3.8-live-extended-thinking' },
     custom: { baseUrl: '', fast: '', smart: '' },
     ollama: { fast: 'llama3.2', smart: 'llama3.3' },
     groq: { fast: 'llama-3.1-8b-instant', smart: 'llama-3.3-70b-versatile' },
@@ -167,6 +168,13 @@ const DEFAULTS = {
     azure: { fast: 'gpt-4o-mini', smart: 'gpt-4o' },
     // Tier aliases, never upstream slugs; the provisioning response overrides them.
     publik: { fast: 'publik-fast', smart: 'publik-balanced' }
+  },
+  liveHelp: {
+    enabled: false,
+    models: {
+      fast: 'gemini-3.8-live',
+      smart: 'gemini-3.8-live-extended-thinking'
+    }
   }
 };
 
