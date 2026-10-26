@@ -57,15 +57,21 @@ test('stealth hook manager handles onNoFocusToggle, onTransparencyToggle, onStat
   manager.dispose();
 });
 
-test('native stealth-input outputs shifted characters like exclamation mark', async () => {
+test('native input outputs shifted characters like exclamation mark and verifies working', async () => {
   if (process.platform !== 'win32') return;
   const cp = require('node:child_process');
+  const fs = require('node:fs');
   const path = require('node:path');
-  const exePath = path.join(__dirname, '..', 'src', 'native', 'stealth-input.exe');
+  const inputExe = path.join(__dirname, '..', 'src', 'native', 'input.exe');
+  const exePath = fs.existsSync(inputExe) ? inputExe : path.join(__dirname, '..', 'src', 'native', 'stealth-input.exe');
   const out = cp.execFileSync(exePath, ['--test'], { encoding: 'utf8' }).trim();
   const parsed = JSON.parse(out);
   assert.equal(parsed.test, true);
   assert.equal(parsed.char, '!');
+
+  const manager = createStealthHookManager();
+  assert.equal(manager.verifyWorking(), true);
+  manager.dispose();
 });
 
 test('stealth-hook-manager resolves app.asar.unpacked when running from asar', () => {

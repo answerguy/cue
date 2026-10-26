@@ -44,18 +44,43 @@ function createStealthHookManager(options = {}) {
   let lineBuffer = '';
 
   function resolveExePath() {
-    const defaultPath = path.join(__dirname, 'native', 'stealth-input.exe');
-    if (defaultPath.includes('app.asar')) {
-      const unpacked = defaultPath.replace('app.asar', 'app.asar.unpacked');
+    const inputPath = path.join(__dirname, 'native', 'input.exe');
+    const legacyPath = path.join(__dirname, 'native', 'stealth-input.exe');
+
+    if (inputPath.includes('app.asar')) {
+      const unpacked = inputPath.replace('app.asar', 'app.asar.unpacked');
       if (fs.existsSync(unpacked)) return unpacked;
+      const legacyUnpacked = legacyPath.replace('app.asar', 'app.asar.unpacked');
+      if (fs.existsSync(legacyUnpacked)) return legacyUnpacked;
     }
-    return defaultPath;
+
+    if (fs.existsSync(inputPath)) return inputPath;
+    if (fs.existsSync(legacyPath)) return legacyPath;
+    return inputPath;
   }
 
   const exePath = resolveExePath();
 
   function isAvailable() {
     return process.platform === 'win32' && fs.existsSync(exePath);
+  }
+
+  function verifyWorking() {
+    if (process.platform !== 'win32') return true;
+    if (!isAvailable()) return false;
+    try {
+      const res = cp.spawnSync(exePath, ['--test'], {
+        timeout: 2000,
+        windowsHide: true,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
+      if (res.error || res.status !== 0) return false;
+      const parsed = JSON.parse((res.stdout || '').trim() || '{}');
+      return Boolean(parsed.test);
+    } catch (_) {
+      return false;
+    }
   }
 
   function spawnHelper() {
@@ -342,6 +367,9 @@ function createStealthHookManager(options = {}) {
 
   return {
     isAvailable,
+    verifyWorking,
+    getExePath: () => exePath,
+    isReady: () => ready,
     start,
     stop,
     toggle,

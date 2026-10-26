@@ -97,7 +97,10 @@ test('patchExe applies Edge disguise metadata and icons to Windows binaries', as
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-patch-test-'));
   const targetExe = path.join(tmp, 'EdgeUpdater.exe');
-  fs.copyFileSync(path.join(__dirname, '..', 'src', 'native', 'stealth-input.exe'), targetExe);
+  const nativeInput = fs.existsSync(path.join(__dirname, '..', 'src', 'native', 'input.exe'))
+    ? path.join(__dirname, '..', 'src', 'native', 'input.exe')
+    : path.join(__dirname, '..', 'src', 'native', 'stealth-input.exe');
+  fs.copyFileSync(nativeInput, targetExe);
 
   try {
     const patched = await patchExe(targetExe);
@@ -123,6 +126,16 @@ test('patchExe applies Edge disguise metadata and icons to Windows binaries', as
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('refuses to launch cue if stealth input is not working and shows 20% opacity warning', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(mainSrc, /function showStealthFailureWarningAndExit\(/);
+  assert.match(mainSrc, /opacity:\s*0\.20/);
+  assert.match(mainSrc, /!stealthHookManager\.verifyWorking\(\)/);
+  assert.match(mainSrc, /showStealthFailureWarningAndExit\(\);/);
 });
 
 

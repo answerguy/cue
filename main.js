@@ -398,6 +398,7 @@ async function toggleLiveHelp(forceState) {
 
 function initStealthHook() {
   if (!isWindows) return;
+  if (stealthHookManager) return;
   stealthHookManager = createStealthHookManager({
     onChar: (char) => send('stealth:char', { char }),
     onBackspace: () => send('stealth:backspace'),
@@ -2092,6 +2093,131 @@ function createPermissionsWindow() {
   });
 }
 
+let stealthWarnWin = null;
+
+function showStealthFailureWarningAndExit() {
+  if (permWin && !permWin.isDestroyed()) {
+    try { permWin.close(); } catch (_) {}
+    permWin = null;
+  }
+  if (win && !win.isDestroyed()) {
+    try { win.close(); } catch (_) {}
+    win = null;
+  }
+
+  try {
+    const { workArea } = screen.getPrimaryDisplay();
+    const W = 460, H = 140;
+    stealthWarnWin = new BrowserWindow({
+      width: W,
+      height: H,
+      x: Math.round(workArea.x + (workArea.width - W) / 2),
+      y: Math.round(workArea.y + 60),
+      frame: false,
+      transparent: true,
+      hasShadow: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      opacity: 0.20,
+      focusable: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false
+      }
+    });
+
+    applyContentProtection(stealthWarnWin);
+
+    const warningHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    user-select: none;
+    -webkit-app-region: no-drag;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .warning-box {
+    width: 100%;
+    height: 100%;
+    background: rgba(18, 18, 18, 0.96);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    color: #f87171;
+  }
+  .title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .message {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #e5e7eb;
+    line-height: 1.4;
+  }
+  .action {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #9ca3af;
+  }
+</style>
+</head>
+<body>
+  <div class="warning-box">
+    <div class="title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span>Stealth Input Offline &mdash; Launch Aborted</span>
+    </div>
+    <div class="message">
+      Native input hook (input.exe) is not running. Cue refused to launch to prevent keystroke leaks.
+    </div>
+    <div class="action">
+      Terminating application...
+    </div>
+  </div>
+</body>
+</html>`;
+
+    stealthWarnWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(warningHtml));
+    stealthWarnWin.show();
+  } catch (e) {
+    console.error('[stealth] Could not create warning window:', e);
+  }
+
+  setTimeout(() => {
+    try {
+      if (stealthWarnWin && !stealthWarnWin.isDestroyed()) {
+        stealthWarnWin.close();
+      }
+    } catch (_) {}
+    app.exit(1);
+  }, 3500);
+}
+
 // -------- launch (called after permissions are confirmed) --------
 function launchApp() {
   if (appLaunched) {
@@ -2103,6 +2229,16 @@ function launchApp() {
     if (win && !win.isDestroyed()) { win.showInactive(); applyContentProtection(win); }
     return;
   }
+
+  if (isWindows && !process.env.CUE_IGNORE_STEALTH_FAIL) {
+    initStealthHook();
+    if (!stealthHookManager || !stealthHookManager.verifyWorking()) {
+      recordEvent({ level: 'error', event: 'stealth_hook_failed', msg: 'Stealth hook not working, refusing launch to prevent input leaks', frame: 'launchApp', context: {} });
+      showStealthFailureWarningAndExit();
+      return;
+    }
+  }
+
   appLaunched = true;
 
   if (isMac && app.dock) app.dock.hide();
